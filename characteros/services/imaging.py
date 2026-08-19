@@ -78,10 +78,17 @@ class ImagingService:
         extra: str = "",
         n: int = 1,
         model: str = "",
+        base_url: str = "",
+        api_key: str = "",
         persist_entity_id: str | None = None,
     ) -> dict[str, Any]:
         request = assemble_request(manifest, purpose=purpose, extra=extra, n=n, model=model)
-        provider = get_provider(provider_name)
+        provider = get_provider(
+            provider_name,
+            model=(model or None),
+            base_url=(base_url or None),
+            api_key=(api_key or None),
+        )
         result = provider.generate(request)
         updated = apply_result_to_manifest(manifest, request, result)
         entity_id = persist_entity_id or ""

@@ -14,7 +14,7 @@ def get_admin_panel() -> str:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CharacterOS Admin Panel</title>
+  <title>CharacterOS Full Editor</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
     h1 { margin-bottom: 8px; }
@@ -32,11 +32,12 @@ def get_admin_panel() -> str:
     .item:last-child { border-bottom: 0; }
     .inline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .status { font-size: 13px; color: #4b5563; }
+    textarea.json { min-height: 110px; font-family: Consolas, monospace; }
   </style>
 </head>
 <body>
-  <h1>CharacterOS 管理/生成面板</h1>
-  <div class="hint">集中管理角色查詢、變體請求、第三方生圖與 API 金鑰設定。</div>
+  <h1>CharacterOS 完整角色編輯器</h1>
+  <div class="hint">集中管理角色 Core/Profile/Manifest、風格、生圖設定與生成流程。</div>
 
   <div class="grid">
     <section class="card">
@@ -48,23 +49,56 @@ def get_admin_panel() -> str:
     </section>
 
     <section class="card">
-      <h2>角色詳情 / 變體</h2>
+      <h2>完整角色編輯（Core + Profile）</h2>
       <label>角色 ID</label>
       <input id="characterId" type="number" min="1" placeholder="例如：1" />
       <div class="inline">
-        <button onclick="loadCharacter()">查詢角色</button>
-        <button class="secondary" onclick="requestVariant()">請求變體</button>
+        <button onclick="loadCharacterEditor()">載入編輯資料</button>
+        <button class="secondary" onclick="saveCharacterEditor()">儲存角色</button>
       </div>
-      <label>變體參數（可留空）</label>
+
+      <label>名稱 / 代號</label>
       <div class="inline">
-        <input id="age" type="number" min="0" max="150" placeholder="age" />
-        <input id="emotion" placeholder="emotion" />
+        <input id="editName" placeholder="name" />
+        <input id="editCodename" placeholder="codename" />
       </div>
+
+      <label>基準年齡 / 性別光譜</label>
       <div class="inline">
-        <input id="scene" placeholder="scene" />
-        <input id="injury" type="number" min="0" max="1" step="0.1" placeholder="injury 0-1" />
+        <input id="editBaseAge" type="number" min="0" max="150" placeholder="base_age" />
+        <input id="editGenderSpectrum" type="number" min="0" max="1" step="0.1" placeholder="gender_spectrum 0-1" />
       </div>
-      <pre id="characterOutput">{}</pre>
+
+      <label>tags（逗號分隔）</label>
+      <input id="editTags" placeholder="protagonist, modern" />
+
+      <label>identity_anchor JSON</label>
+      <textarea id="editIdentityAnchor" class="json"></textarea>
+
+      <label>metadata JSON</label>
+      <textarea id="editMetadata" class="json"></textarea>
+
+      <label>style_preset / created_by</label>
+      <div class="inline">
+        <input id="editStylePreset" placeholder="style_preset" />
+        <input id="editCreatedBy" placeholder="created_by" />
+      </div>
+
+      <label>project_name / project_id</label>
+      <div class="inline">
+        <input id="editProjectName" placeholder="project_name" />
+        <input id="editProjectId" placeholder="project_id" />
+      </div>
+
+      <label>outfit_config JSON</label>
+      <textarea id="editOutfitConfig" class="json"></textarea>
+
+      <label>manifest JSON（含 _style / 角色風格）</label>
+      <textarea id="editManifest" class="json" style="min-height: 180px;"></textarea>
+
+      <label>notes</label>
+      <textarea id="editNotes" rows="3"></textarea>
+      <div id="editorStatus" class="status"></div>
     </section>
 
     <section class="card">
@@ -89,9 +123,19 @@ def get_admin_panel() -> str:
     </section>
 
     <section class="card">
-      <h2>角色生圖</h2>
+      <h2>變體 / 生圖</h2>
       <label>角色 ID</label>
       <input id="imgCharacterId" type="number" min="1" placeholder="例如：1" />
+      <label>變體參數（可留空）</label>
+      <div class="inline">
+        <input id="age" type="number" min="0" max="150" placeholder="age" />
+        <input id="emotion" placeholder="emotion" />
+      </div>
+      <div class="inline">
+        <input id="scene" placeholder="scene" />
+        <input id="injury" type="number" min="0" max="1" step="0.1" placeholder="injury 0-1" />
+      </div>
+      <button class="secondary" onclick="requestVariant()">請求變體</button>
       <label>Purpose</label>
       <select id="purpose">
         <option value="identity">identity</option>
@@ -105,6 +149,7 @@ def get_admin_panel() -> str:
         <button onclick="generateImages()">生成圖片</button>
         <button class="secondary" onclick="copyPrompt()">複製最後提示詞</button>
       </div>
+      <pre id="variantOutput">{}</pre>
       <pre id="imageOutput">{}</pre>
     </section>
   </div>
@@ -130,22 +175,84 @@ def get_admin_panel() -> str:
         div.onclick = () => {
           document.getElementById("characterId").value = item.id;
           document.getElementById("imgCharacterId").value = item.id;
-          loadCharacter();
+          loadCharacterEditor();
         };
         list.appendChild(div);
       });
     }
 
-    async function loadCharacter() {
+    function parseJsonField(id) {
+      const raw = document.getElementById(id).value.trim();
+      if (!raw) return {};
+      return JSON.parse(raw);
+    }
+
+    function pretty(value) {
+      return JSON.stringify(value || {}, null, 2);
+    }
+
+    async function loadCharacterEditor() {
       const id = document.getElementById("characterId").value;
       if (!id) return;
-      const resp = await fetch(`/api/v1/characters/${id}`);
+      const resp = await fetch(`/api/v1/characters/${id}/editor`);
       const data = await resp.json();
-      setJson("characterOutput", data);
+      const core = data.core || {};
+      const profile = data.profile || {};
+      document.getElementById("editName").value = core.name || "";
+      document.getElementById("editCodename").value = core.codename || "";
+      document.getElementById("editBaseAge").value = core.base_age ?? "";
+      document.getElementById("editGenderSpectrum").value = core.gender_spectrum ?? "";
+      document.getElementById("editTags").value = (core.tags || []).join(", ");
+      document.getElementById("editIdentityAnchor").value = pretty(core.identity_anchor);
+      document.getElementById("editMetadata").value = pretty(core.metadata);
+      document.getElementById("editProjectName").value = profile.project_name || "";
+      document.getElementById("editProjectId").value = profile.project_id || "";
+      document.getElementById("editStylePreset").value = profile.style_preset || "";
+      document.getElementById("editCreatedBy").value = profile.created_by || "";
+      document.getElementById("editOutfitConfig").value = pretty(profile.outfit_config);
+      document.getElementById("editManifest").value = pretty(profile.manifest);
+      document.getElementById("editNotes").value = profile.notes || "";
+      document.getElementById("editorStatus").textContent = "角色資料已載入";
+    }
+
+    async function saveCharacterEditor() {
+      const id = document.getElementById("characterId").value;
+      if (!id) return;
+      try {
+        const payload = {
+          name: document.getElementById("editName").value.trim(),
+          codename: document.getElementById("editCodename").value.trim() || null,
+          base_age: Number(document.getElementById("editBaseAge").value || 0),
+          gender_spectrum: document.getElementById("editGenderSpectrum").value === "" ? null : Number(document.getElementById("editGenderSpectrum").value),
+          tags: document.getElementById("editTags").value.split(",").map((x) => x.trim()).filter(Boolean),
+          identity_anchor: parseJsonField("editIdentityAnchor"),
+          metadata: parseJsonField("editMetadata"),
+          project_name: document.getElementById("editProjectName").value.trim() || null,
+          project_id: document.getElementById("editProjectId").value.trim() || null,
+          style_preset: document.getElementById("editStylePreset").value.trim() || null,
+          created_by: document.getElementById("editCreatedBy").value.trim() || null,
+          outfit_config: parseJsonField("editOutfitConfig"),
+          manifest: parseJsonField("editManifest"),
+          notes: document.getElementById("editNotes").value.trim() || null
+        };
+        const resp = await fetch(`/api/v1/characters/${id}/editor`, {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data.detail ? JSON.stringify(data.detail) : "儲存失敗");
+        }
+        document.getElementById("editorStatus").textContent = "角色儲存成功";
+        setJson("variantOutput", data);
+      } catch (err) {
+        document.getElementById("editorStatus").textContent = `儲存失敗：${err.message}`;
+      }
     }
 
     async function requestVariant() {
-      const id = document.getElementById("characterId").value;
+      const id = document.getElementById("imgCharacterId").value;
       if (!id) return;
       const params = new URLSearchParams();
       const age = document.getElementById("age").value;
@@ -157,8 +264,8 @@ def get_admin_panel() -> str:
       if (scene) params.set("scene", scene);
       if (injury) params.set("injury", injury);
       const resp = await fetch(`/api/v1/characters/${id}/variant?${params.toString()}`);
-      const data = await resp.json();
-      setJson("characterOutput", data);
+      const data = await resp.json().catch(() => ({}));
+      setJson("variantOutput", data);
     }
 
     async function loadImagingConfig() {
@@ -194,12 +301,19 @@ def get_admin_panel() -> str:
       const payload = {
         purpose: document.getElementById("purpose").value,
         provider: document.getElementById("provider").value,
+        base_url: document.getElementById("baseUrl").value.trim(),
+        model: document.getElementById("model").value.trim(),
         extra: document.getElementById("extra").value.trim(),
         persist: true
       };
+      const apiKey = document.getElementById("apiKey").value.trim();
+      if (apiKey) payload.api_key = apiKey;
       const resp = await fetch(`/api/v1/characters/${id}/images`, {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: {
+          "Content-Type": "application/json",
+          "X-CharacterOS-Panel": "enabled"
+        },
         body: JSON.stringify(payload),
       });
       const data = await resp.json();

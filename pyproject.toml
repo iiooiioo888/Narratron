@@ -53,6 +53,9 @@ characteros = [
 [project.urls]
 Documentation = "docs/whitepaper-v2.md"
 
+[project.scripts]
+characteros-cli = "characteros.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["narratron*", "characteros*"]
 

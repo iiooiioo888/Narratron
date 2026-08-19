@@ -83,6 +83,35 @@ open http://localhost:8001/docs
 
 ## 測試範例
 
+### 0. CLI 快速測試（GUI 前先驗證流程）
+
+```bash
+# 在 repo 根目錄
+python -m characteros.cli providers
+python -m characteros.cli config-show
+
+# 設定 WAN 生圖模型與 API key（可選寫入 .env）
+python -m characteros.cli config-set \
+  --provider wan \
+  --base-url "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1" \
+  --model "wan2.7-image-pro" \
+  --api-key "<YOUR_API_KEY>" \
+  --persist-env
+
+# 先只看提示詞（不打網路）
+python -m characteros.cli prompt --entity-id "character-卡爾" --purpose identity
+
+# 真正呼叫 provider 生圖（可選寫回本機護照）
+python -m characteros.cli generate \
+  --entity-id "character-卡爾" \
+  --purpose identity \
+  --provider wan \
+  --persist
+
+# 若某角色仍是舊二進位 .charpass，可轉成可讀 JSON
+python -m characteros.cli migrate --entity-id "character-卡爾"
+```
+
 ### 1. 健康檢查
 
 ```bash
@@ -121,6 +150,18 @@ curl http://localhost:8001/api/v1/imaging/providers
 curl -X POST http://localhost:8001/api/v1/imaging/generate \
   -H "Content-Type: application/json" \
   -d '{"entity_id":"character-卡爾","purpose":"identity","provider":"null"}'
+
+# 單次請求覆蓋 WAN 接口/模型/API key（不寫入 DB）
+curl -X POST http://localhost:8001/api/v1/imaging/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entity_id":"character-卡爾",
+    "purpose":"identity",
+    "provider":"wan",
+    "base_url":"https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    "model":"wan2.7-image-pro",
+    "api_key":"<YOUR_API_KEY>"
+  }'
 ```
 
 環境變數 `CHARACTEROS_IMAGE_GEN_PROVIDER=http|openai|wan` 可改打第三方 API；HTTP 契約見 `characteros/imaging/providers/http_webhook.py`。
@@ -156,8 +197,8 @@ curl -X PUT http://localhost:8001/api/v1/admin/imaging-config \
 或用環境變數（啟動時載入；若 DB 已有設定則以 DB 為準）：
 
 - `CHARACTEROS_IMAGE_GEN_PROVIDER`
-- `CHARACTEROS_OPENAI_IMAGES_BASE_URL`
-- `CHARACTEROS_OPENAI_IMAGES_MODEL`
+- `CHARACTEROS_IMAGE_GEN_BASE_URL`（相容舊名 `CHARACTEROS_OPENAI_IMAGES_BASE_URL`）
+- `CHARACTEROS_IMAGE_GEN_MODEL`（相容舊名 `CHARACTEROS_OPENAI_IMAGES_MODEL`）
 - `CHARACTEROS_IMAGE_GEN_API_KEY`（亦相容 `OPENAI_API_KEY`）
 
 ### 6. 查詢不存在的角色（應回傳 404）
@@ -168,7 +209,7 @@ curl -i http://localhost:8001/api/v1/characters/999
 
 ## 專案結構
 
-```
+```text
 characteros/                 # 與 gui/、narratron/ 相同：目錄名 = Python 套件名
 ├── __init__.py
 ├── main.py                  # FastAPI 應用入口

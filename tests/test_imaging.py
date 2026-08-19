@@ -143,7 +143,7 @@ def test_wan_provider_parses_response(monkeypatch) -> None:
         body = kwargs["json"]
         assert body["model"] == "wan2.7-image-pro"
         assert body["input"]["messages"][0]["content"][-1]["text"]
-        assert body["parameters"]["size"] == "2K"
+        assert body["parameters"]["size"] == "1K"
         return FakeResponse()
 
     monkeypatch.setattr("httpx.post", fake_post)

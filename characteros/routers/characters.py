@@ -1,7 +1,7 @@
 """CharacterOS 角色路由：查詢與變體請求。"""
 
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy.orm import Session
 
 from characteros.models.database import get_db
@@ -12,6 +12,8 @@ from characteros.models.schema import (
     VariantQueueResponse,
     ImageGenerateRequest,
     ImageGenerateResponse,
+    CharacterEditorResponse,
+    CharacterEditorUpdateRequest,
 )
 from characteros.services.characters import CharacterService
 from characteros.services.queue import QueueManager
@@ -172,10 +174,17 @@ def list_character_variants(
 def generate_character_images(
     character_id: int,
     body: ImageGenerateRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    """依角色 Profile 的風格欄位呼叫第三方生圖 API，產出必要參考圖。"""
+    """僅允許 GUI 面板觸發生圖，並依角色風格產出必要參考圖。"""
     from characteros.services.imaging import ImagingService
+    panel_header = request.headers.get("X-CharacterOS-Panel", "").strip().lower()
+    if panel_header != "enabled":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="生圖僅允許從 GUI 面板操作（/admin/panel）",
+        )
 
     service = CharacterService(db)
     full = service.get_character_by_id(character_id)
@@ -202,6 +211,8 @@ def generate_character_images(
             extra=body.extra,
             n=body.n,
             model=body.model or "",
+            base_url=body.base_url or "",
+            api_key=body.api_key or "",
             persist_entity_id=persist_id,
         )
     except ValueError as exc:
@@ -209,3 +220,24 @@ def generate_character_images(
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return ImageGenerateResponse.model_validate(payload)
+
+
+@router.get("/{character_id}/editor", response_model=CharacterEditorResponse)
+def get_character_editor(
+    character_id: int,
+    db: Session = Depends(get_db),
+):
+    """完整角色編輯器讀取：core + active profile。"""
+    service = CharacterService(db)
+    return service.get_editor_payload(character_id)
+
+
+@router.put("/{character_id}/editor", response_model=CharacterEditorResponse)
+def save_character_editor(
+    character_id: int,
+    body: CharacterEditorUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """完整角色編輯器儲存：更新 core + active profile。"""
+    service = CharacterService(db)
+    return service.update_character_editor(character_id, body)

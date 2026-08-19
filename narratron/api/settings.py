@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     narratron_api_host: str = "0.0.0.0"
     narratron_api_port: int = 8080
+    characteros_panel_url: str = "http://localhost:8001/admin/panel"
     charpass_store_dir: str = "data/charpasses"
 
 

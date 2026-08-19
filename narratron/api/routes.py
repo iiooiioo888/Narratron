@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from narratron import SLOGAN, VERSION
@@ -49,6 +50,13 @@ def health() -> HealthResponse:
         vault_backend=settings.vault_backend,
         phase="Alpha Q1",
     )
+
+
+@router.get("/characteros/panel")
+def characteros_panel() -> RedirectResponse:
+    """總系統入口：轉址到 CharacterOS GUI 編輯面板。"""
+    settings = get_settings()
+    return RedirectResponse(url=settings.characteros_panel_url, status_code=307)
 
 
 def _not_implemented(agent: str, quarter: str) -> None:

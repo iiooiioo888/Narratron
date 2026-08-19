@@ -2,12 +2,10 @@
 
 from characteros.services.characters import CharacterService
 from characteros.services.evolution import EvolutionEngine
-from characteros.services.imaging import ImagingService
 from characteros.services.queue import QueueManager
 
 __all__ = [
     "CharacterService",
     "EvolutionEngine",
-    "ImagingService",
     "QueueManager",
 ]

@@ -10,6 +10,8 @@ from characteros.models.schema import (
     CharacterFullResponse,
     CharacterProfileResponse,
     CharacterVariantResponse,
+    CharacterEditorUpdateRequest,
+    CharacterEditorResponse,
 )
 
 
@@ -170,3 +172,75 @@ class CharacterService:
         ).first()
         
         return profile
+
+    def get_or_create_active_profile(self, core_id: int) -> CharacterProfile:
+        """取得啟用 profile；若不存在則建立 version=1 空白 profile。"""
+        profile = self.get_active_profile(core_id)
+        if profile:
+            return profile
+
+        profile = CharacterProfile(
+            core_id=core_id,
+            version=1,
+            is_active=True,
+            manifest={},
+        )
+        self.db.add(profile)
+        self.db.flush()
+        return profile
+
+    def get_editor_payload(self, character_id: int) -> CharacterEditorResponse:
+        """給 GUI 讀取完整角色編輯資料。"""
+        full = self.get_character_by_id(character_id)
+        profile = self.get_or_create_active_profile(character_id)
+        if not full.profile:
+            full = self.get_character_by_id(character_id)
+        return CharacterEditorResponse(
+            core=full.core,
+            profile=CharacterProfileResponse.model_validate(profile),
+        )
+
+    def update_character_editor(
+        self,
+        character_id: int,
+        body: CharacterEditorUpdateRequest,
+    ) -> CharacterEditorResponse:
+        """更新 core + active profile，供完整角色編輯器使用。"""
+        core = self.db.query(CharacterCore).filter(CharacterCore.id == character_id).first()
+        if not core:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with id {character_id} not found",
+            )
+
+        profile = self.get_or_create_active_profile(character_id)
+
+        # core fields
+        core.name = body.name
+        core.codename = body.codename
+        core.gender_spectrum = body.gender_spectrum
+        core.base_age = body.base_age
+        core.identity_anchor = body.identity_anchor or {}
+        core.tags = body.tags or []
+        core.meta_info = body.metadata or {}
+
+        # profile fields
+        profile.project_name = body.project_name
+        profile.project_id = body.project_id
+        profile.style_preset = body.style_preset
+        profile.outfit_config = body.outfit_config or {}
+        profile.created_by = body.created_by
+        profile.notes = body.notes
+        profile.manifest = body.manifest or {}
+        profile.is_active = True
+
+        self.db.add(core)
+        self.db.add(profile)
+        self.db.commit()
+        self.db.refresh(core)
+        self.db.refresh(profile)
+
+        return CharacterEditorResponse(
+            core=CharacterCoreResponse.model_validate(core),
+            profile=CharacterProfileResponse.model_validate(profile),
+        )

@@ -152,6 +152,39 @@ class CharacterFullResponse(BaseModel):
 
 
 # ============================================
+# Character Editor Schemas
+# ============================================
+
+class CharacterEditorUpdateRequest(BaseModel):
+    """完整角色編輯器的儲存請求。"""
+
+    # core
+    name: str = Field(..., min_length=1, max_length=255)
+    codename: Optional[str] = Field(None, max_length=100)
+    gender_spectrum: Optional[float] = Field(None, ge=0.0, le=1.0)
+    base_age: int = Field(..., ge=0, le=150)
+    tags: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    identity_anchor: Dict[str, Any] = Field(default_factory=dict)
+
+    # profile
+    project_name: Optional[str] = Field(None, max_length=255)
+    project_id: Optional[str] = Field(None, max_length=100)
+    style_preset: Optional[str] = Field(None, max_length=100)
+    outfit_config: Dict[str, Any] = Field(default_factory=dict)
+    created_by: Optional[str] = Field(None, max_length=100)
+    notes: Optional[str] = Field(None)
+    manifest: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CharacterEditorResponse(BaseModel):
+    """完整角色編輯器的讀取/儲存回應。"""
+
+    core: CharacterCoreResponse
+    profile: CharacterProfileResponse
+
+
+# ============================================
 # Admin & Stats Schemas
 # ============================================
 
@@ -196,6 +229,14 @@ class ImageGenerateRequest(BaseModel):
     purpose: str = Field("identity", description="identity / outfit / expression / thumb")
     provider: Optional[str] = Field(None, description="null | http | openai | wan")
     model: Optional[str] = Field(None, description="覆蓋本次生圖模型，例如 wan2.7-image-pro")
+    base_url: Optional[str] = Field(
+        None,
+        description="覆蓋本次生圖端點（例如 https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1）",
+    )
+    api_key: Optional[str] = Field(
+        None,
+        description="覆蓋本次生圖 API key（僅本次請求，不寫入資料庫）",
+    )
     extra: str = Field("", description="額外拼進正向提示詞的描述")
     n: int = Field(1, ge=1, le=4)
     persist: bool = Field(False, description="是否寫回本機 data/charpasses/{entity_id}/")
@@ -230,7 +271,7 @@ class ImagingConfigResponse(BaseModel):
 
 class ImagingConfigUpdateRequest(BaseModel):
     provider: Optional[str] = Field(None, description="null | http | openai | wan")
-    base_url: Optional[str] = Field(None, description="OpenAI 相容 endpoint")
+    base_url: Optional[str] = Field(None, description="生圖 API base URL（wan 可填 compatible-mode/v1）")
     model: Optional[str] = Field(None, description="預設生圖模型")
     api_key: Optional[str] = Field(None, description="生圖 API key")
     clear_api_key: bool = Field(False, description="是否清除已儲存的 API key")

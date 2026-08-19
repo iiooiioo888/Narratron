@@ -8,8 +8,6 @@ from characteros.models.schema import (
     ImageGenerateResponse,
     ImageProviderInfo,
 )
-from characteros.services.imaging import ImagingService
-from narratron.charpass.store import CharpassStore
 
 router = APIRouter(prefix="/api/v1/imaging", tags=["Imaging"])
 
@@ -21,52 +19,12 @@ def get_image_providers():
 
 
 @router.post("/generate", response_model=ImageGenerateResponse)
-def generate_character_image(body: ImageGenerateRequest):
-    """依角色護照組提示詞，呼叫第三方生圖 API。
+def generate_character_image(_: ImageGenerateRequest):
+    """此入口已停用：生圖僅允許從 GUI 面板觸發。
 
-    - 傳 ``entity_id``：讀本機 ``data/charpasses/{entity_id}/current.charpass``
-    - 傳 ``manifest``：直接使用請求內嵌護照
-    - ``provider=null``：不打網路，只回組好的提示詞（預設）
+    請改用 `/admin/panel` 內的「生成圖片」按鈕。
     """
-    store = CharpassStore()
-    manifest = body.manifest
-    if manifest is None and body.entity_id:
-        loaded = store.read_current_manifest(body.entity_id)
-        if loaded is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"本機護照不存在：{body.entity_id}",
-            )
-        manifest = loaded
-    if not isinstance(manifest, dict) or not manifest:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="請提供 manifest 或有效的 entity_id",
-        )
-    persist_id = body.entity_id if body.persist else None
-    if body.persist and not persist_id:
-        persist_id = str(
-            (manifest.get("_meta") or {}).get("entity_id")
-            or (manifest.get("_identity") or {}).get("entity_id")
-            or ""
-        ) or None
-        if not persist_id:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="persist=true 時需要 entity_id",
-            )
-    try:
-        payload = ImagingService(store).generate_for_manifest(
-            manifest,
-            purpose=body.purpose,
-            provider_name=body.provider,
-            extra=body.extra,
-            n=body.n,
-            model=body.model or "",
-            persist_entity_id=persist_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    return ImageGenerateResponse.model_validate(payload)
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="`/api/v1/imaging/generate` 已停用，請使用 GUI 面板 `/admin/panel` 進行生圖。",
+    )

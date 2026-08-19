@@ -47,6 +47,13 @@ def test_health() -> None:
     assert body["phase"] == "Alpha Q1"
 
 
+def test_characteros_panel_redirect() -> None:
+    client = TestClient(app)
+    response = client.get("/characteros/panel", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "http://localhost:8001/admin/panel"
+
+
 def test_parse_and_direct_routes() -> None:
     client = TestClient(app)
     script = "角色：\n- 莉娜：傷痕\n\nINT. 廢墟 - NIGHT\n莉娜站著。\n"
