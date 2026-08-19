@@ -37,6 +37,51 @@ PREFERRED_RESULT_ANGLES = (
 )
 
 
+def _review_status_from_metadata(result_metadata: dict[str, Any]) -> str | None:
+    image_generation = result_metadata.get("image_generation")
+    if isinstance(image_generation, dict):
+        review = image_generation.get("review")
+        if isinstance(review, dict):
+            status = str(review.get("status") or "").strip().lower()
+            if status:
+                return status
+        status = str(image_generation.get("review_status") or "").strip().lower()
+        if status:
+            return status
+    status = str(result_metadata.get("review_status") or "").strip().lower()
+    return status or None
+
+
+def _effective_task_status(status: Any, result_metadata: dict[str, Any]) -> str:
+    review_status = _review_status_from_metadata(result_metadata)
+    if review_status in {"pending", "accepted", "rejected"}:
+        return review_status
+    normalized_status = str(status or "").strip().lower()
+    return normalized_status or "pending"
+
+
+def _ordered_angles(values: list[Any], *, has_face_detail: bool = False) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    if has_face_detail:
+        ordered.append("face_detail")
+        seen.add("face_detail")
+    for preferred in PREFERRED_RESULT_ANGLES:
+        if preferred == "face_detail" and not has_face_detail:
+            continue
+        if any(str(value or "").strip() == preferred for value in values):
+            ordered.append(preferred)
+            seen.add(preferred)
+    for value in values:
+        normalized = str(value or "").strip()
+        if normalized and normalized not in seen:
+            ordered.append(normalized)
+            seen.add(normalized)
+    if has_face_detail and "face_detail" not in seen:
+        ordered.insert(0, "face_detail")
+    return ordered
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -99,12 +144,44 @@ def _apply_review_metadata(
 ) -> None:
     review = image_generation.get("review") if isinstance(image_generation.get("review"), dict) else {}
     review_status = str(review.get("status") or "").strip() or None
+    thumbnail_asset_path = str(image_generation.get("thumbnail_asset_path") or "").strip() or None
+    face_detail_asset_path = str(image_generation.get("face_detail_asset_path") or "").strip() or None
+    representative_asset_path = face_detail_asset_path or thumbnail_asset_path
+    representative_angle = None
+    if face_detail_asset_path:
+        representative_angle = "face_detail"
+    elif thumbnail_asset_path:
+        representative_angle = next(
+            (
+                str(image.get("angle") or "").strip()
+                for image in (image_generation.get("images") or [])
+                if isinstance(image, dict)
+                and str(image.get("asset_path") or "").strip() == thumbnail_asset_path
+                and str(image.get("angle") or "").strip()
+            ),
+            "front",
+        )
+    angles = _ordered_angles(
+        list(image_generation.get("angles") or []),
+        has_face_detail=bool(face_detail_asset_path),
+    )
     image_generation["review_status"] = review_status
+    image_generation["has_face_detail"] = bool(image_generation.get("face_detail_count") or face_detail_asset_path)
+    image_generation["representative_asset_path"] = representative_asset_path
+    image_generation["representative_angle"] = representative_angle
+    image_generation["image_count"] = len(image_generation.get("image_urls") or [])
     result_metadata["image_generation"] = image_generation
-    result_metadata["thumbnail_asset_path"] = image_generation.get("thumbnail_asset_path")
-    result_metadata["face_detail_asset_path"] = image_generation.get("face_detail_asset_path")
+    result_metadata["thumbnail_asset_path"] = thumbnail_asset_path
+    result_metadata["face_detail_asset_path"] = face_detail_asset_path
     result_metadata["face_detail_count"] = image_generation.get("face_detail_count") or 0
+    result_metadata["has_face_detail"] = bool(image_generation.get("face_detail_count") or face_detail_asset_path)
+    result_metadata["representative_asset_path"] = representative_asset_path
+    result_metadata["representative_angle"] = representative_angle
     result_metadata["review_status"] = review_status
+    result_metadata["effective_status"] = _effective_task_status("ready", result_metadata)
+    result_metadata["purpose"] = image_generation.get("purpose")
+    result_metadata["angles"] = angles
+    result_metadata["image_count"] = len(image_generation.get("image_urls") or [])
 
 
 class LocalQueueManager:
@@ -275,33 +352,74 @@ class LocalQueueManager:
             }
             if image_request:
                 persist_enabled = bool(image_request.get("persist", True))
+                provider_name = str(image_request.get("provider") or imaging_settings.get_provider() or "null")
+                explicit_model = str(image_request.get("model") or "").strip()
+                explicit_base_url = str(image_request.get("base_url") or "").strip()
+                explicit_api_key = str(image_request.get("api_key") or "").strip()
                 payload = ImagingService(store=store).generate_for_manifest(
                     evolved_manifest,
                     purpose=str(image_request.get("purpose") or "identity"),
-                    provider_name=str(image_request.get("provider") or imaging_settings.get_provider() or "null"),
+                    provider_name=provider_name,
                     extra=str(image_request.get("extra") or ""),
                     n=int(image_request.get("n") or 1),
-                    model=str(image_request.get("model") or imaging_settings.get_model() or ""),
-                    base_url=str(image_request.get("base_url") or imaging_settings.get_base_url() or ""),
-                    api_key=str(image_request.get("api_key") or imaging_settings.get_api_key() or ""),
+                    model=explicit_model or ("" if provider_name == "null" else str(imaging_settings.get_model() or "")),
+                    base_url=explicit_base_url or ("" if provider_name == "null" else str(imaging_settings.get_base_url() or "")),
+                    api_key=explicit_api_key or ("" if provider_name == "null" else str(imaging_settings.get_api_key() or "")),
                     persist_entity_id=entity_id if persist_enabled else None,
                     multi_angle=bool(image_request.get("multi_angle", True)),
                     auto_accept=False,
                 )
                 task["result_url"], image_urls = _prepare_result_urls(int(task["core_id"]), payload)
+                review = payload.get("review") if isinstance(payload.get("review"), dict) else {}
+                review_status = str(review.get("status") or "").strip() or None
+                thumbnail_asset_path = str(payload.get("thumbnail_asset_path") or "").strip() or None
+                face_detail_asset_path = str(payload.get("face_detail_asset_path") or "").strip() or None
+                normalized_angles = _ordered_angles(
+                    list(payload.get("angles") or []),
+                    has_face_detail=bool(face_detail_asset_path),
+                )
+                stored_provider = str(payload.get("provider") or provider_name or "").strip() or None
+                stored_model = str(payload.get("model") or "").strip()
+                if provider_name == "null" and not explicit_model:
+                    stored_model = "null"
+                elif not stored_model:
+                    stored_model = explicit_model or None
+                representative_asset_path = face_detail_asset_path or thumbnail_asset_path
+                representative_angle = None
+                if face_detail_asset_path:
+                    representative_angle = "face_detail"
+                elif thumbnail_asset_path:
+                    representative_angle = next(
+                        (
+                            str(image.get("angle") or "").strip()
+                            for image in (payload.get("images") or [])
+                            if isinstance(image, dict)
+                            and str(image.get("asset_path") or "").strip() == thumbnail_asset_path
+                            and str(image.get("angle") or "").strip()
+                        ),
+                        "front",
+                    )
                 result_metadata["persist_entity_id"] = entity_id if persist_enabled else None
-                result_metadata["thumbnail_asset_path"] = payload.get("thumbnail_asset_path")
-                result_metadata["face_detail_asset_path"] = payload.get("face_detail_asset_path")
+                result_metadata["thumbnail_asset_path"] = thumbnail_asset_path
+                result_metadata["face_detail_asset_path"] = face_detail_asset_path
                 result_metadata["face_detail_count"] = payload.get("face_detail_count") or 0
+                result_metadata["has_face_detail"] = bool(payload.get("face_detail_count") or face_detail_asset_path)
+                result_metadata["representative_asset_path"] = representative_asset_path
+                result_metadata["representative_angle"] = representative_angle
+                result_metadata["provider"] = stored_provider
+                result_metadata["model"] = stored_model
+                result_metadata["purpose"] = payload.get("purpose")
+                result_metadata["angles"] = normalized_angles
+                result_metadata["image_count"] = len(image_urls)
                 result_metadata["image_request"] = image_request
                 result_metadata["image_generation"] = {
-                    "provider": payload.get("provider"),
-                    "model": payload.get("model"),
+                    "provider": stored_provider,
+                    "model": stored_model,
                     "purpose": payload.get("purpose"),
                     "prompt": payload.get("prompt"),
                     "negative_prompt": payload.get("negative_prompt"),
                     "multi_angle": payload.get("multi_angle"),
-                    "angles": payload.get("angles") or [],
+                    "angles": normalized_angles,
                     "images": payload.get("images") or [],
                     "image_urls": image_urls,
                     "images_by_angle": payload.get("images_by_angle") or {},
@@ -309,19 +427,20 @@ class LocalQueueManager:
                     "face_detail_asset_path": payload.get("face_detail_asset_path"),
                     "face_detail_count": payload.get("face_detail_count") or 0,
                     "thumbnail_image": payload.get("thumbnail_image"),
-                    "thumbnail_asset_path": payload.get("thumbnail_asset_path"),
-                    "review": payload.get("review") or {},
-                    "review_status": (
-                        (payload.get("review") or {}).get("status")
-                        if isinstance(payload.get("review"), dict)
-                        else None
-                    ),
+                    "thumbnail_asset_path": thumbnail_asset_path,
+                    "review": review,
+                    "review_status": review_status,
+                    "has_face_detail": bool(payload.get("face_detail_count") or face_detail_asset_path),
+                    "representative_asset_path": representative_asset_path,
+                    "representative_angle": representative_angle,
+                    "image_count": len(image_urls),
                 }
-                result_metadata["review_status"] = (
-                    (payload.get("review") or {}).get("status")
-                    if isinstance(payload.get("review"), dict)
-                    else None
-                )
+                result_metadata["review_status"] = review_status
+                result_metadata["effective_status"] = _effective_task_status(task["status"], result_metadata)
+                task["review_status"] = result_metadata["review_status"]
+                task["effective_status"] = result_metadata["effective_status"]
+                task["provider"] = stored_provider
+                task["model"] = stored_model
                 record.update(
                     {
                         "review_status": result_metadata["review_status"],
@@ -427,15 +546,22 @@ class LocalQueueManager:
             sync_review_artifacts(entity_id, image_generation, store=CharpassStore(self.root))
 
         _apply_review_metadata(task["result_metadata"], image_generation)
+        task["result_metadata"]["effective_status"] = _effective_task_status(
+            task.get("status"),
+            task["result_metadata"],
+        )
+        task["review_status"] = task["result_metadata"].get("review_status")
+        task["effective_status"] = task["result_metadata"].get("effective_status")
         variant_record_path = task["result_metadata"].get("record_path")
         if entity_id and isinstance(variant_record_path, str) and variant_record_path.strip():
             variant_record = CharpassStore(self.root).read_json(entity_id, variant_record_path)
             if not isinstance(variant_record, dict):
                 variant_record = {}
             review_status = task["result_metadata"].get("review_status")
+            record_status = "accepted" if review_status == "accepted" else "rejected" if review_status == "rejected" else "ready"
             variant_record.update(
                 {
-                    "status": "ready",
+                    "status": record_status,
                     "review_status": review_status,
                     "accepted_at": review.get("accepted_at"),
                     "rejected_at": review.get("rejected_at"),
@@ -493,6 +619,10 @@ class LocalQueueManager:
             tasks = [t for t in tasks if t.get("status") == status]
         if core_id is not None:
             tasks = [t for t in tasks if int(t.get("core_id", 0)) == core_id]
+        for task in tasks:
+            result_metadata = task.get("result_metadata") if isinstance(task.get("result_metadata"), dict) else {}
+            task["review_status"] = _review_status_from_metadata(result_metadata)
+            task["effective_status"] = _effective_task_status(task.get("status"), result_metadata)
         tasks.sort(
             key=lambda t: (
                 -int(t.get("priority") or 0),

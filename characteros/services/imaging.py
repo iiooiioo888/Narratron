@@ -260,6 +260,25 @@ def _review_file_paths(payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _normalized_review_status(payload: dict[str, Any]) -> str | None:
+    review = payload.get("review") if isinstance(payload.get("review"), dict) else {}
+    status = str(review.get("status") or payload.get("review_status") or "").strip().lower()
+    if status in {"pending", "accepted", "rejected"}:
+        return status
+    return None
+
+
+def _artifact_status_for(payload: dict[str, Any]) -> str:
+    review_status = _normalized_review_status(payload)
+    if review_status == "accepted":
+        return "accepted"
+    if review_status == "rejected":
+        return "rejected"
+    if review_status == "pending":
+        return "pending"
+    return "ready"
+
+
 def sync_review_artifacts(
     entity_id: str,
     payload: dict[str, Any],
@@ -275,6 +294,8 @@ def sync_review_artifacts(
     images_index_path = paths["images_index_path"]
     record_path = paths["record_path"]
     review = safe_payload.get("review") if isinstance(safe_payload.get("review"), dict) else {}
+    review_status = _normalized_review_status(safe_payload)
+    artifact_status = _artifact_status_for(safe_payload)
     if full_response_path:
         active_store.write_json(entity_id, full_response_path, safe_payload)
     if images_index_path:
@@ -293,6 +314,8 @@ def sync_review_artifacts(
                 "images": safe_payload.get("images") or [],
                 "images_by_angle": safe_payload.get("images_by_angle") or {},
                 "review": safe_payload.get("review") or {},
+                "status": artifact_status,
+                "review_status": review_status,
             },
         )
     if record_path:
@@ -305,8 +328,8 @@ def sync_review_artifacts(
                 "purpose": safe_payload.get("purpose"),
                 "provider": safe_payload.get("provider"),
                 "model": safe_payload.get("model"),
-                "status": "ready",
-                "review_status": str(review.get("status") or "").strip() or None,
+                "status": artifact_status,
+                "review_status": review_status,
                 "accepted_at": review.get("accepted_at"),
                 "rejected_at": review.get("rejected_at"),
                 "thumbnail_asset_path": safe_payload.get("thumbnail_asset_path"),
@@ -717,6 +740,7 @@ class ImagingService:
                 "job_id": job_id,
                 "entity_id": persist_entity_id,
                 "purpose": request.purpose,
+                "staged_at": None if auto_accept else _utcnow(),
                 "manifest_candidate": updated,
                 "request_path": f"{purpose_dir}/request.json",
                 "response_path": f"{purpose_dir}/response.json",

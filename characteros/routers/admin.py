@@ -45,6 +45,15 @@ def _task_item_from_dict(raw: dict, storage_mode: str) -> QueueTaskItem:
         created = created.replace(tzinfo=timezone.utc)
     if updated.tzinfo is None:
         updated = updated.replace(tzinfo=timezone.utc)
+    result_metadata = raw.get("result_metadata") if isinstance(raw.get("result_metadata"), dict) else {}
+    image_generation = (
+        result_metadata.get("image_generation")
+        if isinstance(result_metadata.get("image_generation"), dict)
+        else {}
+    )
+    angles = result_metadata.get("angles") if isinstance(result_metadata.get("angles"), list) else image_generation.get("angles")
+    if not isinstance(angles, list):
+        angles = []
 
     return QueueTaskItem(
         id=int(raw["id"]),
@@ -58,7 +67,64 @@ def _task_item_from_dict(raw: dict, storage_mode: str) -> QueueTaskItem:
         retry_count=int(raw.get("retry_count") or 0),
         max_retries=int(raw.get("max_retries") or 3),
         result_url=raw.get("result_url"),
-        result_metadata=raw.get("result_metadata") or {},
+        result_metadata=result_metadata,
+        review_status=(
+            str(raw.get("review_status") or "").strip()
+            or str(result_metadata.get("review_status") or "").strip()
+            or str(image_generation.get("review_status") or "").strip()
+            or None
+        ),
+        effective_status=(
+            str(raw.get("review_status") or "").strip()
+            or str(result_metadata.get("review_status") or "").strip()
+            or str(image_generation.get("review_status") or "").strip()
+            or str(raw.get("effective_status") or "").strip()
+            or str(result_metadata.get("effective_status") or "").strip()
+            or str(raw.get("status") or "pending").strip()
+        ),
+        purpose=(
+            str(raw.get("purpose") or "").strip()
+            or str(result_metadata.get("purpose") or "").strip()
+            or str(image_generation.get("purpose") or "").strip()
+            or None
+        ),
+        angles=[str(item).strip() for item in angles if str(item).strip()],
+        image_count=int(raw.get("image_count") or result_metadata.get("image_count") or 0),
+        thumbnail_asset_path=(
+            str(raw.get("thumbnail_asset_path") or "").strip()
+            or str(result_metadata.get("thumbnail_asset_path") or "").strip()
+            or str(image_generation.get("thumbnail_asset_path") or "").strip()
+            or None
+        ),
+        face_detail_asset_path=(
+            str(raw.get("face_detail_asset_path") or "").strip()
+            or str(result_metadata.get("face_detail_asset_path") or "").strip()
+            or str(image_generation.get("face_detail_asset_path") or "").strip()
+            or None
+        ),
+        representative_asset_path=(
+            str(raw.get("representative_asset_path") or "").strip()
+            or str(result_metadata.get("representative_asset_path") or "").strip()
+            or str(image_generation.get("representative_asset_path") or "").strip()
+            or None
+        ),
+        representative_angle=(
+            str(raw.get("representative_angle") or "").strip()
+            or str(result_metadata.get("representative_angle") or "").strip()
+            or str(image_generation.get("representative_angle") or "").strip()
+            or None
+        ),
+        has_face_detail=bool(
+            raw.get("has_face_detail")
+            or result_metadata.get("has_face_detail")
+            or image_generation.get("has_face_detail")
+        ),
+        face_detail_count=int(
+            raw.get("face_detail_count")
+            or result_metadata.get("face_detail_count")
+            or image_generation.get("face_detail_count")
+            or 0
+        ),
         created_at=created,
         updated_at=updated,
     )

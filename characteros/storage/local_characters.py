@@ -359,9 +359,50 @@ def _branch_summary(
 def _branch_quality_score(branch: dict[str, Any]) -> tuple[int, int, int]:
     images_by_angle = branch.get("images_by_angle") if isinstance(branch.get("images_by_angle"), dict) else {}
     return (
-        1 if str(branch.get("review_status") or "").strip() else 0,
+        _review_rank(branch.get("effective_status") or branch.get("review_status") or branch.get("status")),
         len(branch.get("asset_paths") or []),
         len(images_by_angle),
+    )
+
+
+def _review_rank(value: Any) -> int:
+    normalized = str(value or "").strip().lower()
+    if normalized == "pending":
+        return 0
+    if normalized == "ready":
+        return 1
+    if normalized == "accepted":
+        return 2
+    if normalized == "rejected":
+        return 3
+    if normalized == "failed":
+        return 4
+    return 5
+
+
+def _branch_visual_rank(branch: dict[str, Any]) -> int:
+    purpose = str(branch.get("purpose") or branch.get("purpose_summary") or "").strip()
+    if purpose == "face_detail":
+        return 0
+    angles = branch.get("angles") if isinstance(branch.get("angles"), list) else []
+    if "face_detail" in [str(item).strip() for item in angles]:
+        return 1
+    if branch.get("representative_asset_path") or branch.get("thumbnail_asset_path"):
+        return 2
+    return 3
+
+
+def _updated_sort_value(value: Any) -> float:
+    return _parse_dt(value).timestamp() if value else 0.0
+
+
+def _branch_sort_tuple(branch: dict[str, Any]) -> tuple[int, int, float, str, str]:
+    return (
+        _branch_visual_rank(branch),
+        _review_rank(branch.get("effective_status") or branch.get("review_status") or branch.get("status")),
+        -_updated_sort_value(branch.get("updated_at")),
+        str(branch.get("kind") or ""),
+        str(branch.get("branch_id") or ""),
     )
 
 
@@ -393,6 +434,9 @@ def _image_job_branches(folder: Path, character_id: int) -> list[dict[str, Any]]
             if not job_dir.is_dir():
                 continue
             full_response = _read_json_file(job_dir / "full-response.json")
+            request_payload = _read_json_file(job_dir / "request.json")
+            response_payload = _read_json_file(job_dir / "response.json")
+            record_payload = _read_json_file(job_dir / "record.json")
             review = full_response.get("review") if isinstance(full_response.get("review"), dict) else {}
             images_index = _read_json_file(job_dir / "images-index.json")
             images = images_index.get("images") if isinstance(images_index.get("images"), list) else []
@@ -408,7 +452,7 @@ def _image_job_branches(folder: Path, character_id: int) -> list[dict[str, Any]]
                 updated_at=review.get("accepted_at")
                 or review.get("rejected_at")
                 or full_response.get("created_at")
-                or _read_json_file(job_dir / "record.json").get("created_at"),
+                or record_payload.get("created_at"),
             )
             result_path = (
                 summary.get("hero_asset_path")
@@ -422,6 +466,13 @@ def _image_job_branches(folder: Path, character_id: int) -> list[dict[str, Any]]
                     "label": f"image_gen/{purpose_dir.name}/{job_dir.name[:8]}",
                     "purpose": purpose_dir.name,
                     "job_id": job_dir.name,
+                    "provider": full_response.get("provider") or images_index.get("provider") or record_payload.get("provider"),
+                    "model": full_response.get("model") or images_index.get("model") or record_payload.get("model"),
+                    "review": review,
+                    "request": request_payload,
+                    "response": response_payload,
+                    "prompt": full_response.get("prompt") or request_payload.get("prompt"),
+                    "negative_prompt": full_response.get("negative_prompt") or request_payload.get("negative_prompt"),
                     **summary,
                     "result_url": (
                         f"/api/v1/characters/{character_id}/assets/{result_path}"
@@ -487,6 +538,15 @@ def _latest_image_branches(manifest: dict[str, Any], character_id: int) -> list[
                 "label": f"image_gen/{purpose}",
                 "purpose": purpose,
                 "job_id": item.get("job_id"),
+                "provider": item.get("provider"),
+                "model": item.get("model"),
+                "review": {"status": "accepted", "accepted_at": item.get("updated_at")},
+                "response": {
+                    "provider": item.get("provider"),
+                    "model": item.get("model"),
+                    "images_by_angle": item.get("images_by_angle") or {},
+                    "asset_paths": item.get("asset_paths") or [],
+                },
                 **summary,
                 "result_url": (
                     f"/api/v1/characters/{character_id}/assets/{result_path}"
@@ -856,6 +916,8 @@ class LocalCharacterService:
                         "label": f"variant/{path.name}",
                         "manifest_path": f"causal/variants/{path.name}/evolved-manifest.json",
                         "record_path": f"causal/variants/{path.name}/record.json",
+                        "evolution_params": record.get("evolution_params") or {},
+                        "request": {"evolution_params": record.get("evolution_params") or {}},
                         **summary,
                     }
                 )
@@ -895,6 +957,20 @@ class LocalCharacterService:
                     "branch_id": str(task.get("id") or ""),
                     "label": f"variant/{task.get('id')}",
                     "purpose": image_generation.get("purpose"),
+                    "provider": image_generation.get("provider"),
+                    "model": image_generation.get("model"),
+                    "review": image_generation.get("review") or {},
+                    "prompt": image_generation.get("prompt"),
+                    "negative_prompt": image_generation.get("negative_prompt"),
+                    "evolution_params": result_metadata.get("evolution_params") or task.get("evolution_params") or {},
+                    "request": result_metadata.get("image_request") or {},
+                    "response": {
+                        "provider": image_generation.get("provider"),
+                        "model": image_generation.get("model"),
+                        "images": image_generation.get("images") or [],
+                        "images_by_angle": image_generation.get("images_by_angle") or {},
+                        "review": image_generation.get("review") or {},
+                    },
                     **summary,
                     "result_url": (
                         f"/api/v1/characters/{character_id}/assets/{result_path}"
@@ -911,13 +987,7 @@ class LocalCharacterService:
                 continue
             branches.append(branch)
         branches = _dedupe_branches(branches)
-        branches.sort(
-            key=lambda item: (
-                str(item.get("updated_at") or ""),
-                str(item.get("sort_key") or ""),
-            ),
-            reverse=True,
-        )
+        branches.sort(key=_branch_sort_tuple)
         for index, branch in enumerate(branches):
             branch["sort_order"] = index
 

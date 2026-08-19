@@ -113,18 +113,47 @@ function taskImagePayload(task: QueueTask): Record<string, unknown> {
   return resultMetadata
 }
 
-function queueImageCollections(payload: Record<string, unknown>): unknown[] {
-  const directImages = asArray(payload.images)
-  if (directImages.length) {
-    return directImages
+function mergedQueueImages(payload: Record<string, unknown>): unknown[] {
+  const bucket = new Map<string, unknown>()
+
+  const register = (source: unknown, forcedAngle?: string) => {
+    const item = asRecord(source)
+    const assetPath = imageAssetPath(item)
+    const rawUrl = imageRemoteUrl(item)
+    if (!assetPath && !rawUrl) {
+      return
+    }
+    const normalizedAngle = String(forcedAngle ?? item.angle ?? '').trim()
+    const key = `${assetPath || rawUrl}::${normalizedAngle}`
+    if (bucket.has(key)) {
+      return
+    }
+    bucket.set(key, normalizedAngle ? { ...item, angle: normalizedAngle } : item)
   }
-  const imagesByAngle = asRecord(payload.images_by_angle)
-  return Object.values(imagesByAngle).flatMap((value) => asArray(value))
+
+  for (const image of asArray(payload.face_detail_images)) {
+    register(image, 'face_detail')
+  }
+  for (const image of asArray(payload.images)) {
+    register(image)
+  }
+  for (const [angle, value] of Object.entries(asRecord(payload.images_by_angle))) {
+    for (const image of asArray(value)) {
+      register(image, angle)
+    }
+  }
+
+  return [...bucket.values()]
+}
+
+function queueImageCollections(payload: Record<string, unknown>): unknown[] {
+  return mergedQueueImages(payload)
 }
 
 function taskPreviewMetadata(task: QueueTask): Record<string, string> {
   const imageGen = taskImagePayload(task)
-  const detailImages = taskDetailImages('', task).map((item) => item.path).filter(Boolean)
+  const detailImages = taskDetailImages('', task)
+  const detailPaths = detailImages.map((item) => item.path).filter(Boolean)
   const faceDetailByAngle = asArray(asRecord(imageGen.images_by_angle).face_detail)
   const faceDetailAssetPath = firstNonEmptyString(
     imageGen.face_detail_asset_path,
@@ -132,14 +161,16 @@ function taskPreviewMetadata(task: QueueTask): Record<string, string> {
     asRecord(faceDetailByAngle[0]).asset_path,
     asRecord(asArray(imageGen.face_detail_images)[0]).final_asset_path,
     asRecord(asArray(imageGen.face_detail_images)[0]).asset_path,
-    detailImages.find((path) => path.includes('face_detail')),
+    detailImages.find((item) => item.angle === 'face_detail')?.path,
+    detailPaths.find((path) => path.includes('face_detail')),
   )
   const thumbnailAssetPath = firstNonEmptyString(
+    faceDetailAssetPath,
     imageGen.thumbnail_asset_path,
     asRecord(imageGen.thumbnail_image).final_asset_path,
     asRecord(imageGen.thumbnail_image).asset_path,
-    faceDetailAssetPath,
-    detailImages[0],
+    detailImages.find((item) => item.angle !== 'face_detail')?.path,
+    detailPaths[0],
   )
   const metadata: Record<string, string> = {}
   if (thumbnailAssetPath) {
@@ -152,9 +183,20 @@ function taskPreviewMetadata(task: QueueTask): Record<string, string> {
 }
 
 function mergeTaskPreviewSummaries(tasks: QueueTask[]): Record<string, CharacterSummary> {
-  const ordered = [...tasks].sort((left, right) =>
-    String(right.updated_at ?? right.created_at ?? '').localeCompare(String(left.updated_at ?? left.created_at ?? '')),
-  )
+  const previewRank = (task: QueueTask) => {
+    const reviewStatus = taskReviewStatus(task)
+    if (reviewStatus === 'accepted') return 0
+    if (reviewStatus === 'pending') return 1
+    if (effectiveTaskStatus(task) === 'ready') return 2
+    return 3
+  }
+  const ordered = [...tasks].sort((left, right) => {
+    const rankDelta = previewRank(left) - previewRank(right)
+    if (rankDelta !== 0) {
+      return rankDelta
+    }
+    return String(right.updated_at ?? right.created_at ?? '').localeCompare(String(left.updated_at ?? left.created_at ?? ''))
+  })
   const next: Record<string, CharacterSummary> = {}
   for (const task of ordered) {
     if (taskReviewStatus(task) === 'rejected') {
@@ -661,9 +703,6 @@ function detailImageGroups(images: TaskImageDetail[]): { faceDetail: TaskImageDe
 
 function taskDetailImages(apiBase: string, task: QueueTask): TaskImageDetail[] {
   const imageGen = taskImageGeneration(task)
-  const directImages = asArray(imageGen.images)
-  const faceDetailImages = asArray(imageGen.face_detail_images)
-  const imagesByAngle = asRecord(imageGen.images_by_angle)
   const bucket = new Map<string, TaskImageDetail>()
 
   const registerImage = (source: unknown, forcedAngle?: string) => {
@@ -688,16 +727,8 @@ function taskDetailImages(apiBase: string, task: QueueTask): TaskImageDetail[] {
     })
   }
 
-  for (const image of faceDetailImages) {
-    registerImage(image, 'face_detail')
-  }
-  for (const image of directImages) {
+  for (const image of mergedQueueImages(imageGen)) {
     registerImage(image)
-  }
-  for (const [angle, value] of Object.entries(imagesByAngle)) {
-    for (const image of asArray(value)) {
-      registerImage(image, angle)
-    }
   }
 
   return [...bucket.values()].sort((left, right) => {
@@ -2332,15 +2363,15 @@ export function CharpassPanel(props: CharpassPanelProps) {
                   刷新
                 </button>
                 <button className="secondary" onClick={() => void processNextTask()} disabled={queueBusy}>
-                  生成下一筆候選圖
+                  生成下一筆候選圖（未入庫）
                 </button>
                 <button className="primary" onClick={() => void processAllTasks()} disabled={queueBusy}>
-                  批次生成候選圖
+                  批次生成候選圖（未入庫）
                 </button>
               </div>
             </div>
             <p className="task-inline-summary subtle queue-toolbar-note">
-              `生成` 只會產出候選圖片與待審核分支；只有 `接受入庫` 才會正式寫回角色護照。
+              `生成` 只會產出候選圖片、暫存資產與待審核分支；只有 `接受入庫` 才會正式寫回角色護照與角色清單縮圖。
             </p>
             {filteredQueueTasks.length ? (
               <div className="queue-task-list">
@@ -2442,7 +2473,7 @@ export function CharpassPanel(props: CharpassPanelProps) {
                                 onMouseDown={(event) => event.stopPropagation()}
                                 disabled={queueBusy}
                               >
-                                生成候選圖
+                                生成候選圖（未入庫）
                               </button>
                             ) : null}
                             {task.result_url ? (
@@ -2579,7 +2610,7 @@ export function CharpassPanel(props: CharpassPanelProps) {
                         ) : null}
                         <section className="task-detail-section">
                           <div className="section-header compact">
-                            <h4>參數</h4>
+                            <h4>演化參數</h4>
                           </div>
                           <pre className="layer-preview queue-preview-block">{safeJson(task.evolution_params ?? {})}</pre>
                         </section>
@@ -2685,8 +2716,23 @@ export function CharpassPanel(props: CharpassPanelProps) {
                                 <strong>{detailImages.length || queueImageCollections(imageGen).length || 0}</strong>
                               </div>
                               <div className="task-meta-row">
+                                <span>用途</span>
+                                <strong>{purposeLabel(String(imageGen.purpose ?? '').trim() || 'identity')}</strong>
+                              </div>
+                              <div className="task-meta-row">
                                 <span>face_detail</span>
                                 <strong>{detailImages.some((item) => item.angle === 'face_detail') ? '有' : '無'}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>代表縮圖</span>
+                                <strong>
+                                  {firstNonEmptyString(
+                                    asRecord(task.result_metadata).face_detail_asset_path,
+                                    asRecord(task.result_metadata).thumbnail_asset_path,
+                                    imageGen.face_detail_asset_path,
+                                    imageGen.thumbnail_asset_path,
+                                  ) || '-'}
+                                </strong>
                               </div>
                               <div className="task-meta-row">
                                 <span>寫回實體</span>

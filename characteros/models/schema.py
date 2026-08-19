@@ -265,11 +265,22 @@ class QueueTaskItem(BaseModel):
     evolution_params: Dict[str, Any] = Field(default_factory=dict)
     status: str
     priority: int = 0
+    review_status: Optional[str] = None
+    effective_status: Optional[str] = None
     error_message: Optional[str] = None
     retry_count: int = 0
     max_retries: int = 3
     result_url: Optional[str] = None
     result_metadata: Dict[str, Any] = Field(default_factory=dict)
+    purpose: Optional[str] = None
+    angles: List[str] = Field(default_factory=list)
+    image_count: int = 0
+    thumbnail_asset_path: Optional[str] = None
+    face_detail_asset_path: Optional[str] = None
+    representative_asset_path: Optional[str] = None
+    representative_angle: Optional[str] = None
+    has_face_detail: bool = False
+    face_detail_count: int = 0
     created_at: datetime
     updated_at: datetime
 
