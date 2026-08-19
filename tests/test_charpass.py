@@ -39,6 +39,7 @@ def test_zip_roundtrip_and_unknown_fields() -> None:
     assert opened.manifest["_identity"]["name"] == "莉娜"
     assert opened.manifest["_identity"]["custom_mark"] == "keep-me"
     assert opened.manifest["_extensions"]["comfyui"]["path"] == ""
+    assert opened.manifest["_extensions"]["image_gen"]["provider"] == ""
     assert packed.checksum.startswith("sha256:")
     assert packed.filename.endswith(".charpass")
 
@@ -174,9 +175,24 @@ def test_parser_keeps_charpass_and_projects_tokens() -> None:
 
 def test_store_keeps_five_versions(tmp_path: Path) -> None:
     store = CharpassStore(tmp_path)
+    packer = CharpassPacker()
     for index in range(7):
-        store.write("character-lina", f"blob-{index}".encode("utf-8"))
+        packed = packer.pack(_base_manifest(f"莉娜-{index}"))
+        store.write("character-lina", packed.data, packed.filename)
     assert len(store.list_versions("character-lina")) == 5
+
+
+def test_store_writes_readable_json_charpass(tmp_path: Path) -> None:
+    store = CharpassStore(tmp_path)
+    packed = CharpassPacker().pack(_base_manifest("卡爾"))
+    store.write("character-卡爾", packed.data, packed.filename)
+    manifest_path = tmp_path / "character-卡爾" / "current.charpass"
+    assert manifest_path.is_file()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["_identity"]["name"] == "卡爾"
+    assert manifest["_local"]["format"] == "json"
+    assert store.read_current("character-卡爾") is not None
+    assert not (tmp_path / "character-卡爾" / "current.manifest.json").is_file()
 
 
 def test_checksum_excludes_self() -> None:

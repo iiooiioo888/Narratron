@@ -1,0 +1,327 @@
+{
+  "_local": {
+    "hint": "本機 L0 可讀 JSON 角色護照，可直接在 IDE 檢視／編輯。匯出或寫入 history/ 時會打包成 ZIP 二進位 .charpass。",
+    "format": "json",
+    "spec": "docs/charpass.md"
+  },
+  "schema": "https://narratron.dev/schemas/charpass/v1.json",
+  "_mode": "full",
+  "_asset_base_url": null,
+  "_meta": {
+    "format": "charpass",
+    "format_version": "1.0.0",
+    "charpass_id": "9ae91ef4-019c-4c06-b25c-4fc319533c4f",
+    "character_name": "卡爾",
+    "character_alias": [],
+    "created_at": "2026-08-19T05:15:38.177830Z",
+    "updated_at": "2026-08-19T05:15:38.177830Z",
+    "created_by": "",
+    "project_id": null,
+    "tags": [],
+    "description": "",
+    "thumbnail": "thumb/thumb_256.png",
+    "license": "project_internal",
+    "checksum": "sha256:a6d8f7b21586a9b95d9b1347bc0cb3d841dbdb4dbcfc9cf6d4aaba2819d8801d",
+    "parent_charpass_id": null,
+    "generation_count": 0,
+    "encryption": null,
+    "encryption_level": "L0",
+    "mode": "full",
+    "size_bytes": 0,
+    "parser_version": "1.0.0",
+    "entity_id": "",
+    "archived": false
+  },
+  "_identity": {
+    "ref_images": [],
+    "face_embedding": {
+      "path": "",
+      "model": "",
+      "dimension": 512,
+      "dtype": "float32"
+    },
+    "ip_adapter": {
+      "enabled": true,
+      "model": "ip-adapter-faceid-plusv2",
+      "weight": 0.85,
+      "noise_aug": 0.02
+    },
+    "blend": {
+      "mode": "single",
+      "sources": [],
+      "ethnicity_bias": 0.0,
+      "gender_spectrum": 0.5,
+      "age_offset": 0,
+      "age_visual": null
+    },
+    "lock_rules": {
+      "face_consistency_threshold": 0.88,
+      "allow_expression_change": true,
+      "allow_aging_progression": true,
+      "forbidden_regions": []
+    },
+    "name": "卡爾",
+    "aliases": [],
+    "species": "human",
+    "gender_spectrum": 0.5,
+    "age_appearance": null,
+    "face_id": null,
+    "face_threshold": 0.7,
+    "note": null,
+    "project_id": null,
+    "entity_id": ""
+  },
+  "_body": {
+    "template": "",
+    "skeleton": {
+      "path": "",
+      "format": "openpose_18",
+      "head_ratio": null,
+      "height_cm": null,
+      "weight_kg": null
+    },
+    "proportions": {},
+    "limb_thickness": {},
+    "posture_defaults": {
+      "spine_curve": "",
+      "shoulder_state": "",
+      "head_tilt": 0.0,
+      "note": ""
+    },
+    "mesh": {
+      "path": "",
+      "format": "glTF_2.0",
+      "polycount": null
+    },
+    "skin_tone": {
+      "base_hex": "",
+      "undertone": "",
+      "freckle_density": 0.0,
+      "tan_lines": []
+    },
+    "height_cm": null,
+    "build": null,
+    "skin": null
+  },
+  "_style": {
+    "outfit": {
+      "description": "",
+      "ref_images": [],
+      "items": []
+    },
+    "hair": null,
+    "makeup": {
+      "type": "none",
+      "intensity": 0.0,
+      "regions": []
+    },
+    "damage_regions": [],
+    "accessories": [],
+    "clothing": [],
+    "colors": {},
+    "ip_adapter_weight": 0.7,
+    "reference_images": [],
+    "character_style": {
+      "visual": {
+        "medium": "cinematic realism",
+        "aesthetic": "冷調都市夜色、微粒塵埃、低飽和",
+        "color_palette": ["#1B1F2A", "#C4B7A6", "#6E7F8A"],
+        "lighting": "側光硬陰影，眼神微亮",
+        "camera": "50mm, shallow depth of field",
+        "keywords": ["weathered", "restrained", "grounded"],
+        "note": ""
+      },
+      "art_prompt": {
+        "positive": "highly detailed face, consistent identity, natural skin texture",
+        "negative": "cartoon, extra fingers, deformed face, text, watermark, oversaturated",
+        "strength": 1.0,
+        "template": "",
+        "note": ""
+      },
+      "narrative": {
+        "tone": "克制、寡言，句子偏短",
+        "speech_pattern": "少用形容詞，習慣先停頓再答",
+        "diction": "口語但不隨便，偶爾帶點舊時代用詞",
+        "register": "casual-restrained",
+        "sample_lines": ["……我知道了。", "先把燈關了。"],
+        "note": ""
+      },
+      "consistency_notes": "臉型與左前臂舊疤必須跨鏡頭一致；參考圖優先於文字描述。"
+    },
+    "additional_descriptors": []
+  },
+  "_expression": {
+    "base_emotion": "neutral",
+    "micro_asymmetry": 0.0,
+    "resting_face": {
+      "brow_position": 0.0,
+      "eye_openness": 1.0,
+      "gaze_direction": "",
+      "mouth_state": "",
+      "jaw_tension": 0.0
+    },
+    "au_library": {
+      "default_set": [],
+      "custom_presets": []
+    },
+    "gaze": {
+      "default_target": "",
+      "tracking_mode": "fixed",
+      "saccade_frequency": 0.0,
+      "blink_rate_per_min": null
+    },
+    "lip_sync": {
+      "neutral_mouth_shape": "rest_closed",
+      "openness_range": [
+        0.0,
+        1.0
+      ],
+      "dental_visibility": 0.0
+    },
+    "default": "neutral",
+    "range": [],
+    "intensity": 0.5
+  },
+  "_pose": {
+    "default_pose": {
+      "skeleton_path": "",
+      "format": "openpose_18",
+      "description": ""
+    },
+    "pose_library": [],
+    "movement_style": {
+      "speed_factor": 1.0,
+      "fluidity": 0.5,
+      "weight_shift": "",
+      "note": ""
+    },
+    "interaction_constraints": {
+      "personal_space_radius_cm": null,
+      "touch_aversion": [],
+      "note": ""
+    },
+    "default": "standing",
+    "head_tilt": 0.0,
+    "constraints": []
+  },
+  "_physics": {
+    "skin": {
+      "detail_level": 0.5,
+      "pore_visibility": 0.5,
+      "subsurface_scattering": 0.5,
+      "wrinkle_depth": 0.5,
+      "elasticity": 0.5,
+      "note": ""
+    },
+    "cloth": {
+      "simulation_mode": "auto_by_material",
+      "wind_sensitivity": 0.5,
+      "gravity_response": 0.5,
+      "collision_with_body": true,
+      "wrinkle_memory": 0.5
+    },
+    "hair": {
+      "simulation_mode": "strand_based",
+      "strand_count_hint": "medium",
+      "static_electricity": 0.0,
+      "wet_behavior": {
+        "clump_factor": 0.0,
+        "darkening": 0.0,
+        "weight_increase": 0.0
+      }
+    },
+    "fluids": {
+      "sweat": {
+        "enabled": false,
+        "trigger": "",
+        "regions": [],
+        "flow_speed": 0.0
+      },
+      "tears": {
+        "enabled": false,
+        "trigger": "",
+        "flow_path": "",
+        "volume": ""
+      },
+      "blood": {
+        "enabled": false,
+        "trigger": "",
+        "color_hex": "#8B0000",
+        "viscosity": 0.5
+      }
+    },
+    "lighting_response": {
+      "skin_specular": 0.3,
+      "eye_reflection": true,
+      "shadow_softness": 0.5
+    },
+    "mass_kg": null,
+    "rigidity": 0.5,
+    "cloth_sim": false
+  },
+  "_voice": {
+    "enabled": false,
+    "ref_audio": {
+      "path": "",
+      "duration_sec": null,
+      "sample_rate": null,
+      "channels": null
+    },
+    "voice_embedding": {
+      "path": "",
+      "model": "",
+      "dimension": 256
+    },
+    "characteristics": {
+      "pitch": null,
+      "speed_factor": 1.0,
+      "breathiness": 0.0,
+      "roughness": 0.0,
+      "accent": "",
+      "habitual_pause_ms": null,
+      "note": ""
+    },
+    "emotional_range": {},
+    "timbre": null,
+    "pitch": 0.5,
+    "sample_uri": null,
+    "language": "zh-Hant",
+    "samples": []
+  },
+  "_causal": {
+    "evolution_log": [],
+    "current_state_snapshot": {}
+  },
+  "_constraints": {
+    "must_always": [],
+    "must_never": [],
+    "conditional": [],
+    "quality_floor": {
+      "face_consistency_min": 0.88,
+      "body_proportion_tolerance": 0.05,
+      "outfit_color_delta_e_max": 4.0
+    },
+    "forbidden": [],
+    "required": [],
+    "continuity": []
+  },
+  "_extensions": {
+    "comfyui_workflow": {
+      "path": "",
+      "version": ""
+    },
+    "comfyui": {
+      "path": "",
+      "version": ""
+    },
+    "image_gen": {
+      "provider": "",
+      "model": "",
+      "endpoint": "",
+      "size": "1024x1024",
+      "last_job_id": "",
+      "last_asset_paths": [],
+      "note": ""
+    }
+  }
+}

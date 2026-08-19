@@ -1,0 +1,14 @@
+---
+description: 檢視或編輯 .charpass 角色護照（本機 JSON 或 ZIP 匯出）
+globs:
+  - data/charpasses/**/*.charpass
+  - "**/*.charpass"
+---
+
+# Character Passport 本機閱讀
+
+本機版本庫（`data/charpasses/{entity_id}/`）的 **`current.charpass`** 是 L0 可讀 JSON，可直接在 IDE 開啟。
+
+- `history/*.charpass` 與 API 匯出檔才是 ZIP 二進位。
+- 舊版 `current.manifest.json` sidecar 已併入 `current.charpass`；若仍存在 sidecar，執行 `python scripts/inspect_charpass.py --all` 遷移。
+- 規格：`docs/charpass.md`；程式：`narratron/charpass/`。

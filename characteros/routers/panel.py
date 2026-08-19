@@ -1,0 +1,221 @@
+"""CharacterOS GUI 管理面板。"""
+
+from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
+
+router = APIRouter(tags=["Panel"])
+
+
+@router.get("/admin/panel", response_class=HTMLResponse)
+def get_admin_panel() -> str:
+    """提供角色 GUI 管理/生成面板。"""
+    return """<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CharacterOS Admin Panel</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
+    h1 { margin-bottom: 8px; }
+    .hint { color: #6b7280; margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { border: 1px solid #d1d5db; border-radius: 10px; padding: 14px; }
+    .card h2 { margin-top: 0; font-size: 18px; }
+    label { display: block; font-size: 13px; margin: 8px 0 4px; }
+    input, select, textarea, button { width: 100%; box-sizing: border-box; padding: 8px; margin-bottom: 8px; }
+    button { cursor: pointer; border: 0; border-radius: 8px; background: #2563eb; color: #fff; }
+    button.secondary { background: #374151; }
+    pre { background: #111827; color: #e5e7eb; padding: 10px; border-radius: 8px; max-height: 320px; overflow: auto; }
+    .list { max-height: 320px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
+    .item { padding: 8px; border-bottom: 1px solid #f3f4f6; }
+    .item:last-child { border-bottom: 0; }
+    .inline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .status { font-size: 13px; color: #4b5563; }
+  </style>
+</head>
+<body>
+  <h1>CharacterOS 管理/生成面板</h1>
+  <div class="hint">集中管理角色查詢、變體請求、第三方生圖與 API 金鑰設定。</div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>角色清單</h2>
+      <label>名稱搜尋</label>
+      <input id="searchName" placeholder="例如：卡爾" />
+      <button onclick="loadCharacters()">重新載入</button>
+      <div id="characterList" class="list"></div>
+    </section>
+
+    <section class="card">
+      <h2>角色詳情 / 變體</h2>
+      <label>角色 ID</label>
+      <input id="characterId" type="number" min="1" placeholder="例如：1" />
+      <div class="inline">
+        <button onclick="loadCharacter()">查詢角色</button>
+        <button class="secondary" onclick="requestVariant()">請求變體</button>
+      </div>
+      <label>變體參數（可留空）</label>
+      <div class="inline">
+        <input id="age" type="number" min="0" max="150" placeholder="age" />
+        <input id="emotion" placeholder="emotion" />
+      </div>
+      <div class="inline">
+        <input id="scene" placeholder="scene" />
+        <input id="injury" type="number" min="0" max="1" step="0.1" placeholder="injury 0-1" />
+      </div>
+      <pre id="characterOutput">{}</pre>
+    </section>
+
+    <section class="card">
+      <h2>生圖設定（WAN / OpenAI 相容）</h2>
+      <button onclick="loadImagingConfig()">讀取目前設定</button>
+      <label>Provider</label>
+      <select id="provider">
+        <option value="wan">wan</option>
+        <option value="openai">openai</option>
+        <option value="http">http</option>
+        <option value="null">null</option>
+      </select>
+      <label>Base URL</label>
+      <input id="baseUrl" value="https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1" />
+      <label>Model</label>
+      <input id="model" value="wan2.7-image-pro" />
+      <label>API Key（留空代表不修改）</label>
+      <input id="apiKey" type="password" placeholder="sk-..." />
+      <label><input id="persistEnv" type="checkbox" checked /> 同步寫入 .env</label>
+      <button onclick="saveImagingConfig()">儲存設定</button>
+      <div id="cfgStatus" class="status"></div>
+    </section>
+
+    <section class="card">
+      <h2>角色生圖</h2>
+      <label>角色 ID</label>
+      <input id="imgCharacterId" type="number" min="1" placeholder="例如：1" />
+      <label>Purpose</label>
+      <select id="purpose">
+        <option value="identity">identity</option>
+        <option value="outfit">outfit</option>
+        <option value="expression">expression</option>
+        <option value="thumb">thumb</option>
+      </select>
+      <label>額外風格描述（會拼進 prompt）</label>
+      <textarea id="extra" rows="3" placeholder="例如：賽博龐克、電影級打光、油畫筆觸"></textarea>
+      <div class="inline">
+        <button onclick="generateImages()">生成圖片</button>
+        <button class="secondary" onclick="copyPrompt()">複製最後提示詞</button>
+      </div>
+      <pre id="imageOutput">{}</pre>
+    </section>
+  </div>
+
+  <script>
+    let lastPrompt = "";
+
+    function setJson(id, payload) {
+      document.getElementById(id).textContent = JSON.stringify(payload, null, 2);
+    }
+
+    async function loadCharacters() {
+      const name = document.getElementById("searchName").value.trim();
+      const query = name ? `?name=${encodeURIComponent(name)}` : "";
+      const resp = await fetch(`/api/v1/characters${query}`);
+      const data = await resp.json();
+      const list = document.getElementById("characterList");
+      list.innerHTML = "";
+      (data || []).forEach((item) => {
+        const div = document.createElement("div");
+        div.className = "item";
+        div.innerHTML = `<b>#${item.id}</b> ${item.name}<br/><span class="status">${(item.tags || []).join(", ")}</span>`;
+        div.onclick = () => {
+          document.getElementById("characterId").value = item.id;
+          document.getElementById("imgCharacterId").value = item.id;
+          loadCharacter();
+        };
+        list.appendChild(div);
+      });
+    }
+
+    async function loadCharacter() {
+      const id = document.getElementById("characterId").value;
+      if (!id) return;
+      const resp = await fetch(`/api/v1/characters/${id}`);
+      const data = await resp.json();
+      setJson("characterOutput", data);
+    }
+
+    async function requestVariant() {
+      const id = document.getElementById("characterId").value;
+      if (!id) return;
+      const params = new URLSearchParams();
+      const age = document.getElementById("age").value;
+      const emotion = document.getElementById("emotion").value.trim();
+      const scene = document.getElementById("scene").value.trim();
+      const injury = document.getElementById("injury").value;
+      if (age) params.set("age", age);
+      if (emotion) params.set("emotion", emotion);
+      if (scene) params.set("scene", scene);
+      if (injury) params.set("injury", injury);
+      const resp = await fetch(`/api/v1/characters/${id}/variant?${params.toString()}`);
+      const data = await resp.json();
+      setJson("characterOutput", data);
+    }
+
+    async function loadImagingConfig() {
+      const resp = await fetch("/api/v1/admin/imaging-config");
+      const data = await resp.json();
+      document.getElementById("provider").value = data.provider || "wan";
+      document.getElementById("baseUrl").value = data.base_url || "";
+      document.getElementById("model").value = data.model || "";
+      document.getElementById("cfgStatus").textContent = `已載入，API key 存在：${data.has_api_key ? "是" : "否"}`;
+    }
+
+    async function saveImagingConfig() {
+      const payload = {
+        provider: document.getElementById("provider").value,
+        base_url: document.getElementById("baseUrl").value.trim(),
+        model: document.getElementById("model").value.trim(),
+        persist_env: document.getElementById("persistEnv").checked
+      };
+      const apiKey = document.getElementById("apiKey").value.trim();
+      if (apiKey) payload.api_key = apiKey;
+      const resp = await fetch("/api/v1/admin/imaging-config", {
+        method: "PUT",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      document.getElementById("cfgStatus").textContent = `更新完成，API key 存在：${data.has_api_key ? "是" : "否"}`;
+    }
+
+    async function generateImages() {
+      const id = document.getElementById("imgCharacterId").value;
+      if (!id) return;
+      const payload = {
+        purpose: document.getElementById("purpose").value,
+        provider: document.getElementById("provider").value,
+        extra: document.getElementById("extra").value.trim(),
+        persist: true
+      };
+      const resp = await fetch(`/api/v1/characters/${id}/images`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      lastPrompt = data.prompt || "";
+      setJson("imageOutput", data);
+    }
+
+    async function copyPrompt() {
+      if (!lastPrompt) return;
+      await navigator.clipboard.writeText(lastPrompt);
+      alert("提示詞已複製");
+    }
+
+    loadCharacters();
+    loadImagingConfig();
+  </script>
+</body>
+</html>
+"""

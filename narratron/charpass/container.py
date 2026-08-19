@@ -31,8 +31,10 @@ from narratron.charpass.schema import (
     dump_json_schema,
     encryption_level_to_int,
     encryption_level_to_label,
+    is_json_charpass,
     manifest_to_dict,
     parse_manifest,
+    strip_local_sidecar,
 )
 
 _UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\s]+')
@@ -356,9 +358,11 @@ class CharpassPacker:
 
 
 class CharpassReader:
-    """讀取角色護照 ZIP。不是 Beta Importer。"""
+    """讀取角色護照（本機 JSON 或 ZIP 容器）。不是 Beta Importer。"""
 
     def read(self, data: bytes, *, key: str | bytes | None = None) -> UnpackedCharpass:
+        if is_json_charpass(data):
+            return self._read_json_manifest(data)
         encryption_level = 0
         blob = data
         if crypto.is_l3_blob(blob):
@@ -413,4 +417,26 @@ class CharpassReader:
             checksum=actual,
             warnings=warnings,
             encryption_level=encryption_level,
+        )
+
+    def _read_json_manifest(self, data: bytes) -> UnpackedCharpass:
+        try:
+            manifest = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise CharpassError("不是有效的本機 JSON .charpass") from exc
+        if not isinstance(manifest, dict):
+            raise CharpassError("本機 JSON .charpass 根必須是物件")
+        manifest = strip_local_sidecar(manifest)
+        parse_manifest(manifest)
+        meta = manifest.get("_meta") if isinstance(manifest.get("_meta"), dict) else {}
+        warnings: list[str] = []
+        compat = check_version(str(meta.get("format_version") or "1.0.0"))
+        if compat.warning:
+            warnings.append(compat.warning)
+        return UnpackedCharpass(
+            manifest=manifest,
+            assets={},
+            checksum=str(meta.get("checksum") or ""),
+            warnings=warnings,
+            encryption_level=0,
         )

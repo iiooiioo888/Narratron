@@ -121,7 +121,28 @@ CREATE INDEX idx_variants_priority ON character_variants(status, priority) WHERE
 CREATE INDEX idx_variants_created ON character_variants(created_at);
 
 -- ============================================
--- 4. GENERATION LOGS (AI 生成日誌 - 可觀測性)
+-- 4. IMAGING CONFIG (第三方生圖設定 - singleton)
+-- ============================================
+CREATE TABLE imaging_config (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    provider VARCHAR(50) NOT NULL DEFAULT 'null',
+    base_url VARCHAR(512) NOT NULL DEFAULT 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    model VARCHAR(255) NOT NULL DEFAULT 'wan2.7-image-pro',
+    api_key TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+INSERT INTO imaging_config (id, provider, base_url, model)
+VALUES (
+    1,
+    'null',
+    'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    'wan2.7-image-pro'
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================
+-- 5. GENERATION LOGS (AI 生成日誌 - 可觀測性)
 -- ============================================
 CREATE TABLE generation_logs (
     id SERIAL PRIMARY KEY,
@@ -158,7 +179,7 @@ CREATE INDEX idx_logs_created ON generation_logs(created_at);
 CREATE INDEX idx_logs_success ON generation_logs(success) WHERE success = false;
 
 -- ============================================
--- 5. 自動更新 updated_at 的 Trigger
+-- 6. 自動更新 updated_at 的 Trigger
 -- ============================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -177,8 +198,11 @@ CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON character_profiles
 CREATE TRIGGER update_variants_updated_at BEFORE UPDATE ON character_variants
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_imaging_config_updated_at BEFORE UPDATE ON imaging_config
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- ============================================
--- 6. 初始數據：林默 (Lin Mo)
+-- 7. 初始數據：林默 (Lin Mo)
 -- ============================================
 INSERT INTO character_cores (name, codename, gender_spectrum, base_age, identity_anchor, tags, metadata)
 VALUES (

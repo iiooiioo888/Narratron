@@ -359,6 +359,56 @@ character_name.charpass
 
 `damage_regions[]` 與 `Parser` 的 `continuity_tokens`（`scar` / `bandage` / `rust` / `wear` / `bloodstain`）雙向同步，**只補不刪**。投影時可同時帶 `token`（給 Parser）與 `id` / `area` / `type`（給工坊）。
 
+#### 3.4.1 `character_style` — 角色風格
+
+視覺畫風、生圖提示詞、敘事語氣與參考圖錨點寫在同一層，供 CharacterOS 第三方生圖組 prompt。參考圖本身仍走既有路徑，不在 `character_style` 重複巢狀。
+
+```json
+{
+  "_style": {
+    "character_style": {
+      "visual": {
+        "medium": "cinematic realism",
+        "aesthetic": "冷調都市夜色",
+        "color_palette": ["#1B1F2A", "#C4B7A6"],
+        "lighting": "側光硬陰影",
+        "camera": "50mm, shallow depth of field",
+        "keywords": ["weathered", "restrained"]
+      },
+      "art_prompt": {
+        "positive": "highly detailed face, consistent identity",
+        "negative": "cartoon, extra fingers, watermark",
+        "strength": 1.0,
+        "template": ""
+      },
+      "narrative": {
+        "tone": "克制、寡言",
+        "speech_pattern": "短句、先停頓再答",
+        "diction": "口語但不隨便",
+        "register": "casual-restrained",
+        "sample_lines": ["……我知道了。"]
+      },
+      "consistency_notes": "臉型與標誌性傷痕必須跨鏡頭一致"
+    }
+  }
+}
+```
+
+| 欄位 | 說明 |
+| :--- | :--- |
+| `visual.medium` | 畫種／媒介（寫實、動漫、水彩等） |
+| `visual.aesthetic` | 整體美學與時代感 |
+| `visual.color_palette` | 主色 hex 列表 |
+| `art_prompt.positive` / `negative` | 拼進第三方生圖 API 的正／負向提示 |
+| `art_prompt.template` | 可含 `{name}` / `{purpose}` 的模板 |
+| `narrative.*` | 對白與文風（給文字模型，不進生圖除非 `extra` 指定） |
+| `consistency_notes` | 人臉／服裝一致性備註 |
+| `_style.reference_images[]` | 風格／全身錨點 |
+| `_identity.ref_images[]` | 人臉一致性錨點 |
+| `_style.outfit.ref_images[]` | 服裝錨點 |
+
+組裝實作：`narratron/charpass/style_prompt.py`（**只組 prompt，不呼叫 `generate()`**）。
+
 ### 3.5 `_expression` — 表情層
 
 ```json
@@ -652,7 +702,7 @@ character_name.charpass
 }
 ```
 
-`_extensions` 為完全開放區域，任何第三方工具可在此寫入自己的數據，**Narratron 核心不會讀取或修改此區域**。舊鍵 `comfyui` 與 `comfyui_workflow` 並存時皆原樣保留。
+`_extensions` 為完全開放區域，任何第三方工具可在此寫入自己的數據，**Narratron 核心不會讀取或修改此區域**。舊鍵 `comfyui` 與 `comfyui_workflow` 並存時皆原樣保留。建議預留 `image_gen` 給 CharacterOS 第三方生圖引用（provider / model / last_asset_paths）；核心只 round-trip，不執行。
 
 ---
 
@@ -810,6 +860,18 @@ Response：
 | `POST` | `/api/v1/characters/{char_id}/charpass` | 工坊寫回（只改 `payload.charpass`） |
 | `DELETE` | `/api/v1/characters/{char_id}` | 有 traces 則 409，除非 `archive=true` |
 
+### 7.5 第三方生圖（CharacterOS，非核心）
+
+核心格式層 **不** 呼叫 `generate()`。實際打第三方 API 只發生在 `characteros/imaging/`：
+
+| 方法 | 路徑 | 說明 |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/imaging/providers` | 列出 `null` / `http` / `openai` |
+| `POST` | `/api/v1/imaging/generate` | 依 manifest 或本機 `entity_id` 生圖 |
+| `POST` | `/api/v1/characters/{id}/images` | 依 Profile 風格生必要參考圖 |
+
+`_extensions.image_gen` 只存 provider / model / 上次產出路徑，核心 round-trip 保留、不執行。Provider 以環境變數切換，見 `.env.example`。
+
 被 `trace_log` 引用的角色只准歸檔（`payload.archived=true` / `_meta.archived=true`），不准刪。本機版本庫每次寫入保留最近 **5** 版。
 
 ---
@@ -849,6 +911,11 @@ Response：
         {"slot": "upper_body", "name": "亞麻襯衫", "material": "linen", "condition": "worn"},
         {"slot": "lower_body", "name": "牛仔褲", "material": "denim", "condition": "faded_worn"}
       ]
+    },
+    "character_style": {
+      "visual": {"medium": "cinematic realism", "aesthetic": "冷調都市夜色"},
+      "art_prompt": {"positive": "consistent identity", "negative": "cartoon, watermark"},
+      "narrative": {"tone": "克制、寡言"}
     },
     "damage_regions": [
       {"id": "dmg_001", "area": "left_forearm", "type": "old_scar", "since_scene": 3}
@@ -898,6 +965,7 @@ flowchart LR
         TR2["追跡 Tracer P1<br/>追加 _causal.evolution_log"]
         SC2["篩檢 Screener<br/>更新 quality_floor 建議"]
         DIR["調度器 Director<br/>更新 _causal.current_state_snapshot"]
+        IMG["CharacterOS imaging<br/>寫入參考圖路徑 + _extensions.image_gen"]
     end
 ```
 
@@ -920,6 +988,9 @@ flowchart LR
 | 檔名 | `{character_name}_{charpass_id_short}.charpass`（如 `林默_a3f8b2.charpass`） |
 | `charpass_id_short` | `charpass_id` 去掉連字號與可選 `cp_` 前綴後前 6 碼 |
 | 存儲位置（本機） | `data/charpasses/{entity_id}/current.charpass` |
+| 本機可讀護照 | `data/charpasses/{entity_id}/current.charpass`（L0 可讀 JSON，由 `CharpassStore` 維護；**請在 IDE 開此檔**） |
+| 本機 ZIP 快照 | `data/charpasses/{entity_id}/history/*.charpass`（匯出／備份用二進位） |
+| 解包工具 | `python scripts/inspect_charpass.py data/charpasses/{entity_id}` 或 `--all` |
 | 存儲位置（雲端） | `s3://narratron-{project}/charpasses/{charpass_id}/` |
 | 最大文件大小 | 50MB（超出時資產自動轉為 URL 引用，進入 Lite 模式） |
 | 備份策略 | 每次修改自動保留前 5 個版本（版本號遞增） |
@@ -955,3 +1026,4 @@ flowchart LR
 2. 角色工坊 GUI 互動原型（滑桿 / 拖拽 / 快捷鍵；畫面代號仍是 `Dashboard`）
 3. 解析器實作細節（`CharpassReader` / `CharpassPacker`，見 `narratron/charpass/`）
 4. 與 ComfyUI 的橋接（只寫 `_extensions.comfyui_workflow`；核心不執行、不呼叫 `generate()`）
+5. 第三方生圖（只寫 `_extensions.image_gen`；執行在 CharacterOS `imaging`，核心不呼叫 `generate()`）

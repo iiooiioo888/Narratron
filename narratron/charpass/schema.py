@@ -23,6 +23,33 @@ SCHEMA_URI: str = "https://narratron.dev/schemas/charpass/v1.json"
 LITE_THRESHOLD_BYTES: int = 50 * 1024 * 1024
 MAX_STORED_VERSIONS: int = 5
 CHARPASS_ID_SHORT_LEN: int = 6
+# 本機版本庫：`current.charpass` 為 L0 可讀 JSON；`history/` 與匯出仍為 ZIP 二進位
+LOCAL_CURRENT_FILE: str = "current.charpass"
+READABLE_SIDECAR: str = LOCAL_CURRENT_FILE
+LEGACY_READABLE_SIDECAR: str = "current.manifest.json"
+LEGACY_MANIFEST_SIDECAR: str = "manifest.json"
+READABLE_SIDECAR_HINT: str = (
+    "本機 L0 可讀 JSON 角色護照，可直接在 IDE 檢視／編輯。"
+    "匯出或寫入 history/ 時會打包成 ZIP 二進位 .charpass。"
+)
+
+
+def is_json_charpass(data: bytes) -> bool:
+    """本機 L0 可讀 JSON（非 ZIP 容器）。"""
+    if not data:
+        return False
+    start = data.lstrip()
+    if start.startswith(b"\xef\xbb\xbf"):
+        start = start[3:].lstrip()
+    return start.startswith(b"{")
+
+
+def strip_local_sidecar(manifest: dict[str, Any]) -> dict[str, Any]:
+    """移除本機 `_local` 提示，供打包／校驗用。"""
+    if not isinstance(manifest, dict):
+        return {}
+    return {key: value for key, value in manifest.items() if key != "_local"}
+
 
 PackMode = Literal["full", "lite"]
 EncryptionLevel = Literal["L0", "L1", "L2", "L3"]
@@ -405,6 +432,21 @@ class ComfyUIPlaceholder(LayerBase):
     version: str = ""
 
 
+class ImageGenExtension(LayerBase):
+    """第三方生圖引用設定。僅 metadata；核心不呼叫 `generate()`。
+
+    實際呼叫由 CharacterOS `imaging` 服務依 `provider` 路由執行。
+    """
+
+    provider: str = ""
+    model: str = ""
+    endpoint: str = ""
+    size: str = "1024x1024"
+    last_job_id: str = ""
+    last_asset_paths: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
 class MetaLayer(LayerBase):
     format: str = FORMAT_STEM
     format_version: str = FORMAT_VERSION
@@ -462,6 +504,52 @@ class BodyLayer(LayerBase):
     skin: str | None = None
 
 
+class VisualStyle(LayerBase):
+    """視覺風格：畫風、色調、光影與鏡頭基調。"""
+
+    medium: str = ""
+    aesthetic: str = ""
+    color_palette: list[str] = Field(default_factory=list)
+    lighting: str = ""
+    camera: str = ""
+    keywords: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class ArtPromptStyle(LayerBase):
+    """生圖用風格提示詞（正／負向與強度）。"""
+
+    positive: str = ""
+    negative: str = ""
+    strength: float = 1.0
+    template: str = ""
+    note: str = ""
+
+
+class NarrativeStyle(LayerBase):
+    """敘事／語氣風格：說話方式與文風。"""
+
+    tone: str = ""
+    speech_pattern: str = ""
+    diction: str = ""
+    register: str = ""
+    sample_lines: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class CharacterStyleProfile(LayerBase):
+    """角色風格總覽：視覺、生圖提示、敘事、一致性備註。
+
+    參考圖錨點仍使用 `_style.reference_images` / `_identity.ref_images`
+    與 `_style.outfit.ref_images`，不在此重複巢狀。
+    """
+
+    visual: VisualStyle = Field(default_factory=VisualStyle)
+    art_prompt: ArtPromptStyle = Field(default_factory=ArtPromptStyle)
+    narrative: NarrativeStyle = Field(default_factory=NarrativeStyle)
+    consistency_notes: str = ""
+
+
 class StyleLayer(LayerBase):
     outfit: Outfit = Field(default_factory=Outfit)
     hair: HairStyle | str | None = None
@@ -472,6 +560,8 @@ class StyleLayer(LayerBase):
     colors: dict[str, Any] = Field(default_factory=dict)
     ip_adapter_weight: float = 0.7
     reference_images: list[AssetRef | dict[str, Any]] = Field(default_factory=list)
+    character_style: CharacterStyleProfile = Field(default_factory=CharacterStyleProfile)
+    additional_descriptors: list[str] = Field(default_factory=list)
 
 
 class ExpressionLayer(LayerBase):
@@ -538,6 +628,7 @@ class ConstraintsLayer(LayerBase):
 class ExtensionsLayer(LayerBase):
     comfyui_workflow: ComfyUIPlaceholder = Field(default_factory=ComfyUIPlaceholder)
     comfyui: ComfyUIPlaceholder = Field(default_factory=ComfyUIPlaceholder)
+    image_gen: ImageGenExtension = Field(default_factory=ImageGenExtension)
 
 
 class CharpassManifest(LayerBase):

@@ -179,3 +179,59 @@ class HealthCheckResponse(BaseModel):
     status: str  # healthy, degraded, unhealthy
     database: str  # connected, disconnected
     timestamp: datetime
+
+
+# ============================================
+# Imaging Schemas
+# ============================================
+
+class ImageProviderInfo(BaseModel):
+    name: str
+    display_name: str
+
+
+class ImageGenerateRequest(BaseModel):
+    """第三方生圖請求。不傳 provider 時走環境變數 CHARACTEROS_IMAGE_GEN_PROVIDER（預設 null）。"""
+
+    purpose: str = Field("identity", description="identity / outfit / expression / thumb")
+    provider: Optional[str] = Field(None, description="null | http | openai | wan")
+    model: Optional[str] = Field(None, description="覆蓋本次生圖模型，例如 wan2.7-image-pro")
+    extra: str = Field("", description="額外拼進正向提示詞的描述")
+    n: int = Field(1, ge=1, le=4)
+    persist: bool = Field(False, description="是否寫回本機 data/charpasses/{entity_id}/")
+    entity_id: Optional[str] = Field(None, description="本機護照 entity_id；與 manifest 擇一")
+    manifest: Optional[Dict[str, Any]] = Field(None, description="完整 .charpass manifest")
+
+
+class GeneratedImageInfo(BaseModel):
+    filename: str
+    url: Optional[str] = None
+    has_bytes: bool = False
+    mime_type: str = "image/png"
+
+
+class ImageGenerateResponse(BaseModel):
+    provider: str
+    model: str = ""
+    purpose: str
+    prompt: str
+    negative_prompt: str = ""
+    ref_image_uris: List[str] = Field(default_factory=list)
+    images: List[GeneratedImageInfo] = Field(default_factory=list)
+    manifest: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ImagingConfigResponse(BaseModel):
+    provider: str
+    base_url: str
+    model: str
+    has_api_key: bool
+
+
+class ImagingConfigUpdateRequest(BaseModel):
+    provider: Optional[str] = Field(None, description="null | http | openai | wan")
+    base_url: Optional[str] = Field(None, description="OpenAI 相容 endpoint")
+    model: Optional[str] = Field(None, description="預設生圖模型")
+    api_key: Optional[str] = Field(None, description="生圖 API key")
+    clear_api_key: bool = Field(False, description="是否清除已儲存的 API key")
+    persist_env: bool = Field(True, description="是否同步寫入 repo 根目錄 .env")

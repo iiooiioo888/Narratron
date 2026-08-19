@@ -49,6 +49,39 @@
       "title": "ActionUnit",
       "type": "object"
     },
+    "ArtPromptStyle": {
+      "additionalProperties": true,
+      "description": "生圖用風格提示詞（正／負向與強度）。",
+      "properties": {
+        "positive": {
+          "default": "",
+          "title": "Positive",
+          "type": "string"
+        },
+        "negative": {
+          "default": "",
+          "title": "Negative",
+          "type": "string"
+        },
+        "strength": {
+          "default": 1.0,
+          "title": "Strength",
+          "type": "number"
+        },
+        "template": {
+          "default": "",
+          "title": "Template",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "ArtPromptStyle",
+      "type": "object"
+    },
     "AssetRef": {
       "additionalProperties": true,
       "properties": {
@@ -331,6 +364,28 @@
         }
       },
       "title": "CausalLayer",
+      "type": "object"
+    },
+    "CharacterStyleProfile": {
+      "additionalProperties": true,
+      "description": "角色風格總覽：視覺、生圖提示、敘事、一致性備註。\n\n參考圖錨點仍使用 `_style.reference_images` / `_identity.ref_images`\n與 `_style.outfit.ref_images`，不在此重複巢狀。",
+      "properties": {
+        "visual": {
+          "$ref": "#/$defs/VisualStyle"
+        },
+        "art_prompt": {
+          "$ref": "#/$defs/ArtPromptStyle"
+        },
+        "narrative": {
+          "$ref": "#/$defs/NarrativeStyle"
+        },
+        "consistency_notes": {
+          "default": "",
+          "title": "Consistency Notes",
+          "type": "string"
+        }
+      },
+      "title": "CharacterStyleProfile",
       "type": "object"
     },
     "ComfyUIPlaceholder": {
@@ -809,6 +864,9 @@
         },
         "comfyui": {
           "$ref": "#/$defs/ComfyUIPlaceholder"
+        },
+        "image_gen": {
+          "$ref": "#/$defs/ImageGenExtension"
         }
       },
       "title": "ExtensionsLayer",
@@ -1145,6 +1203,51 @@
         }
       },
       "title": "IdentityLayer",
+      "type": "object"
+    },
+    "ImageGenExtension": {
+      "additionalProperties": true,
+      "description": "第三方生圖引用設定。僅 metadata；核心不呼叫 `generate()`。\n\n實際呼叫由 CharacterOS `imaging` 服務依 `provider` 路由執行。",
+      "properties": {
+        "provider": {
+          "default": "",
+          "title": "Provider",
+          "type": "string"
+        },
+        "model": {
+          "default": "",
+          "title": "Model",
+          "type": "string"
+        },
+        "endpoint": {
+          "default": "",
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "size": {
+          "default": "1024x1024",
+          "title": "Size",
+          "type": "string"
+        },
+        "last_job_id": {
+          "default": "",
+          "title": "Last Job Id",
+          "type": "string"
+        },
+        "last_asset_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Last Asset Paths",
+          "type": "array"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "ImageGenExtension",
       "type": "object"
     },
     "InteractionConstraints": {
@@ -1524,6 +1627,46 @@
         }
       },
       "title": "MovementStyle",
+      "type": "object"
+    },
+    "NarrativeStyle": {
+      "additionalProperties": true,
+      "description": "敘事／語氣風格：說話方式與文風。",
+      "properties": {
+        "tone": {
+          "default": "",
+          "title": "Tone",
+          "type": "string"
+        },
+        "speech_pattern": {
+          "default": "",
+          "title": "Speech Pattern",
+          "type": "string"
+        },
+        "diction": {
+          "default": "",
+          "title": "Diction",
+          "type": "string"
+        },
+        "register": {
+          "default": "",
+          "title": "Register",
+          "type": "string"
+        },
+        "sample_lines": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sample Lines",
+          "type": "array"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "NarrativeStyle",
       "type": "object"
     },
     "Outfit": {
@@ -2118,9 +2261,66 @@
           },
           "title": "Reference Images",
           "type": "array"
+        },
+        "character_style": {
+          "$ref": "#/$defs/CharacterStyleProfile"
+        },
+        "additional_descriptors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Additional Descriptors",
+          "type": "array"
         }
       },
       "title": "StyleLayer",
+      "type": "object"
+    },
+    "VisualStyle": {
+      "additionalProperties": true,
+      "description": "視覺風格：畫風、色調、光影與鏡頭基調。",
+      "properties": {
+        "medium": {
+          "default": "",
+          "title": "Medium",
+          "type": "string"
+        },
+        "aesthetic": {
+          "default": "",
+          "title": "Aesthetic",
+          "type": "string"
+        },
+        "color_palette": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Color Palette",
+          "type": "array"
+        },
+        "lighting": {
+          "default": "",
+          "title": "Lighting",
+          "type": "string"
+        },
+        "camera": {
+          "default": "",
+          "title": "Camera",
+          "type": "string"
+        },
+        "keywords": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Keywords",
+          "type": "array"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "VisualStyle",
       "type": "object"
     },
     "VoiceCharacteristics": {

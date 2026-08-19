@@ -73,8 +73,13 @@ open http://localhost:8001/docs
 | `GET` | `/api/v1/characters/{id}` | 取得角色完整檔案 | 200 / 404 |
 | `GET` | `/api/v1/characters/{id}/variant` | 請求變體生成 | 200 / 202 / 404 |
 | `GET` | `/api/v1/characters/{id}/variants` | 列出角色所有變體 | 200 / 404 |
+| `POST` | `/api/v1/characters/{id}/images` | 依角色風格呼叫第三方生圖 | 200 / 404 / 502 |
+| `GET` | `/api/v1/imaging/providers` | 列出生圖 provider | 200 |
+| `POST` | `/api/v1/imaging/generate` | 依護照組 prompt 並生圖 | 200 / 404 / 502 |
 | `GET` | `/api/v1/admin/queue-stats` | 佇列統計（管理用） | 200 |
 | `GET` | `/api/v1/admin/metrics` | 系統指標（管理用） | 200 |
+| `GET` | `/api/v1/admin/imaging-config` | 讀取生圖設定（含 key 狀態） | 200 |
+| `PUT` | `/api/v1/admin/imaging-config` | 更新生圖 endpoint/model/api key | 200 |
 
 ## 測試範例
 
@@ -106,7 +111,56 @@ curl -i "http://localhost:8001/api/v1/characters/1/variant?age=80"
 curl "http://localhost:8001/api/v1/characters/1/variant?age=80"
 ```
 
-### 5. 查詢不存在的角色（應回傳 404）
+### 5. 依角色風格生圖（預設 `null` provider，只組 prompt 不打網路）
+
+```bash
+# 列出可插拔 provider
+curl http://localhost:8001/api/v1/imaging/providers
+
+# 從本機護照組提示詞（卡爾）
+curl -X POST http://localhost:8001/api/v1/imaging/generate \
+  -H "Content-Type: application/json" \
+  -d '{"entity_id":"character-卡爾","purpose":"identity","provider":"null"}'
+```
+
+環境變數 `CHARACTEROS_IMAGE_GEN_PROVIDER=http|openai|wan` 可改打第三方 API；HTTP 契約見 `characteros/imaging/providers/http_webhook.py`。
+
+### 5.1 設定 WAN 生圖介面（百煉原生 API）
+
+預設模型與 workspace 根網址（compatible-mode 會自動換算為原生 endpoint）：
+
+- model: `wan2.7-image-pro`
+- base_url: `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`
+- 實際請求：`…/api/v1/services/aigc/multimodal-generation/generation`（**非** OpenAI `/images/generations`）
+
+**API Key 入口** — 管理 API（寫入 DB + 可選同步 `.env`）：
+
+```bash
+# 讀取目前設定（不回傳 key 明文，只回 has_api_key）
+curl http://localhost:8001/api/v1/admin/imaging-config
+
+# 設定 WAN + API Key
+curl -X PUT http://localhost:8001/api/v1/admin/imaging-config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider":"wan",
+    "base_url":"https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    "model":"wan2.7-image-pro",
+    "api_key":"<YOUR_API_KEY>",
+    "persist_env": true
+  }'
+```
+
+`persist_env: false` 時僅寫入資料庫，不修改 `.env`。
+
+或用環境變數（啟動時載入；若 DB 已有設定則以 DB 為準）：
+
+- `CHARACTEROS_IMAGE_GEN_PROVIDER`
+- `CHARACTEROS_OPENAI_IMAGES_BASE_URL`
+- `CHARACTEROS_OPENAI_IMAGES_MODEL`
+- `CHARACTEROS_IMAGE_GEN_API_KEY`（亦相容 `OPENAI_API_KEY`）
+
+### 6. 查詢不存在的角色（應回傳 404）
 
 ```bash
 curl -i http://localhost:8001/api/v1/characters/999
@@ -126,12 +180,18 @@ characteros/                 # 與 gui/、narratron/ 相同：目錄名 = Python
 ├── routers/
 │   ├── __init__.py
 │   ├── characters.py        # 角色 API 路由
+│   ├── imaging.py           # 第三方生圖路由
 │   ├── admin.py             # 管理 API 路由
 │   └── health.py            # 健康檢查路由
+├── imaging/
+│   ├── base.py              # ImageGenProvider 契約
+│   ├── registry.py          # provider 註冊
+│   └── providers/           # null / http / openai
 ├── services/
 │   ├── __init__.py
 │   ├── characters.py        # 角色查詢服務
 │   ├── evolution.py         # 演化引擎
+│   ├── imaging.py           # 生圖編排（組 prompt → provider → 寫回護照）
 │   └── queue.py             # 佇列管理
 ├── utils/
 │   ├── __init__.py

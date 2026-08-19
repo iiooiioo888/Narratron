@@ -5,7 +5,8 @@ from characteros.models.orm import (
     CharacterCore,
     CharacterProfile,
     CharacterVariant,
-    GenerationLog
+    GenerationLog,
+    ImagingConfig,
 )
 
 __all__ = [
@@ -16,5 +17,6 @@ __all__ = [
     "CharacterCore",
     "CharacterProfile",
     "CharacterVariant",
-    "GenerationLog"
+    "GenerationLog",
+    "ImagingConfig",
 ]

@@ -185,6 +185,30 @@ class CharacterVariant(Base):
         }
 
 
+class ImagingConfig(Base):
+    """
+    生圖設定（singleton，id 固定為 1）
+    管理 API 更新後持久化 provider / endpoint / model / api_key。
+    """
+    __tablename__ = "imaging_config"
+
+    id = Column(Integer, primary_key=True)
+    provider = Column(String(50), nullable=False, default="null")
+    base_url = Column(String(512), nullable=False)
+    model = Column(String(255), nullable=False)
+    api_key = Column(Text)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "provider": self.provider,
+            "base_url": self.base_url,
+            "model": self.model,
+            "has_api_key": bool(self.api_key),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class GenerationLog(Base):
     """
     AI 生成日誌（可觀測性）

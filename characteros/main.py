@@ -1,11 +1,15 @@
 """CharacterOS FastAPI 入口：角色資產唯讀查詢與變體佇列。"""
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from characteros.models.database import engine, Base
-from characteros.routers import characters, admin, health
+from characteros.routers import characters, admin, health, imaging, panel
 
 # 設定日誌
 logging.basicConfig(
@@ -28,6 +32,7 @@ app = FastAPI(
 
 - **角色查詢**: 取得完整 `.charpass` 格式的角色檔案
 - **變體請求**: 請求角色的進化外觀（年齡、情緒、傷痕等）
+- **第三方生圖**: 依 `_style.character_style` 組 prompt，呼叫可插拔 provider
 - **佇列管理**: 背景非同步生成變體
 - **管理儀表板**: 監控佇列狀態與系統指標
 
@@ -55,8 +60,10 @@ app.add_middleware(
 
 # 註冊路由
 app.include_router(characters.router)
+app.include_router(imaging.router)
 app.include_router(admin.router)
 app.include_router(health.router)
+app.include_router(panel.router)
 
 
 @app.on_event("startup")
@@ -65,6 +72,18 @@ async def startup_event():
     應用程式啟動時執行
     """
     logger.info("Starting up CharacterOS...")
+
+    from characteros.imaging.settings import settings
+    from characteros.models.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        settings.load_from_db(db)
+        logger.info("Imaging config loaded from database (fallback: .env)")
+    except Exception as exc:
+        logger.warning("Could not load imaging config from database: %s", exc)
+    finally:
+        db.close()
     
     # 注意：資料庫表應透過 migration 腳本創建
     # 此處僅做驗證，不自動創建表

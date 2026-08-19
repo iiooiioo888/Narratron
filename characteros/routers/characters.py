@@ -10,6 +10,8 @@ from characteros.models.schema import (
     CharacterCoreResponse,
     CharacterVariantResponse,
     VariantQueueResponse,
+    ImageGenerateRequest,
+    ImageGenerateResponse,
 )
 from characteros.services.characters import CharacterService
 from characteros.services.queue import QueueManager
@@ -164,3 +166,46 @@ def list_character_variants(
     service.get_character_by_id(character_id)  # 僅用於驗證存在性
     
     return [CharacterVariantResponse.model_validate(v) for v in variants]
+
+
+@router.post("/{character_id}/images", response_model=ImageGenerateResponse)
+def generate_character_images(
+    character_id: int,
+    body: ImageGenerateRequest,
+    db: Session = Depends(get_db),
+):
+    """依角色 Profile 的風格欄位呼叫第三方生圖 API，產出必要參考圖。"""
+    from characteros.services.imaging import ImagingService
+
+    service = CharacterService(db)
+    full = service.get_character_by_id(character_id)
+    manifest: dict = {}
+    if full.profile and full.profile.manifest:
+        manifest = dict(full.profile.manifest)
+    if not manifest:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"角色 {character_id} 沒有可用的 Profile manifest",
+        )
+    identity = manifest.setdefault("_identity", {})
+    meta = manifest.setdefault("_meta", {})
+    identity.setdefault("name", full.core.name)
+    meta.setdefault("character_name", full.core.name)
+    persist_id = None
+    if body.persist:
+        persist_id = body.entity_id or str(meta.get("entity_id") or identity.get("entity_id") or f"character-{full.core.name}")
+    try:
+        payload = ImagingService().generate_for_manifest(
+            manifest,
+            purpose=body.purpose,
+            provider_name=body.provider,
+            extra=body.extra,
+            n=body.n,
+            model=body.model or "",
+            persist_entity_id=persist_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return ImageGenerateResponse.model_validate(payload)
