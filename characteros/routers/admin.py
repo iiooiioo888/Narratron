@@ -58,6 +58,7 @@ def _task_item_from_dict(raw: dict, storage_mode: str) -> QueueTaskItem:
         retry_count=int(raw.get("retry_count") or 0),
         max_retries=int(raw.get("max_retries") or 3),
         result_url=raw.get("result_url"),
+        result_metadata=raw.get("result_metadata") or {},
         created_at=created,
         updated_at=updated,
     )
@@ -119,6 +120,159 @@ def list_queue_tasks(
     except SQLAlchemyError:
         mark_database_unavailable()
         return _local_queue_payload(status=status, core_id=core_id, limit=limit)
+
+
+@router.post("/queue-tasks/{task_id}/process")
+def process_queue_task(task_id: int, db: Session = Depends(get_db)):
+    """手動處理單一佇列任務，讓面板任務不只停留在 pending。"""
+    if not is_database_available():
+        service = LocalCharacterService()
+        task = LocalQueueManager().process_task(task_id, character_service=service)
+        return {
+            "storage_mode": "local",
+            "processed": 1,
+            "task": task,
+        }
+
+    try:
+        task = QueueManager(db).process_variant(task_id)
+        return {
+            "storage_mode": "database",
+            "processed": 1,
+            "task": task.to_dict(),
+        }
+    except SQLAlchemyError:
+        mark_database_unavailable()
+        service = LocalCharacterService()
+        task = LocalQueueManager().process_task(task_id, character_service=service)
+        return {
+            "storage_mode": "local",
+            "processed": 1,
+            "task": task,
+        }
+
+
+@router.post("/queue-tasks/{task_id}/accept")
+def accept_queue_task(task_id: int, db: Session = Depends(get_db)):
+    """接受已完成的 AI 生圖任務，才正式寫回角色資料。"""
+    if not is_database_available():
+        service = LocalCharacterService()
+        task = LocalQueueManager().review_task(task_id, accepted=True, character_service=service)
+        return {
+            "storage_mode": "local",
+            "reviewed": 1,
+            "task": task,
+        }
+
+    try:
+        task = QueueManager(db).review_variant(task_id, accepted=True)
+        return {
+            "storage_mode": "database",
+            "reviewed": 1,
+            "task": task.to_dict(),
+        }
+    except SQLAlchemyError:
+        mark_database_unavailable()
+        service = LocalCharacterService()
+        task = LocalQueueManager().review_task(task_id, accepted=True, character_service=service)
+        return {
+            "storage_mode": "local",
+            "reviewed": 1,
+            "task": task,
+        }
+
+
+@router.post("/queue-tasks/{task_id}/reject")
+def reject_queue_task(task_id: int, db: Session = Depends(get_db)):
+    """拒絕已完成的 AI 生圖任務，不寫回角色資料。"""
+    if not is_database_available():
+        service = LocalCharacterService()
+        task = LocalQueueManager().review_task(task_id, accepted=False, character_service=service)
+        return {
+            "storage_mode": "local",
+            "reviewed": 1,
+            "task": task,
+        }
+
+    try:
+        task = QueueManager(db).review_variant(task_id, accepted=False)
+        return {
+            "storage_mode": "database",
+            "reviewed": 1,
+            "task": task.to_dict(),
+        }
+    except SQLAlchemyError:
+        mark_database_unavailable()
+        service = LocalCharacterService()
+        task = LocalQueueManager().review_task(task_id, accepted=False, character_service=service)
+        return {
+            "storage_mode": "local",
+            "reviewed": 1,
+            "task": task,
+        }
+
+
+@router.post("/queue-tasks/process-next")
+def process_next_queue_task(db: Session = Depends(get_db)):
+    """處理下一筆 pending 任務。"""
+    if not is_database_available():
+        service = LocalCharacterService()
+        task = LocalQueueManager().process_next(character_service=service)
+        return {
+            "storage_mode": "local",
+            "processed": 0 if task is None else 1,
+            "task": task,
+        }
+
+    try:
+        task = QueueManager(db).process_next_pending()
+        return {
+            "storage_mode": "database",
+            "processed": 0 if task is None else 1,
+            "task": None if task is None else task.to_dict(),
+        }
+    except SQLAlchemyError:
+        mark_database_unavailable()
+        service = LocalCharacterService()
+        task = LocalQueueManager().process_next(character_service=service)
+        return {
+            "storage_mode": "local",
+            "processed": 0 if task is None else 1,
+            "task": task,
+        }
+
+
+@router.post("/queue-tasks/process-all")
+def process_all_queue_tasks(
+    limit: int = Query(20, ge=1, le=200, description="本次最多處理幾筆 pending 任務"),
+    db: Session = Depends(get_db),
+):
+    """批次處理多筆 pending 任務。"""
+    if not is_database_available():
+        service = LocalCharacterService()
+        tasks = LocalQueueManager().process_all(limit=limit, character_service=service)
+        return {
+            "storage_mode": "local",
+            "processed": len(tasks),
+            "tasks": tasks,
+        }
+
+    try:
+        tasks = QueueManager(db).process_all_pending(limit=limit)
+        return {
+            "storage_mode": "database",
+            "processed": len(tasks),
+            "tasks": [task.to_dict() for task in tasks],
+        }
+    except SQLAlchemyError:
+        mark_database_unavailable()
+        service = LocalCharacterService()
+        tasks = LocalQueueManager().process_all(limit=limit, character_service=service)
+        return {
+            "storage_mode": "local",
+            "processed": len(tasks),
+            "tasks": tasks,
+        }
 
 
 @router.get("/metrics", response_model=SystemMetricsResponse)

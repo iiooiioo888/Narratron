@@ -1,0 +1,156 @@
+{
+  "job_id": "fcc5647b-ec23-4b71-9775-802cb379338a",
+  "purpose": "identity",
+  "provider": "wan",
+  "model": "wan2.7-image-pro",
+  "entity_id": "character-卡爾",
+  "asset_dir": "assets/identity",
+  "images": [
+    {
+      "filename": "ref_face_front_001.png",
+      "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/b9/20260819/d689c36f/e487367e-e54e-4b5a-93ac-b749492bc11c_0.png?Expires=1787216220&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=D%2B2g8ZUYZvVmSuMuoJGQo2uP%2BWE%3D",
+      "has_bytes": false,
+      "mime_type": "image/png",
+      "angle": "front",
+      "asset_path": "assets/identity/ref_face_front_001.png"
+    },
+    {
+      "filename": "ref_face_back_001.png",
+      "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/fc/20260819/d689c36f/0285fd5f-1a49-41ef-a0bd-0363975519c1_0.png?Expires=1787216244&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=7Mx8oUqt1H0MM8Wx4t%2BLFrIkbEw%3D",
+      "has_bytes": false,
+      "mime_type": "image/png",
+      "angle": "back",
+      "asset_path": "assets/identity/ref_face_back_001.png"
+    },
+    {
+      "filename": "ref_face_left_001.png",
+      "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/7e/20260819/d689c36f/a5de4800-6d76-4d9f-abc2-26b595014250_0.png?Expires=1787216267&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=miIrFpmVKJR5AMVG5aj8Fg%2BHWsA%3D",
+      "has_bytes": false,
+      "mime_type": "image/png",
+      "angle": "left",
+      "asset_path": "assets/identity/ref_face_left_001.png"
+    },
+    {
+      "filename": "ref_face_right_001.png",
+      "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/17/20260819/d689c36f/be0e519f-1979-4638-889d-243c96af10de_0.png?Expires=1787216290&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=hNJkjwDxpx%2BDmZZLmC56ern4Ayw%3D",
+      "has_bytes": false,
+      "mime_type": "image/png",
+      "angle": "right",
+      "asset_path": "assets/identity/ref_face_right_001.png"
+    },
+    {
+      "filename": "ref_face_three_quarter_001.png",
+      "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/74/20260819/d689c36f/6bf94256-2afb-4efa-9f4d-dadd271c6cb4_0.png?Expires=1787216314&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=MWNdCfC5L%2BpHfcfjsW6DCzJyh24%3D",
+      "has_bytes": false,
+      "mime_type": "image/png",
+      "angle": "three_quarter",
+      "asset_path": "assets/identity/ref_face_three_quarter_001.png"
+    },
+    {
+      "filename": "ref_face_top_001.png",
+      "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/92/20260819/d689c36f/22daaf43-c737-4429-bd94-53672e0a4b88_0.png?Expires=1787216336&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=s4Y4TjdrErn%2FtlojaRwYUqSfMaY%3D",
+      "has_bytes": false,
+      "mime_type": "image/png",
+      "angle": "top",
+      "asset_path": "assets/identity/ref_face_top_001.png"
+    },
+    {
+      "filename": "ref_face_bottom_001.png",
+      "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/c1/20260819/d689c36f/4983c603-3f52-4d65-aabb-65a4c16fdb78_0.png?Expires=1787216360&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=4H4tn%2B3ratlMM2cOUZT%2B19Kiayo%3D",
+      "has_bytes": false,
+      "mime_type": "image/png",
+      "angle": "bottom",
+      "asset_path": "assets/identity/ref_face_bottom_001.png"
+    },
+    {
+      "filename": "ref_face_face_detail_001.png",
+      "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/11/20260819/d689c36f/ace4b34c-dd68-4d2e-9096-7cca1188900a_0.png?Expires=1787216383&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=SPDHtIepnopAXnOcSNC%2BrVOfmFU%3D",
+      "has_bytes": false,
+      "mime_type": "image/png",
+      "angle": "face_detail",
+      "asset_path": "assets/face_detail/ref_face_face_detail_001.png"
+    }
+  ],
+  "images_by_angle": {
+    "front": [
+      {
+        "filename": "ref_face_front_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/b9/20260819/d689c36f/e487367e-e54e-4b5a-93ac-b749492bc11c_0.png?Expires=1787216220&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=D%2B2g8ZUYZvVmSuMuoJGQo2uP%2BWE%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "front",
+        "asset_path": "assets/identity/ref_face_front_001.png"
+      }
+    ],
+    "back": [
+      {
+        "filename": "ref_face_back_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/fc/20260819/d689c36f/0285fd5f-1a49-41ef-a0bd-0363975519c1_0.png?Expires=1787216244&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=7Mx8oUqt1H0MM8Wx4t%2BLFrIkbEw%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "back",
+        "asset_path": "assets/identity/ref_face_back_001.png"
+      }
+    ],
+    "left": [
+      {
+        "filename": "ref_face_left_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/7e/20260819/d689c36f/a5de4800-6d76-4d9f-abc2-26b595014250_0.png?Expires=1787216267&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=miIrFpmVKJR5AMVG5aj8Fg%2BHWsA%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "left",
+        "asset_path": "assets/identity/ref_face_left_001.png"
+      }
+    ],
+    "right": [
+      {
+        "filename": "ref_face_right_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/17/20260819/d689c36f/be0e519f-1979-4638-889d-243c96af10de_0.png?Expires=1787216290&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=hNJkjwDxpx%2BDmZZLmC56ern4Ayw%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "right",
+        "asset_path": "assets/identity/ref_face_right_001.png"
+      }
+    ],
+    "three_quarter": [
+      {
+        "filename": "ref_face_three_quarter_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/74/20260819/d689c36f/6bf94256-2afb-4efa-9f4d-dadd271c6cb4_0.png?Expires=1787216314&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=MWNdCfC5L%2BpHfcfjsW6DCzJyh24%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "three_quarter",
+        "asset_path": "assets/identity/ref_face_three_quarter_001.png"
+      }
+    ],
+    "top": [
+      {
+        "filename": "ref_face_top_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/92/20260819/d689c36f/22daaf43-c737-4429-bd94-53672e0a4b88_0.png?Expires=1787216336&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=s4Y4TjdrErn%2FtlojaRwYUqSfMaY%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "top",
+        "asset_path": "assets/identity/ref_face_top_001.png"
+      }
+    ],
+    "bottom": [
+      {
+        "filename": "ref_face_bottom_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/c1/20260819/d689c36f/4983c603-3f52-4d65-aabb-65a4c16fdb78_0.png?Expires=1787216360&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=4H4tn%2B3ratlMM2cOUZT%2B19Kiayo%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "bottom",
+        "asset_path": "assets/identity/ref_face_bottom_001.png"
+      }
+    ],
+    "face_detail": [
+      {
+        "filename": "ref_face_face_detail_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/11/20260819/d689c36f/ace4b34c-dd68-4d2e-9096-7cca1188900a_0.png?Expires=1787216383&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=SPDHtIepnopAXnOcSNC%2BrVOfmFU%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "face_detail",
+        "asset_path": "assets/face_detail/ref_face_face_detail_001.png"
+      }
+    ]
+  }
+}

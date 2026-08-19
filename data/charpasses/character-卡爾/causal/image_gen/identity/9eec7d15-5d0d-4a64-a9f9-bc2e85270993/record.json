@@ -1,0 +1,199 @@
+{
+  "job_id": "9eec7d15-5d0d-4a64-a9f9-bc2e85270993",
+  "created_at": "2026-08-19T08:58:23.551979Z",
+  "provider": "wan",
+  "model": "wan2.7-image-pro",
+  "purpose": "identity",
+  "size": "1024x1024",
+  "multi_angle": true,
+  "angles": [
+    "front",
+    "back",
+    "left",
+    "right",
+    "three_quarter",
+    "top",
+    "bottom",
+    "face_detail"
+  ],
+  "request": {
+    "purpose": "identity",
+    "prompt": "卡爾, human, 3D建模風格, T型體, extreme facial close-up, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as turnaround sheet, preserve exact facial identity from the turnaround reference, skin detail readable, no hands covering face",
+    "negative_prompt": "inconsistent design, different character, wrong angle, cropped body, cut off limbs, duplicate poses, blurry, low quality, watermark, text overlay, multiple characters, collage errors, deformed face, asymmetric eyes, broken facial features",
+    "size": "1024x1024",
+    "n": 1,
+    "model": "wan2.7-image-pro",
+    "ref_image_uris": [],
+    "extra": {
+      "asset_dir": "assets/identity",
+      "filename_prefix": "ref_face_face_detail",
+      "angle": "face_detail",
+      "multi_angle": true
+    }
+  },
+  "response": {
+    "provider": "wan",
+    "model": "wan2.7-image-pro",
+    "images": [
+      {
+        "filename": "ref_face_front_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/e6/20260819/d689c36f/5b6da58e-c25b-4ff5-86c5-018cbeaac83f_0.png?Expires=1787216137&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=rthdSXXK%2B4iAGnW4W%2Fx9UJ04DiA%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "front",
+        "asset_path": "assets/identity/ref_face_front_001.png"
+      },
+      {
+        "filename": "ref_face_back_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/71/20260819/d689c36f/3398b23b-5af2-480a-bf8f-41b9cbd88de2_0.png?Expires=1787216161&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=r7sEb0N76ANbFShsc6PvpkI1wQY%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "back",
+        "asset_path": "assets/identity/ref_face_back_001.png"
+      },
+      {
+        "filename": "ref_face_left_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/d0/20260819/d689c36f/551992b4-2840-4dea-86e8-deab294b935f_0.png?Expires=1787216184&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Ltc14%2BbxleAMn7v%2BKfsP%2Fx35D4c%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "left",
+        "asset_path": "assets/identity/ref_face_left_001.png"
+      },
+      {
+        "filename": "ref_face_right_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/26/20260819/d689c36f/93919954-6483-4f08-af10-ff8094facbf3_0.png?Expires=1787216206&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=rNKrTTFJrf1%2FSFL9X0bF9HgMPAg%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "right",
+        "asset_path": "assets/identity/ref_face_right_001.png"
+      },
+      {
+        "filename": "ref_face_three_quarter_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/7b/20260819/d689c36f/b2886c13-0ffc-4f5b-845b-46ab8681d83c_0.png?Expires=1787216231&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=znq2GRlho9BEzKuCbfV%2Bmp%2BQg2g%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "three_quarter",
+        "asset_path": "assets/identity/ref_face_three_quarter_001.png"
+      },
+      {
+        "filename": "ref_face_top_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/f5/20260819/d689c36f/eb749a83-17c8-4bb4-b5f0-5e7dbca84ba4_0.png?Expires=1787216253&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=jbm441k8Xnr77N0%2Brw2I2uYaOiE%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "top",
+        "asset_path": "assets/identity/ref_face_top_001.png"
+      },
+      {
+        "filename": "ref_face_bottom_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/4f/20260819/d689c36f/0a814ab3-272a-4eaa-b558-4d6edce338ea_0.png?Expires=1787216277&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=XYn3%2FKAXUsqeXfEgETU95dbtyGA%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "bottom",
+        "asset_path": "assets/identity/ref_face_bottom_001.png"
+      },
+      {
+        "filename": "ref_face_face_detail_001.png",
+        "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/7d/20260819/d689c36f/46b33805-99c4-4faa-88bd-f7a667620213_0.png?Expires=1787216300&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=gS6MjDMXqiMqowuFfLMrjaOkv7g%3D",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "face_detail",
+        "asset_path": "assets/face_detail/ref_face_face_detail_001.png"
+      }
+    ],
+    "images_by_angle": {
+      "front": [
+        {
+          "filename": "ref_face_front_001.png",
+          "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/e6/20260819/d689c36f/5b6da58e-c25b-4ff5-86c5-018cbeaac83f_0.png?Expires=1787216137&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=rthdSXXK%2B4iAGnW4W%2Fx9UJ04DiA%3D",
+          "has_bytes": false,
+          "mime_type": "image/png",
+          "angle": "front",
+          "asset_path": "assets/identity/ref_face_front_001.png"
+        }
+      ],
+      "back": [
+        {
+          "filename": "ref_face_back_001.png",
+          "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/71/20260819/d689c36f/3398b23b-5af2-480a-bf8f-41b9cbd88de2_0.png?Expires=1787216161&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=r7sEb0N76ANbFShsc6PvpkI1wQY%3D",
+          "has_bytes": false,
+          "mime_type": "image/png",
+          "angle": "back",
+          "asset_path": "assets/identity/ref_face_back_001.png"
+        }
+      ],
+      "left": [
+        {
+          "filename": "ref_face_left_001.png",
+          "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/d0/20260819/d689c36f/551992b4-2840-4dea-86e8-deab294b935f_0.png?Expires=1787216184&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Ltc14%2BbxleAMn7v%2BKfsP%2Fx35D4c%3D",
+          "has_bytes": false,
+          "mime_type": "image/png",
+          "angle": "left",
+          "asset_path": "assets/identity/ref_face_left_001.png"
+        }
+      ],
+      "right": [
+        {
+          "filename": "ref_face_right_001.png",
+          "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/26/20260819/d689c36f/93919954-6483-4f08-af10-ff8094facbf3_0.png?Expires=1787216206&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=rNKrTTFJrf1%2FSFL9X0bF9HgMPAg%3D",
+          "has_bytes": false,
+          "mime_type": "image/png",
+          "angle": "right",
+          "asset_path": "assets/identity/ref_face_right_001.png"
+        }
+      ],
+      "three_quarter": [
+        {
+          "filename": "ref_face_three_quarter_001.png",
+          "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/7b/20260819/d689c36f/b2886c13-0ffc-4f5b-845b-46ab8681d83c_0.png?Expires=1787216231&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=znq2GRlho9BEzKuCbfV%2Bmp%2BQg2g%3D",
+          "has_bytes": false,
+          "mime_type": "image/png",
+          "angle": "three_quarter",
+          "asset_path": "assets/identity/ref_face_three_quarter_001.png"
+        }
+      ],
+      "top": [
+        {
+          "filename": "ref_face_top_001.png",
+          "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/f5/20260819/d689c36f/eb749a83-17c8-4bb4-b5f0-5e7dbca84ba4_0.png?Expires=1787216253&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=jbm441k8Xnr77N0%2Brw2I2uYaOiE%3D",
+          "has_bytes": false,
+          "mime_type": "image/png",
+          "angle": "top",
+          "asset_path": "assets/identity/ref_face_top_001.png"
+        }
+      ],
+      "bottom": [
+        {
+          "filename": "ref_face_bottom_001.png",
+          "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/4f/20260819/d689c36f/0a814ab3-272a-4eaa-b558-4d6edce338ea_0.png?Expires=1787216277&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=XYn3%2FKAXUsqeXfEgETU95dbtyGA%3D",
+          "has_bytes": false,
+          "mime_type": "image/png",
+          "angle": "bottom",
+          "asset_path": "assets/identity/ref_face_bottom_001.png"
+        }
+      ],
+      "face_detail": [
+        {
+          "filename": "ref_face_face_detail_001.png",
+          "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/7d/20260819/d689c36f/46b33805-99c4-4faa-88bd-f7a667620213_0.png?Expires=1787216300&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=gS6MjDMXqiMqowuFfLMrjaOkv7g%3D",
+          "has_bytes": false,
+          "mime_type": "image/png",
+          "angle": "face_detail",
+          "asset_path": "assets/face_detail/ref_face_face_detail_001.png"
+        }
+      ]
+    },
+    "raw": {
+      "multi_angle": true,
+      "angles": [
+        "front",
+        "back",
+        "left",
+        "right",
+        "three_quarter",
+        "top",
+        "bottom",
+        "face_detail"
+      ]
+    }
+  }
+}

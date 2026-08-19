@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from characteros.imaging.base import GeneratedImage, ImageGenProvider, ImageGenRequest, ImageGenResult
 
+_PLACEHOLDER_PNG = bytes.fromhex(
+    "89504E470D0A1A0A"
+    "0000000D49484452000000010000000108060000001F15C489"
+    "0000000D49444154789C6360606060000000050001A5F64540"
+    "0000000049454E44AE426082"
+)
+
 
 class NullImageProvider(ImageGenProvider):
     name = "null"
@@ -15,7 +22,7 @@ class NullImageProvider(ImageGenProvider):
             GeneratedImage(
                 filename=f"{prefix}_{index:03d}.png",
                 mime_type="image/png",
-                data=None,
+                data=_PLACEHOLDER_PNG,
                 url=None,
                 metadata={"dry_run": True, "index": index},
             )

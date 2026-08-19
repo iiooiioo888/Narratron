@@ -13,6 +13,11 @@ PURPOSE_SLOTS: dict[str, dict[str, str]] = {
         "asset_dir": "assets/identity",
         "filename_prefix": "ref_face",
     },
+    "face_detail": {
+        "shot": "single character extreme facial close-up, highly detailed eyes skin lips nose and facial structure, neutral expression",
+        "asset_dir": "assets/face_detail",
+        "filename_prefix": "face_detail",
+    },
     "outfit": {
         "shot": "full-body standing, outfit clearly visible, studio lighting",
         "asset_dir": "assets/style",
@@ -30,8 +35,8 @@ PURPOSE_SLOTS: dict[str, dict[str, str]] = {
     },
 }
 
-# 生圖預設五視圖：正／背／左／右／四分之三，維持同一角色造型。
-FIVE_VIEW_ANGLES: list[dict[str, str]] = [
+# 生圖預設多視角：正／背／左／右／四分之三／頂／底，維持同一角色造型。
+MULTI_VIEW_ANGLES: list[dict[str, str]] = [
     {
         "key": "front",
         "label": "front view",
@@ -57,22 +62,111 @@ FIVE_VIEW_ANGLES: list[dict[str, str]] = [
         "label": "three-quarter view",
         "shot": "three-quarter view, 45-degree angle, full body, neutral standing pose",
     },
+    {
+        "key": "top",
+        "label": "top view",
+        "shot": "top-down view from above, full body, neutral standing pose, body silhouette clearly readable",
+    },
+    {
+        "key": "bottom",
+        "label": "bottom view",
+        "shot": "bottom-up view from below, full body, neutral standing pose, body silhouette clearly readable",
+    },
 ]
 
-FIVE_VIEW_BASE = (
-    "character turnaround reference sheet, five-view multi-angle, "
-    "consistent identity outfit hair and body proportions across all views, "
+IDENTITY_SUPPLEMENTAL_ANGLES: list[dict[str, str]] = [
+    {
+        "key": "face_detail",
+        "label": "face detail",
+        "shot": "single character extreme facial close-up, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as turnaround sheet",
+    }
+]
+
+# prompt 用的 layout 描述文字（給第三方生圖模型參考）
+MULTI_VIEW_BASE = (
+    "single character only, one person only, full body isolated subject, "
+    "consistent identity outfit hair and body proportions, "
     "clean neutral studio background, even soft lighting, model sheet quality, "
-    "no text labels"
+    "no text labels, no duplicate figure, no collage"
 )
 
-FIVE_VIEW_NEGATIVE = (
+MULTI_VIEW_NEGATIVE = (
     "inconsistent design, different character, wrong angle, cropped body, "
     "cut off limbs, duplicate poses, blurry, low quality, watermark, text overlay, "
-    "multiple characters, collage errors"
+    "multiple characters, collage errors, deformed face, asymmetric eyes, broken facial features"
 )
 
-ANGLE_BY_KEY: dict[str, dict[str, str]] = {item["key"]: item for item in FIVE_VIEW_ANGLES}
+SINGLE_CHARACTER_GUARD = (
+    "single character only, one person only, no extra people, no duplicate body, no second face"
+)
+
+IDENTITY_LOCK_GUARD = (
+    "preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language"
+)
+
+FACE_DETAIL_LOCK_GUARD = (
+    "same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, "
+    "skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, "
+    "no hands covering face, no accessories blocking facial features"
+)
+
+DEFAULT_SINGLE_ANGLE_BY_PURPOSE: dict[str, str] = {
+    "identity": "front",
+    "face_detail": "face_detail",
+    "outfit": "front",
+    "expression": "front",
+    "thumb": "front",
+}
+
+# ============================================
+# CharacterOS 預設風格（缺省補齊用）
+# ============================================
+# 用於當 profile.manifest 缺少 `_style.character_style.visual.*` 時，
+# 仍能生成帶有「3D建模風格／T 型體」特徵的 prompt。
+DEFAULT_CHARACTER_STYLE_PRESET = "3D建模風格, T型體"
+DEFAULT_STYLE_MEDIUM = "3D建模風格"
+DEFAULT_STYLE_AESTHETIC = "T型體"
+DEFAULT_CREATED_BY = DEFAULT_CHARACTER_STYLE_PRESET
+
+
+def apply_default_character_style(manifest: dict[str, Any]) -> dict[str, Any]:
+    """
+    補齊缺省的角色視覺風格欄位。
+
+    不呼叫任何外部模型；僅就地修改 manifest dict，供 CharacterOS imaging 組 prompt 使用。
+    """
+
+    if not isinstance(manifest, dict):
+        return {}
+
+    meta = manifest.setdefault("_meta", {})
+    if isinstance(meta, dict) and not meta.get("created_by"):
+        meta["created_by"] = DEFAULT_CREATED_BY
+
+    style = manifest.setdefault("_style", {})
+    if not isinstance(style, dict):
+        style = {}
+        manifest["_style"] = style
+
+    character_style = style.setdefault("character_style", {})
+    if not isinstance(character_style, dict):
+        character_style = {}
+        style["character_style"] = character_style
+
+    visual = character_style.setdefault("visual", {})
+    if not isinstance(visual, dict):
+        visual = {}
+        character_style["visual"] = visual
+
+    if not visual.get("medium"):
+        visual["medium"] = DEFAULT_STYLE_MEDIUM
+    if not visual.get("aesthetic"):
+        visual["aesthetic"] = DEFAULT_STYLE_AESTHETIC
+
+    return manifest
+
+ANGLE_BY_KEY: dict[str, dict[str, str]] = {item["key"]: item for item in MULTI_VIEW_ANGLES}
+ANGLE_BY_KEY.update({item["key"]: item for item in IDENTITY_SUPPLEMENTAL_ANGLES})
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -129,6 +223,154 @@ def _merge_negative_prompt(base: str, *extra_parts: str) -> str:
     return ", ".join(chunks)
 
 
+def _extend_unique(parts: list[str], *values: str) -> None:
+    seen = {item.strip().lower() for item in parts if item.strip()}
+    for value in values:
+        cleaned = str(value or "").strip().rstrip(",")
+        if cleaned and cleaned.lower() not in seen:
+            parts.append(cleaned)
+            seen.add(cleaned.lower())
+
+
+def _normalize_prompt_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item or "").strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _humanize_key(key: str) -> str:
+    return str(key or "").replace("_", " ").strip()
+
+
+def _append_freeform_fields(parts: list[str], payload: dict[str, Any], *, skip: set[str]) -> None:
+    for key, value in payload.items():
+        if key in skip:
+            continue
+        label = _humanize_key(key)
+        if isinstance(value, list):
+            items = _normalize_prompt_list(value)
+            if items:
+                _extend_unique(parts, f"{label}: {', '.join(items)}")
+            continue
+        if isinstance(value, dict):
+            nested_items = [
+                f"{_humanize_key(inner_key)}: {inner_value}"
+                for inner_key, inner_value in value.items()
+                if str(inner_value or "").strip()
+            ]
+            if nested_items:
+                _extend_unique(parts, f"{label}: {', '.join(nested_items)}")
+            continue
+        cleaned = str(value or "").strip()
+        if cleaned:
+            _extend_unique(parts, f"{label}: {cleaned}")
+
+
+def default_single_angle_for_purpose(purpose: str) -> str:
+    return DEFAULT_SINGLE_ANGLE_BY_PURPOSE.get(str(purpose or "").strip(), "")
+
+
+def resolve_prompt_angle(*, purpose: str, angle: str | None = None, multi_angle: bool = True) -> str:
+    explicit = str(angle or "").strip()
+    if explicit:
+        return explicit
+    if str(purpose or "").strip() == "face_detail":
+        return "face_detail"
+    if not multi_angle:
+        return default_single_angle_for_purpose(purpose)
+    return ""
+
+
+def _append_style_prompt_parts(
+    parts: list[str],
+    *,
+    visual: dict[str, Any],
+    outfit: dict[str, Any],
+    hair_dict: dict[str, Any],
+    style: dict[str, Any],
+    art: dict[str, Any],
+    consistency_notes: str,
+    name: str,
+    purpose: str,
+) -> None:
+    if visual.get("medium"):
+        parts.append(str(visual["medium"]))
+    if visual.get("aesthetic"):
+        parts.append(str(visual["aesthetic"]))
+    if visual.get("lighting"):
+        parts.append(str(visual["lighting"]))
+    if visual.get("camera"):
+        parts.append(str(visual["camera"]))
+    if visual.get("note"):
+        parts.append(str(visual["note"]))
+    keywords = _normalize_prompt_list(visual.get("keywords"))
+    if keywords:
+        _extend_unique(parts, *keywords)
+    palette = _normalize_prompt_list(visual.get("color_palette"))
+    if palette:
+        parts.append("color palette: " + ", ".join(palette))
+    _append_freeform_fields(
+        parts,
+        visual,
+        skip={"medium", "aesthetic", "lighting", "camera", "note", "keywords", "color_palette"},
+    )
+    if outfit.get("description"):
+        parts.append("outfit: " + str(outfit["description"]))
+    if hair_dict.get("style"):
+        parts.append("hair: " + str(hair_dict["style"]))
+    descriptors = _normalize_prompt_list(style.get("additional_descriptors"))
+    if descriptors:
+        _extend_unique(parts, *descriptors)
+    template = str(art.get("template") or "").strip()
+    if template:
+        parts.append(template.replace("{name}", name).replace("{purpose}", purpose))
+    if art.get("positive"):
+        parts.append(str(art["positive"]))
+    if art.get("note"):
+        parts.append(str(art["note"]))
+    if consistency_notes:
+        parts.append("consistency notes: " + consistency_notes)
+
+
+def _append_angle_prompt_parts(
+    parts: list[str],
+    *,
+    slot: dict[str, str],
+    effective_angle: str,
+    purpose: str,
+    multi_angle: bool,
+) -> None:
+    angle_def = ANGLE_BY_KEY.get(effective_angle)
+    is_face_detail = purpose == "face_detail" or effective_angle == "face_detail"
+    if angle_def:
+        _extend_unique(parts, slot["shot"], angle_def["shot"])
+    else:
+        _extend_unique(parts, slot["shot"])
+
+    if is_face_detail:
+        _extend_unique(
+            parts,
+            SINGLE_CHARACTER_GUARD,
+            "one face only, one head only, no split-screen, no collage, no multi-panel composition",
+            "use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure",
+            FACE_DETAIL_LOCK_GUARD,
+        )
+        return
+
+    _extend_unique(
+        parts,
+        SINGLE_CHARACTER_GUARD,
+        "exactly one character, one pose, one camera angle, no crowd, no partner, no background character",
+        IDENTITY_LOCK_GUARD,
+    )
+    if multi_angle or angle_def:
+        _extend_unique(parts, MULTI_VIEW_BASE)
+    else:
+        _extend_unique(parts, "full body reference render, same identity, no extra people, no collage")
+
+
 def build_image_prompt(
     manifest: dict[str, Any] | Any,
     *,
@@ -143,7 +385,8 @@ def build_image_prompt(
         ``{"positive", "negative", "purpose"}``
     """
 
-    parsed = parse_manifest(manifest)
+    normalized_manifest = apply_default_character_style(_as_dict(manifest) or {})
+    parsed = parse_manifest(normalized_manifest)
     meta = _as_dict(parsed.meta)
     identity = _as_dict(parsed.identity)
     style = _as_dict(parsed.style)
@@ -153,6 +396,7 @@ def build_image_prompt(
     outfit = style.get("outfit") if isinstance(style.get("outfit"), dict) else {}
     hair = style.get("hair")
     hair_dict = hair if isinstance(hair, dict) else {"style": str(hair or "")}
+    consistency_notes = str(profile.get("consistency_notes") or "").strip()
 
     slot = PURPOSE_SLOTS.get(purpose, PURPOSE_SLOTS["identity"])
     name = str(identity.get("name") or meta.get("character_name") or "character")
@@ -162,57 +406,40 @@ def build_image_prompt(
     parts: list[str] = [f"{name}, {species}"]
     if age:
         parts.append(str(age))
-    if visual.get("medium"):
-        parts.append(str(visual["medium"]))
-    if visual.get("aesthetic"):
-        parts.append(str(visual["aesthetic"]))
-    if visual.get("lighting"):
-        parts.append(str(visual["lighting"]))
-    if visual.get("camera"):
-        parts.append(str(visual["camera"]))
-    keywords = visual.get("keywords") or []
-    if isinstance(keywords, list) and keywords:
-        parts.extend(str(item) for item in keywords if item)
-    palette = visual.get("color_palette") or []
-    if isinstance(palette, list) and palette:
-        parts.append("color palette: " + ", ".join(str(item) for item in palette if item))
-    if outfit.get("description"):
-        parts.append("outfit: " + str(outfit["description"]))
-    if hair_dict.get("style"):
-        parts.append("hair: " + str(hair_dict["style"]))
-    descriptors = style.get("additional_descriptors") or []
-    if isinstance(descriptors, list):
-        parts.extend(str(item) for item in descriptors if item)
-    template = str(art.get("template") or "").strip()
-    if template:
-        parts.append(template.replace("{name}", name).replace("{purpose}", purpose))
-    if art.get("positive"):
-        parts.append(str(art["positive"]))
-    if multi_angle:
-        angle_def = ANGLE_BY_KEY.get(angle or "")
-        if angle_def:
-            parts.append(angle_def["shot"])
-        else:
-            parts.append(
-                "five views layout: front, back, left side, right side, three-quarter, "
-                "full body each view, same character"
-            )
-        parts.append(FIVE_VIEW_BASE)
-    else:
-        parts.append(slot["shot"])
+    _append_style_prompt_parts(
+        parts,
+        visual=visual,
+        outfit=outfit,
+        hair_dict=hair_dict,
+        style=style,
+        art=art,
+        consistency_notes=consistency_notes,
+        name=name,
+        purpose=purpose,
+    )
+    effective_angle = resolve_prompt_angle(purpose=purpose, angle=angle, multi_angle=multi_angle)
+    _append_angle_prompt_parts(
+        parts,
+        slot=slot,
+        effective_angle=effective_angle,
+        purpose=purpose,
+        multi_angle=multi_angle,
+    )
     if extra:
         parts.append(extra.strip())
 
     positive = ", ".join(part.strip().rstrip(",") for part in parts if str(part).strip())
     negative = _merge_negative_prompt(
         str(art.get("negative") or "").strip(),
-        FIVE_VIEW_NEGATIVE if multi_angle else "",
+        MULTI_VIEW_NEGATIVE if multi_angle else "",
+        "multiple characters, extra person, duplicate figure, identity drift, different face, face swap",
+        "split face, double head, extra limbs",
     )
     return {
         "positive": positive,
         "negative": negative,
         "purpose": purpose,
-        "angle": angle or "",
+        "angle": effective_angle,
         "multi_angle": multi_angle,
     }
 

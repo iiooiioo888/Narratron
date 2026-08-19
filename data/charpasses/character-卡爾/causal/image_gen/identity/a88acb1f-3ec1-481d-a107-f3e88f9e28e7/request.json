@@ -1,0 +1,15 @@
+{
+  "purpose": "identity",
+  "prompt": "卡爾, human, 3D建模風格, T型體, extreme facial close-up, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as turnaround sheet, preserve exact facial identity from the turnaround reference, skin detail readable, no hands covering face",
+  "negative_prompt": "inconsistent design, different character, wrong angle, cropped body, cut off limbs, duplicate poses, blurry, low quality, watermark, text overlay, multiple characters, collage errors, deformed face, asymmetric eyes, broken facial features",
+  "size": "1024x1024",
+  "n": 1,
+  "model": "wan2.7-image-pro",
+  "ref_image_uris": [],
+  "extra": {
+    "asset_dir": "assets/identity",
+    "filename_prefix": "ref_face_face_detail",
+    "angle": "face_detail",
+    "multi_angle": true
+  }
+}

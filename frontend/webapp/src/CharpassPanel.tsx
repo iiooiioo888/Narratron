@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type ConflictStrategy = 'create_new' | 'merge' | 'overwrite'
 type CharpassLayer =
@@ -33,14 +33,786 @@ export interface CharacterCard {
   payload?: unknown
 }
 
+interface ImageRefItem {
+  path: string
+  uri?: string
+  angle?: string
+  note?: string
+}
+
+interface CharacterThumbnail {
+  src: string
+  label: string
+}
+
+interface CharacterSummary {
+  id: string
+  name?: string
+  metadata?: Record<string, unknown>
+}
+
+interface QueueTask {
+  id: number
+  core_id: number
+  character_name?: string
+  variant_hash: string
+  evolution_params: Record<string, unknown>
+  status: string
+  priority: number
+  error_message?: string | null
+  result_url?: string | null
+  result_metadata?: Record<string, unknown>
+  created_at?: string
+  updated_at?: string
+}
+
+interface TaskImageDetail extends GeneratedImageItem {
+  summary?: string
+}
+
+function firstNonEmptyString(...values: unknown[]): string {
+  for (const value of values) {
+    const text =
+      typeof value === 'string'
+        ? value.trim()
+        : value == null
+          ? ''
+          : String(value).trim()
+    if (text) {
+      return text
+    }
+  }
+  return ''
+}
+
+function imageAssetPath(source: unknown): string {
+  const item = asRecord(source)
+  return firstNonEmptyString(item.final_asset_path, item.asset_path, item.path)
+}
+
+function imageRemoteUrl(source: unknown): string {
+  const item = asRecord(source)
+  return firstNonEmptyString(item.url, item.uri)
+}
+
+function imageSummary(source: unknown, maxLength = 96): string | undefined {
+  const item = asRecord(source)
+  return (
+    summarizeText(item.revised_prompt ?? item.note ?? item.caption ?? item.filename ?? '', '', maxLength) || undefined
+  )
+}
+
+function taskImagePayload(task: QueueTask): Record<string, unknown> {
+  const resultMetadata = asRecord(task.result_metadata)
+  const imageGeneration = asRecord(resultMetadata.image_generation)
+  if (Object.keys(imageGeneration).length) {
+    return imageGeneration
+  }
+  return resultMetadata
+}
+
+function queueImageCollections(payload: Record<string, unknown>): unknown[] {
+  const directImages = asArray(payload.images)
+  if (directImages.length) {
+    return directImages
+  }
+  const imagesByAngle = asRecord(payload.images_by_angle)
+  return Object.values(imagesByAngle).flatMap((value) => asArray(value))
+}
+
+function taskPreviewMetadata(task: QueueTask): Record<string, string> {
+  const imageGen = taskImagePayload(task)
+  const detailImages = taskDetailImages('', task).map((item) => item.path).filter(Boolean)
+  const faceDetailByAngle = asArray(asRecord(imageGen.images_by_angle).face_detail)
+  const faceDetailAssetPath = firstNonEmptyString(
+    imageGen.face_detail_asset_path,
+    asRecord(faceDetailByAngle[0]).final_asset_path,
+    asRecord(faceDetailByAngle[0]).asset_path,
+    asRecord(asArray(imageGen.face_detail_images)[0]).final_asset_path,
+    asRecord(asArray(imageGen.face_detail_images)[0]).asset_path,
+    detailImages.find((path) => path.includes('face_detail')),
+  )
+  const thumbnailAssetPath = firstNonEmptyString(
+    imageGen.thumbnail_asset_path,
+    asRecord(imageGen.thumbnail_image).final_asset_path,
+    asRecord(imageGen.thumbnail_image).asset_path,
+    faceDetailAssetPath,
+    detailImages[0],
+  )
+  const metadata: Record<string, string> = {}
+  if (thumbnailAssetPath) {
+    metadata.thumbnail_asset_path = thumbnailAssetPath
+  }
+  if (faceDetailAssetPath) {
+    metadata.face_detail_asset_path = faceDetailAssetPath
+  }
+  return metadata
+}
+
+function mergeTaskPreviewSummaries(tasks: QueueTask[]): Record<string, CharacterSummary> {
+  const ordered = [...tasks].sort((left, right) =>
+    String(right.updated_at ?? right.created_at ?? '').localeCompare(String(left.updated_at ?? left.created_at ?? '')),
+  )
+  const next: Record<string, CharacterSummary> = {}
+  for (const task of ordered) {
+    if (taskReviewStatus(task) === 'rejected') {
+      continue
+    }
+    const characterId = String(task.core_id)
+    if (next[characterId]) {
+      continue
+    }
+    const metadata = taskPreviewMetadata(task)
+    if (!Object.keys(metadata).length) {
+      continue
+    }
+    next[characterId] = {
+      id: characterId,
+      name: task.character_name?.trim() || undefined,
+      metadata,
+    }
+  }
+  return next
+}
+
+function hasPendingAccept(task: QueueTask): boolean {
+  return normalizeStatus(task.status) === 'ready' && taskReviewStatus(task) === 'pending'
+}
+
+function stopSummaryToggle(event: React.MouseEvent<HTMLElement>) {
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function reviewStatusLabel(task: QueueTask): string | null {
+  const status = taskReviewStatus(task)
+  if (!status) {
+    return null
+  }
+  if (status === 'pending') return '待接受'
+  if (status === 'accepted') return '已接受'
+  if (status === 'rejected') return '已拒絕'
+  return status
+}
+
+interface QueueStats {
+  total_pending: number
+  total_ready: number
+  total_failed: number
+  average_wait_time_ms: number
+  oldest_pending_age_seconds: number
+}
+
+interface QueueTaskListResponse {
+  storage_mode: string
+  stats: QueueStats
+  tasks: QueueTask[]
+  total: number
+}
+
+interface VersionHistoryItem {
+  name: string
+  path: string
+  kind: string
+  is_binary: boolean
+}
+
+interface VersionBranchItem {
+  kind: string
+  branch_id: string
+  label: string
+  updated_at?: string
+  status?: string
+  review_status?: string
+  effective_status?: string
+  purpose?: string
+  angles?: string[]
+  asset_paths?: string[]
+  result_url?: string
+  job_id?: string
+  record_path?: string
+  images_index_path?: string
+  response_path?: string
+  images_by_angle?: Record<string, unknown>
+  thumbnail_asset_path?: string
+  face_detail_asset_path?: string
+  image_count?: number
+}
+
+interface CharacterVersionSummary {
+  entity_id: string
+  current_path: string
+  history: VersionHistoryItem[]
+  branches: VersionBranchItem[]
+}
+
+interface GeneratedImageItem extends ImageRefItem {
+  src: string
+}
+
+const PREFERRED_ANGLE_ORDER = ['face_detail', 'front', 'three_quarter', 'left', 'right', 'back', 'top', 'bottom']
+const STATUS_BADGE_CLASS: Record<string, string> = {
+  pending: 'status-badge pending',
+  accepted: 'status-badge accepted',
+  rejected: 'status-badge rejected',
+  failed: 'status-badge failed',
+  ready: 'status-badge ready',
+}
+
+function normalizeStatus(value?: string): string {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function purposeBadgeClass(value?: string): string {
+  const purpose = normalizeStatus(value)
+  if (purpose === 'face_detail') return 'pill purpose-face-detail'
+  if (purpose === 'identity') return 'pill purpose-identity'
+  if (purpose === 'outfit') return 'pill purpose-outfit'
+  if (purpose === 'expression') return 'pill purpose-expression'
+  if (purpose === 'thumb') return 'pill purpose-thumb'
+  return 'pill pill-ghost'
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {}
 }
 
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? {}, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function taskImageGeneration(task: QueueTask): Record<string, unknown> {
+  return taskImagePayload(task)
+}
+
+function taskReviewStatus(task: QueueTask): string {
+  const imageGen = taskImageGeneration(task)
+  const review = asRecord(imageGen.review)
+  return normalizeStatus(String(review.status ?? asRecord(task.result_metadata).review_status ?? ''))
+}
+
+function effectiveTaskStatus(task: QueueTask): string {
+  const reviewStatus = taskReviewStatus(task)
+  if (reviewStatus === 'accepted' || reviewStatus === 'rejected') {
+    return reviewStatus
+  }
+  return normalizeStatus(task.status) || reviewStatus || 'pending'
+}
+
+function branchEffectiveStatus(branch: VersionBranchItem): string {
+  const explicit = normalizeStatus(branch.effective_status)
+  if (explicit) {
+    return explicit
+  }
+  const reviewStatus = normalizeStatus(branch.review_status)
+  if (reviewStatus === 'accepted' || reviewStatus === 'rejected') {
+    return reviewStatus
+  }
+  return normalizeStatus(branch.status) || reviewStatus || 'ready'
+}
+
+function serverQueueStatus(status: string): string {
+  if (status === 'accepted' || status === 'rejected') {
+    return 'ready'
+  }
+  return status
+}
+
+function summarizeText(value: unknown, fallback: string, maxLength = 160): string {
+  const text =
+    typeof value === 'string'
+      ? value.trim()
+      : value == null
+        ? ''
+        : String(value).trim()
+  if (!text) {
+    return fallback
+  }
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text
+}
+
+function formatDateTime(value?: string): string {
+  if (!value) {
+    return '-'
+  }
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
+}
+
+function purposeLabel(value?: string): string {
+  const purpose = String(value ?? '').trim()
+  if (!purpose) {
+    return 'unknown'
+  }
+  if (purpose === 'face_detail') return '面部細節'
+  if (purpose === 'identity') return '身份'
+  if (purpose === 'outfit') return '服裝'
+  if (purpose === 'expression') return '表情'
+  if (purpose === 'thumb') return '縮圖'
+  return purpose
+}
+
+function branchTypeLabel(kind?: string, purpose?: string): string {
+  const normalizedKind = String(kind ?? '').trim()
+  if (normalizedKind === 'image_gen') {
+    return `生圖分支 / ${purposeLabel(purpose)}`
+  }
+  return normalizedKind || 'branch'
+}
+
+function branchKindBadgeClass(kind?: string): string {
+  const normalizedKind = String(kind ?? '').trim().toLowerCase()
+  if (normalizedKind === 'image_gen') return 'pill branch-kind-image-gen'
+  if (normalizedKind === 'history') return 'pill branch-kind-history'
+  return 'pill pill-ghost'
+}
+
+function statusLabel(value?: string): string {
+  const status = normalizeStatus(value)
+  if (status === 'pending') return '待處理'
+  if (status === 'accepted') return '已接受'
+  if (status === 'rejected') return '已拒絕'
+  if (status === 'failed') return '失敗'
+  if (status === 'ready') return '待審核'
+  return status || '未知'
+}
+
+function statusBadgeClass(value?: string): string {
+  const status = normalizeStatus(value)
+  return STATUS_BADGE_CLASS[status] ?? 'status-badge neutral'
+}
+
+function angleSortValue(angle?: string): number {
+  const normalized = String(angle ?? '').trim()
+  const index = PREFERRED_ANGLE_ORDER.indexOf(normalized)
+  return index >= 0 ? index : PREFERRED_ANGLE_ORDER.length + 1
+}
+
+function sortAngles(angles: string[]): string[] {
+  return [...angles].sort((left, right) => {
+    const sortDelta = angleSortValue(left) - angleSortValue(right)
+    if (sortDelta !== 0) {
+      return sortDelta
+    }
+    return left.localeCompare(right)
+  })
+}
+
+function branchSortValue(branch: VersionBranchItem): number {
+  const purpose = String(branch.purpose ?? '').trim()
+  if (purpose === 'face_detail') {
+    return 0
+  }
+  const angles = branch.angles ?? []
+  if (angles.includes('face_detail')) {
+    return 1
+  }
+  if (branch.face_detail_asset_path) {
+    return 2
+  }
+  return 3
+}
+
+function reviewSortValue(status?: string): number {
+  const normalized = normalizeStatus(status)
+  if (normalized === 'pending') return 0
+  if (normalized === 'ready') return 1
+  if (normalized === 'accepted') return 2
+  if (normalized === 'rejected') return 3
+  if (normalized === 'failed') return 4
+  return 5
+}
+
+function branchSummary(branch: VersionBranchItem): string {
+  const parts: string[] = []
+  if (branch.purpose) {
+    parts.push(`${purposeLabel(branch.purpose)} 分支`)
+  }
+  const sortedAngles = sortAngles((branch.angles ?? []).map((item) => String(item)))
+  if (sortedAngles.length) {
+    parts.push(sortedAngles.join(', '))
+  }
+  if (branch.asset_paths?.length) {
+    parts.push(`${branch.asset_paths.length} 張圖`)
+  }
+  if (branch.job_id) {
+    parts.push(`job ${String(branch.job_id).slice(0, 8)}`)
+  }
+  return parts.join(' · ') || '尚無額外摘要'
+}
+
+function branchMetaSummary(branch: VersionBranchItem): string {
+  const parts: string[] = []
+  if (branch.effective_status || branch.review_status || branch.status) {
+    parts.push(statusLabel(branchEffectiveStatus(branch)))
+  }
+  if (branch.job_id) {
+    parts.push(`job ${String(branch.job_id).slice(0, 8)}`)
+  }
+  if (branch.image_count != null) {
+    parts.push(`${branch.image_count} 張`)
+  } else if (branch.asset_paths?.length) {
+    parts.push(`${branch.asset_paths.length} 張`)
+  }
+  if (branch.result_url) {
+    parts.push('有結果')
+  }
+  return parts.join(' · ') || '等待更多分支資料'
+}
+
+function responseSummary(task: QueueTask): string {
+  const imageGen = taskImageGeneration(task)
+  const provider = firstNonEmptyString(imageGen.provider)
+  const model = firstNonEmptyString(imageGen.model)
+  const purpose = firstNonEmptyString(imageGen.purpose)
+  const imageCount = queueImageCollections(imageGen).length
+  const parts = [
+    purpose ? `用途 ${purpose}` : '',
+    provider ? `provider ${provider}` : '',
+    model ? `model ${model}` : '',
+    imageCount ? `${imageCount} 張輸出` : '',
+  ].filter(Boolean)
+  return parts.join(' · ') || '目前沒有回應摘要'
+}
+
+function responseDetailSummary(task: QueueTask): string {
+  const imageGen = taskImageGeneration(task)
+  const review = asRecord(imageGen.review)
+  const revisedPrompt = summarizeText(imageGen.revised_prompt, '', 120)
+  const detailSummary = summarizeText(imageGen.summary, '', 120)
+  const parts = [
+    responseSummary(task),
+    review.status ? `review ${String(review.status).trim()}` : '',
+    revisedPrompt ? `revised ${revisedPrompt}` : '',
+    detailSummary || '',
+  ].filter(Boolean)
+  return parts.join(' · ') || '目前沒有更詳細的回應摘要'
+}
+
+function promptText(task: QueueTask): string {
+  const imageGen = taskImageGeneration(task)
+  return firstNonEmptyString(
+    imageGen.prompt,
+    imageGen.final_prompt,
+    imageGen.revised_prompt,
+    asRecord(task.result_metadata).prompt,
+  )
+}
+
+function negativePromptText(task: QueueTask): string {
+  const imageGen = taskImageGeneration(task)
+  return firstNonEmptyString(imageGen.negative_prompt, asRecord(task.result_metadata).negative_prompt)
+}
+
+function detailImageGroups(images: TaskImageDetail[]): { faceDetail: TaskImageDetail[]; otherAngles: TaskImageDetail[] } {
+  return {
+    faceDetail: images.filter((item) => item.angle === 'face_detail'),
+    otherAngles: images.filter((item) => item.angle !== 'face_detail'),
+  }
+}
+
+function taskDetailImages(apiBase: string, task: QueueTask): TaskImageDetail[] {
+  const imageGen = taskImageGeneration(task)
+  const directImages = asArray(imageGen.images)
+  const faceDetailImages = asArray(imageGen.face_detail_images)
+  const imagesByAngle = asRecord(imageGen.images_by_angle)
+  const bucket = new Map<string, TaskImageDetail>()
+
+  const registerImage = (source: unknown, forcedAngle?: string) => {
+    const item = asRecord(source)
+    const assetPath = imageAssetPath(item)
+    const rawUrl = imageRemoteUrl(item)
+    if (!assetPath && !rawUrl) {
+      return
+    }
+    const angle = String(forcedAngle ?? item.angle ?? '').trim() || undefined
+    const key = `${assetPath || rawUrl}::${angle || ''}`
+    if (bucket.has(key)) {
+      return
+    }
+    bucket.set(key, {
+      path: assetPath,
+      uri: rawUrl || undefined,
+      angle,
+      note: String(imageGen.purpose ?? 'identity'),
+      src: assetPath ? assetUrlFromPath(apiBase, task.core_id, assetPath) : rawUrl,
+      summary: imageSummary(item),
+    })
+  }
+
+  for (const image of faceDetailImages) {
+    registerImage(image, 'face_detail')
+  }
+  for (const image of directImages) {
+    registerImage(image)
+  }
+  for (const [angle, value] of Object.entries(imagesByAngle)) {
+    for (const image of asArray(value)) {
+      registerImage(image, angle)
+    }
+  }
+
+  return [...bucket.values()].sort((left, right) => {
+    const sortDelta = angleSortValue(left.angle) - angleSortValue(right.angle)
+    if (sortDelta !== 0) {
+      return sortDelta
+    }
+    return String(left.path || left.uri).localeCompare(String(right.path || right.uri))
+  })
+}
+
+function taskHeroImage(apiBase: string, task: QueueTask, detailImages: TaskImageDetail[]): TaskImageDetail | null {
+  const firstFaceDetail = detailImages.find((item) => item.angle === 'face_detail')
+  if (firstFaceDetail) {
+    return firstFaceDetail
+  }
+  const imageGen = taskImageGeneration(task)
+  const faceDetailAssetPath = String(
+    firstNonEmptyString(
+      imageGen.face_detail_asset_path,
+      asRecord(task.result_metadata).face_detail_asset_path,
+      asRecord(imageGen.thumbnail_image).final_asset_path,
+      asRecord(imageGen.thumbnail_image).asset_path,
+    ),
+  ).trim()
+  if (!faceDetailAssetPath) {
+    return null
+  }
+  return {
+    path: faceDetailAssetPath,
+    angle: 'face_detail',
+    note: String(imageGen.purpose ?? 'identity'),
+    src: assetUrlFromPath(apiBase, task.core_id, faceDetailAssetPath),
+  }
+}
+
+function branchDetailImages(apiBase: string, characterId: string, branch: VersionBranchItem): TaskImageDetail[] {
+  const imagesByAngle = asRecord(branch.images_by_angle)
+  const bucket = new Map<string, TaskImageDetail>()
+
+  const registerImage = (source: unknown, forcedAngle?: string) => {
+    const item = asRecord(source)
+    const assetPath = imageAssetPath(item)
+    if (!assetPath) {
+      return
+    }
+    const angle = String(forcedAngle ?? item.angle ?? '').trim() || undefined
+    const key = `${assetPath}::${angle || ''}`
+    if (bucket.has(key)) {
+      return
+    }
+    bucket.set(key, {
+      path: assetPath,
+      angle,
+      note: branch.purpose || branch.kind,
+      src: assetUrlFromPath(apiBase, characterId, assetPath),
+      summary: imageSummary(item, 72),
+    })
+  }
+
+  for (const [angle, value] of Object.entries(imagesByAngle)) {
+    for (const image of asArray(value)) {
+      registerImage(image, angle)
+    }
+  }
+  for (const assetPath of branch.asset_paths ?? []) {
+    const normalized = String(assetPath).trim()
+    if (!normalized) {
+      continue
+    }
+    registerImage({ asset_path: normalized }, normalized === branch.face_detail_asset_path ? 'face_detail' : undefined)
+  }
+  if (branch.face_detail_asset_path) {
+    registerImage({ asset_path: branch.face_detail_asset_path }, 'face_detail')
+  }
+
+  return [...bucket.values()].sort((left, right) => {
+    const sortDelta = angleSortValue(left.angle) - angleSortValue(right.angle)
+    if (sortDelta !== 0) {
+      return sortDelta
+    }
+    return String(left.path).localeCompare(String(right.path))
+  })
+}
+
+function asImageRefList(value: unknown): ImageRefItem[] {
+  return asArray(value)
+    .map((item) => asRecord(item))
+    .map((item) => ({
+      path: String(item.path ?? '').trim(),
+      uri: String(item.uri ?? '').trim() || undefined,
+      angle: String(item.angle ?? '').trim() || undefined,
+      note: String(item.note ?? '').trim() || undefined,
+    }))
+    .filter((item) => item.path || item.uri)
+}
+
+function assetUrl(apiBase: string, characterId: string, item: ImageRefItem): string {
+  if (item.uri && /^https?:\/\//i.test(item.uri)) {
+    return item.uri
+  }
+  const source = item.path || item.uri || ''
+  const cleanPath = source.replace(/^\/+/, '')
+  return `${apiBase}/api/v1/characters/${characterId}/assets/${cleanPath}`
+}
+
+function assetUrlFromPath(apiBase: string, characterId: string | number, assetPath: string): string {
+  const cleanPath = String(assetPath || '').replace(/^\/+/, '')
+  return `${apiBase}/api/v1/characters/${characterId}/assets/${cleanPath}`
+}
+
+function taskWorkflowLabel(task: QueueTask): string {
+  const effectiveStatus = effectiveTaskStatus(task)
+  const reviewStatus = taskReviewStatus(task)
+  if (effectiveStatus === 'pending') {
+    return '等待生成'
+  }
+  if (effectiveStatus === 'failed') {
+    return '生成失敗'
+  }
+  if (effectiveStatus === 'accepted') {
+    return '已接受並入庫'
+  }
+  if (effectiveStatus === 'rejected') {
+    return '已拒絕，不入庫'
+  }
+  if (effectiveStatus === 'ready' && reviewStatus === 'pending') {
+    return '待審核決定是否入庫'
+  }
+  if (effectiveStatus === 'ready') {
+    return '候選圖已就緒'
+  }
+  return statusLabel(effectiveStatus)
+}
+
+function taskWorkflowHint(task: QueueTask): string {
+  const effectiveStatus = effectiveTaskStatus(task)
+  const reviewStatus = taskReviewStatus(task)
+  if (effectiveStatus === 'pending') {
+    return '任務仍在佇列中，尚未產出候選圖片。'
+  }
+  if (effectiveStatus === 'failed') {
+    return '後端處理失敗，可先檢查錯誤訊息與參數。'
+  }
+  if (effectiveStatus === 'accepted') {
+    return '這批圖片已確認採用，角色護照應已同步更新。'
+  }
+  if (effectiveStatus === 'rejected') {
+    return '這批圖片被標記為拒絕，不會寫回角色護照。'
+  }
+  if (effectiveStatus === 'ready' && reviewStatus === 'pending') {
+    return '圖片已生成完成，但還需要人工接受或拒絕。'
+  }
+  if (effectiveStatus === 'ready') {
+    return '圖片可供檢視，目前無需額外操作。'
+  }
+  return '目前無需額外操作。'
+}
+
 function entityCharpass(entity: CharacterCard): Record<string, unknown> {
   return asRecord(asRecord(entity.payload).charpass)
+}
+
+function charpassImageMetadata(charpass: Record<string, unknown>): Record<string, string> {
+  const meta = asRecord(charpass._meta)
+  const identity = asRecord(charpass._identity)
+  const refs = asImageRefList(identity.ref_images)
+  const faceDetail = refs.find((item) => item.angle === 'face_detail')
+  const thumbnail =
+    String(meta.thumbnail ?? '').trim() ||
+    String(faceDetail?.path ?? '').trim() ||
+    String(refs[0]?.path ?? '').trim()
+
+  const result: Record<string, string> = {}
+  if (thumbnail) {
+    result.thumbnail_asset_path = thumbnail
+  }
+  if (faceDetail?.path) {
+    result.face_detail_asset_path = faceDetail.path
+  }
+  return result
+}
+
+function payloadThumbnailItem(entity: CharacterCard): ImageRefItem | null {
+  const payload = asRecord(entity.payload)
+  const faceDetail = String(payload.face_detail_asset_path ?? '').trim()
+  if (faceDetail) {
+    return { path: faceDetail, note: 'face_detail' }
+  }
+  const thumbnail = String(payload.thumbnail_asset_path ?? '').trim()
+  if (thumbnail) {
+    return { path: thumbnail, note: 'thumbnail' }
+  }
+  return null
+}
+
+function findThumbnailItem(charpass: Record<string, unknown>): ImageRefItem | null {
+  const meta = asRecord(charpass._meta)
+  const identity = asRecord(charpass._identity)
+  const identityRefs = asImageRefList(identity.ref_images)
+  const directThumb = String(meta.thumbnail ?? '').trim()
+  if (directThumb) {
+    return { path: directThumb, note: 'thumbnail' }
+  }
+  const preferredAngles = ['face_detail', 'front', 'three_quarter', 'left', 'right', 'back', 'top', 'bottom']
+  for (const angle of preferredAngles) {
+    const match = identityRefs.find((item) => item.angle === angle)
+    if (match) {
+      return match
+    }
+  }
+  return identityRefs[0] ?? null
+}
+
+function characterThumbnail(
+  apiBase: string,
+  entity: CharacterCard,
+  summary?: CharacterSummary,
+): CharacterThumbnail | null {
+  const summaryMetadata = asRecord(summary?.metadata)
+  const summaryFaceDetail = String(summaryMetadata.face_detail_asset_path ?? '').trim()
+  if (summaryFaceDetail) {
+    return {
+      src: assetUrlFromPath(apiBase, entity.id, summaryFaceDetail),
+      label: 'face_detail',
+    }
+  }
+  const summaryThumb = String(summaryMetadata.thumbnail_asset_path ?? '').trim()
+  if (summaryThumb) {
+    return {
+      src: assetUrlFromPath(apiBase, entity.id, summaryThumb),
+      label: 'thumbnail',
+    }
+  }
+  const payloadThumb = payloadThumbnailItem(entity)
+  if (payloadThumb) {
+    return {
+      src: assetUrl(apiBase, entity.id, payloadThumb),
+      label: payloadThumb.note || 'thumbnail',
+    }
+  }
+  const charpass = entityCharpass(entity)
+  if (!Object.keys(charpass).length) {
+    return null
+  }
+  const item = findThumbnailItem(charpass)
+  if (!item) {
+    return null
+  }
+  return {
+    src: assetUrl(apiBase, entity.id, item),
+    label: item.angle || item.note || 'thumbnail',
+  }
 }
 
 function nestedNumber(source: Record<string, unknown>, layer: string, key: string, fallback: number): number {
@@ -77,15 +849,96 @@ interface CharpassPanelProps {
 export function CharpassPanel(props: CharpassPanelProps) {
   const { apiBase, projectId, persist, characters, selectedCharacter, onSelect, onPatchEntity, onError } = props
   const [draft, setDraft] = useState<Record<string, unknown>>({})
+  const [characterSummaries, setCharacterSummaries] = useState<Record<string, CharacterSummary>>({})
+  const [queueData, setQueueData] = useState<QueueTaskListResponse | null>(null)
+  const [versionSummary, setVersionSummary] = useState<CharacterVersionSummary | null>(null)
+  const [queueBusy, setQueueBusy] = useState(false)
+  const [imageBusy, setImageBusy] = useState(false)
+  const [lastGeneratedPrompt, setLastGeneratedPrompt] = useState('')
+  const [purpose, setPurpose] = useState('identity')
+  const [provider, setProvider] = useState('wan')
+  const [model, setModel] = useState('')
+  const [baseUrl, setBaseUrl] = useState('')
+  const [extraPrompt, setExtraPrompt] = useState('')
+  const [queueStatusFilter, setQueueStatusFilter] = useState('')
+  const [queueOnlySelected, setQueueOnlySelected] = useState(true)
   const [layer, setLayer] = useState<CharpassLayer>('_identity')
   const [conflictStrategy, setConflictStrategy] = useState<ConflictStrategy>('merge')
   const [focused, setFocused] = useState(false)
   const [busy, setBusy] = useState(false)
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
+  const loadCharacterSummaries = useCallback(async () => {
+    const response = await fetch(`${apiBase}/api/v1/characters?limit=100`)
+    if (!response.ok) {
+      throw new Error((await response.text()) || `HTTP ${response.status}`)
+    }
+    const body = (await response.json()) as Array<Record<string, unknown>>
+    if (!Array.isArray(body)) {
+      return
+    }
+    const next: Record<string, CharacterSummary> = {}
+    for (const item of body) {
+      const id = String(item.id ?? '').trim()
+      if (!id) {
+        continue
+      }
+      next[id] = {
+        id,
+        name: String(item.name ?? '').trim() || undefined,
+        metadata: asRecord(item.metadata),
+      }
+    }
+    setCharacterSummaries(next)
+  }, [apiBase])
+
+  const patchCharacterSummaryFromCharpass = useCallback(
+    (characterId: string, charpass: Record<string, unknown>) => {
+      const metadataPatch = charpassImageMetadata(charpass)
+      const fallbackName =
+        String(asRecord(charpass._identity).name ?? '').trim() ||
+        String(asRecord(charpass._meta).character_name ?? '').trim() ||
+        undefined
+      setCharacterSummaries((prev) => ({
+        ...prev,
+        [characterId]: {
+          id: characterId,
+          name: prev[characterId]?.name || fallbackName,
+          metadata: {
+            ...asRecord(prev[characterId]?.metadata),
+            ...metadataPatch,
+          },
+        },
+      }))
+    },
+    [],
+  )
+
+  const patchCharacterSummariesFromTasks = useCallback((tasks: QueueTask[]) => {
+    const previewSummaries = mergeTaskPreviewSummaries(tasks)
+    if (!Object.keys(previewSummaries).length) {
+      return
+    }
+    setCharacterSummaries((prev) => {
+      const next = { ...prev }
+      for (const [characterId, summary] of Object.entries(previewSummaries)) {
+        next[characterId] = {
+          id: characterId,
+          name: summary.name || prev[characterId]?.name,
+          metadata: {
+            ...asRecord(prev[characterId]?.metadata),
+            ...asRecord(summary.metadata),
+          },
+        }
+      }
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     if (!selectedCharacter) {
       setDraft({})
+      setVersionSummary(null)
       return
     }
     const local = entityCharpass(selectedCharacter)
@@ -94,14 +947,23 @@ export function CharpassPanel(props: CharpassPanelProps) {
       return
     }
     let cancelled = false
-    fetch(`${apiBase}/api/v1/characters/${selectedCharacter.id}/charpass`)
-      .then(async (response) => {
-        if (!response.ok) {
-          return
+    Promise.all([
+      fetch(`${apiBase}/api/v1/characters/${selectedCharacter.id}/charpass`),
+      fetch(`${apiBase}/api/v1/characters/${selectedCharacter.id}/versions`),
+    ])
+      .then(async ([charpassResponse, versionResponse]) => {
+        if (charpassResponse.ok) {
+          const body = (await charpassResponse.json()) as { charpass?: Record<string, unknown> }
+          if (!cancelled && body.charpass) {
+            setDraft(body.charpass)
+            patchCharacterSummaryFromCharpass(selectedCharacter.id, body.charpass)
+          }
         }
-        const body = (await response.json()) as { charpass?: Record<string, unknown> }
-        if (!cancelled && body.charpass) {
-          setDraft(body.charpass)
+        if (versionResponse.ok) {
+          const body = (await versionResponse.json()) as CharacterVersionSummary
+          if (!cancelled) {
+            setVersionSummary(body)
+          }
         }
       })
       .catch(() => undefined)
@@ -109,6 +971,68 @@ export function CharpassPanel(props: CharpassPanelProps) {
       cancelled = true
     }
   }, [apiBase, persist, selectedCharacter?.id])
+
+  useEffect(() => {
+    void loadCharacterSummaries().catch(() => undefined)
+  }, [loadCharacterSummaries, characters.length])
+
+  async function reloadCharacterCharpass(characterId: string) {
+    const [charpassResponse, versionResponse] = await Promise.all([
+      fetch(`${apiBase}/api/v1/characters/${characterId}/charpass`),
+      fetch(`${apiBase}/api/v1/characters/${characterId}/versions`),
+    ])
+    if (!charpassResponse.ok) {
+      throw new Error((await charpassResponse.text()) || `HTTP ${charpassResponse.status}`)
+    }
+    const body = (await charpassResponse.json()) as { charpass?: Record<string, unknown> }
+    const next = body.charpass ?? {}
+    setDraft(next)
+    patchCharacterSummaryFromCharpass(characterId, next)
+    onPatchEntity(characterId, next)
+    if (versionResponse.ok) {
+      const versionBody = (await versionResponse.json()) as CharacterVersionSummary
+      setVersionSummary(versionBody)
+    }
+  }
+
+  async function loadQueueTasks(options?: { keepError?: boolean }) {
+    setQueueBusy(true)
+    if (!options?.keepError) {
+      onError(null)
+    }
+    try {
+      const params = new URLSearchParams()
+      params.set('limit', '100')
+      if (queueStatusFilter) {
+        params.set('status', serverQueueStatus(normalizeStatus(queueStatusFilter)))
+      }
+      if (queueOnlySelected && selectedCharacter?.id) {
+        params.set('core_id', selectedCharacter.id)
+      }
+      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks?${params.toString()}`)
+      if (!response.ok) {
+        throw new Error((await response.text()) || `HTTP ${response.status}`)
+      }
+      const body = (await response.json()) as QueueTaskListResponse
+      setQueueData(body)
+      patchCharacterSummariesFromTasks(body.tasks ?? [])
+      const latestWithPrompt = (body.tasks || []).find((task) => {
+        const imageGen = asRecord(asRecord(task.result_metadata).image_generation)
+        return typeof imageGen.prompt === 'string' && imageGen.prompt.trim()
+      })
+      if (latestWithPrompt) {
+        setLastGeneratedPrompt(String(asRecord(asRecord(latestWithPrompt.result_metadata).image_generation).prompt))
+      }
+    } catch (queueError) {
+      onError(queueError instanceof Error ? queueError.message : '載入佇列失敗')
+    } finally {
+      setQueueBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadQueueTasks({ keepError: true })
+  }, [apiBase, selectedCharacter?.id, queueStatusFilter, queueOnlySelected])
 
   const sliderValues = useMemo(
     () => ({
@@ -119,6 +1043,251 @@ export function CharpassPanel(props: CharpassPanelProps) {
     }),
     [draft],
   )
+
+  const imageSections = useMemo(() => {
+    if (!selectedCharacter) {
+      return []
+    }
+    const identity = asRecord(draft._identity)
+    const style = asRecord(draft._style)
+    const outfit = asRecord(style.outfit)
+    const meta = asRecord(draft._meta)
+    const identityRefs = asImageRefList(identity.ref_images)
+    const faceDetails = identityRefs.filter((item) => item.angle === 'face_detail')
+    const turnaroundRefs = identityRefs.filter((item) => item.angle !== 'face_detail')
+    const thumbnailPath = String(meta.thumbnail ?? '').trim()
+    const sections = [
+      {
+        key: 'identity',
+        title: '身份參考圖',
+        items: turnaroundRefs,
+      },
+      {
+        key: 'face-detail',
+        title: '面部細節圖',
+        items: faceDetails,
+      },
+      {
+        key: 'outfit',
+        title: '服裝參考圖',
+        items: asImageRefList(outfit.ref_images),
+      },
+      {
+        key: 'style',
+        title: '風格參考圖',
+        items: asImageRefList(style.reference_images),
+      },
+      {
+        key: 'thumb',
+        title: '縮圖預覽',
+        items: thumbnailPath ? [{ path: thumbnailPath, note: 'thumbnail' }] : [],
+      },
+    ]
+    return sections
+      .map((section) => ({
+        ...section,
+        items: section.items.map((item) => ({
+          ...item,
+          src: assetUrl(apiBase, selectedCharacter.id, item),
+        })),
+      }))
+      .filter((section) => section.items.length > 0)
+  }, [apiBase, draft, selectedCharacter])
+
+  const filteredQueueTasks = useMemo(() => {
+    const tasks = queueData?.tasks ?? []
+    if (!queueStatusFilter) {
+      return tasks
+    }
+    const status = normalizeStatus(queueStatusFilter)
+    return tasks.filter((task) => effectiveTaskStatus(task) === status)
+  }, [queueData, queueStatusFilter])
+
+  const queuePreviewItems = useMemo(() => {
+    if (!queueData) {
+      return []
+    }
+    const items: GeneratedImageItem[] = []
+    for (const task of filteredQueueTasks) {
+      const imageGen = taskImageGeneration(task)
+      const images = asArray(imageGen.images)
+      for (const image of images) {
+        const imageRecord = asRecord(image)
+        const assetPath = String(imageRecord.asset_path ?? '').trim()
+        if (!assetPath) {
+          continue
+        }
+        items.push({
+          path: assetPath,
+          uri: String(imageRecord.url ?? '').trim() || undefined,
+          angle: String(imageRecord.angle ?? '').trim() || undefined,
+          note: `${String(imageGen.purpose ?? 'identity')} · ${task.character_name || task.core_id}`,
+          src: assetUrlFromPath(apiBase, task.core_id, assetPath),
+        })
+      }
+    }
+    return items
+  }, [apiBase, filteredQueueTasks, queueData])
+
+  const sortedBranches = useMemo(() => {
+    if (!versionSummary?.branches?.length) {
+      return []
+    }
+    return [...versionSummary.branches].sort((left, right) => {
+      const branchDelta = branchSortValue(left) - branchSortValue(right)
+      if (branchDelta !== 0) {
+        return branchDelta
+      }
+      const statusDelta = reviewSortValue(branchEffectiveStatus(left)) - reviewSortValue(branchEffectiveStatus(right))
+      if (statusDelta !== 0) {
+        return statusDelta
+      }
+      return String(right.updated_at ?? '').localeCompare(String(left.updated_at ?? ''))
+    })
+  }, [versionSummary])
+
+  async function queueImageGeneration() {
+    if (!selectedCharacter) {
+      return
+    }
+    setImageBusy(true)
+    onError(null)
+    try {
+      const response = await fetch(`${apiBase}/api/v1/characters/${selectedCharacter.id}/image-queue`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CharacterOS-Panel': 'enabled',
+        },
+        body: JSON.stringify({
+          purpose,
+          provider: provider || null,
+          model: model || null,
+          base_url: baseUrl || null,
+          extra: extraPrompt,
+          multi_angle: true,
+          persist: true,
+          priority: 0,
+        }),
+      })
+      if (!response.ok) {
+        throw new Error((await response.text()) || `HTTP ${response.status}`)
+      }
+      await loadQueueTasks()
+      await loadCharacterSummaries()
+    } catch (queueError) {
+      onError(queueError instanceof Error ? queueError.message : '建立生圖佇列任務失敗')
+    } finally {
+      setImageBusy(false)
+    }
+  }
+
+  async function processTask(taskId: number) {
+    setQueueBusy(true)
+    onError(null)
+    try {
+      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks/${taskId}/process`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        throw new Error((await response.text()) || `HTTP ${response.status}`)
+      }
+      const body = (await response.json()) as { task?: QueueTask }
+      const task = body.task
+      if (task && selectedCharacter && String(task.core_id) === selectedCharacter.id) {
+        await reloadCharacterCharpass(selectedCharacter.id)
+      }
+      await loadQueueTasks({ keepError: true })
+      await loadCharacterSummaries()
+    } catch (taskError) {
+      onError(taskError instanceof Error ? taskError.message : '處理任務失敗')
+    } finally {
+      setQueueBusy(false)
+    }
+  }
+
+  async function reviewTask(taskId: number, accepted: boolean) {
+    setQueueBusy(true)
+    onError(null)
+    try {
+      const action = accepted ? 'accept' : 'reject'
+      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks/${taskId}/${action}`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        throw new Error((await response.text()) || `HTTP ${response.status}`)
+      }
+      const body = (await response.json()) as { task?: QueueTask }
+      const task = body.task
+      if (task && selectedCharacter && String(task.core_id) === selectedCharacter.id) {
+        await reloadCharacterCharpass(selectedCharacter.id)
+      }
+      await loadQueueTasks({ keepError: true })
+      await loadCharacterSummaries()
+    } catch (taskError) {
+      onError(taskError instanceof Error ? taskError.message : '審核任務失敗')
+    } finally {
+      setQueueBusy(false)
+    }
+  }
+
+  async function processNextTask() {
+    setQueueBusy(true)
+    onError(null)
+    try {
+      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks/process-next`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        throw new Error((await response.text()) || `HTTP ${response.status}`)
+      }
+      const body = (await response.json()) as { task?: QueueTask | null }
+      const task = body.task
+      if (task && selectedCharacter && String(task.core_id) === selectedCharacter.id) {
+        await reloadCharacterCharpass(selectedCharacter.id)
+      }
+      await loadQueueTasks({ keepError: true })
+      await loadCharacterSummaries()
+    } catch (taskError) {
+      onError(taskError instanceof Error ? taskError.message : '處理下一筆任務失敗')
+    } finally {
+      setQueueBusy(false)
+    }
+  }
+
+  async function processAllTasks() {
+    setQueueBusy(true)
+    onError(null)
+    try {
+      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks/process-all?limit=100`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        throw new Error((await response.text()) || `HTTP ${response.status}`)
+      }
+      const body = (await response.json()) as { tasks?: QueueTask[] }
+      const touchedCurrent = Boolean(
+        selectedCharacter &&
+          (body.tasks || []).some((task) => String(task.core_id) === selectedCharacter.id),
+      )
+      if (touchedCurrent && selectedCharacter) {
+        await reloadCharacterCharpass(selectedCharacter.id)
+      }
+      await loadQueueTasks({ keepError: true })
+      await loadCharacterSummaries()
+    } catch (taskError) {
+      onError(taskError instanceof Error ? taskError.message : '批次處理任務失敗')
+    } finally {
+      setQueueBusy(false)
+    }
+  }
+
+  async function copyPrompt() {
+    if (!lastGeneratedPrompt) {
+      return
+    }
+    await navigator.clipboard.writeText(lastGeneratedPrompt)
+  }
 
   async function saveDraft() {
     if (!selectedCharacter) {
@@ -138,7 +1307,9 @@ export function CharpassPanel(props: CharpassPanelProps) {
       const body = (await response.json()) as { charpass?: Record<string, unknown> }
       const next = body.charpass ?? draft
       setDraft(next)
+      patchCharacterSummaryFromCharpass(selectedCharacter.id, next)
       onPatchEntity(selectedCharacter.id, next)
+      await reloadCharacterCharpass(selectedCharacter.id)
     } catch (saveError) {
       onError(saveError instanceof Error ? saveError.message : '儲存角色護照失敗')
     } finally {
@@ -205,6 +1376,7 @@ export function CharpassPanel(props: CharpassPanelProps) {
       }
       const lite = await fetch(`${apiBase}/api/v1/characters/${body.entity_id}/charpass`)
       const liteBody = lite.ok ? ((await lite.json()) as { charpass?: Record<string, unknown> }) : {}
+      patchCharacterSummaryFromCharpass(body.entity_id, liteBody.charpass ?? {})
       onPatchEntity(body.entity_id, liteBody.charpass ?? {}, {
         name: body.name ?? body.entity_id,
         note: body.note,
@@ -269,16 +1441,71 @@ export function CharpassPanel(props: CharpassPanelProps) {
       ) : (
         <>
           <div className="character-card-grid">
-            {characters.map((character) => (
-              <button
-                key={character.id}
-                className={`list-item ${selectedCharacter?.id === character.id ? 'active' : ''}`}
-                onClick={() => onSelect(character.id)}
-              >
-                <strong>{character.name || character.id}</strong>
-                <span>{character.id}</span>
+            {characters.map((character) => {
+              const thumb = characterThumbnail(apiBase, character, characterSummaries[character.id])
+              return (
+                <button
+                  key={character.id}
+                  className={`list-item ${selectedCharacter?.id === character.id ? 'active' : ''}`}
+                  onClick={() => onSelect(character.id)}
+                >
+                  {thumb ? (
+                    <div className="character-list-thumb">
+                      <img src={thumb.src} alt={thumb.label} loading="lazy" />
+                    </div>
+                  ) : null}
+                  <strong>{character.name || character.id}</strong>
+                  <span>{character.id}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="inset-panel image-queue-panel">
+            <div className="section-header compact">
+              <h4>AI 生圖佇列</h4>
+              <span className="pill">{selectedCharacter ? `角色 #${selectedCharacter.id}` : '未選角色'}</span>
+            </div>
+            <div className="inline-grid queue-form-grid">
+              <label className="field">
+                <span>用途</span>
+                <select value={purpose} onChange={(event) => setPurpose(event.target.value)}>
+                  <option value="identity">identity</option>
+                  <option value="face_detail">face_detail</option>
+                  <option value="outfit">outfit</option>
+                  <option value="expression">expression</option>
+                  <option value="thumb">thumb</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Provider</span>
+                <input value={provider} onChange={(event) => setProvider(event.target.value)} placeholder="wan" />
+              </label>
+              <label className="field">
+                <span>Model</span>
+                <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="沿用後端預設" />
+              </label>
+              <label className="field">
+                <span>Base URL</span>
+                <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="沿用後端預設" />
+              </label>
+            </div>
+            <label className="field">
+              <span>額外提示詞</span>
+              <textarea
+                value={extraPrompt}
+                onChange={(event) => setExtraPrompt(event.target.value)}
+                placeholder="可補充服裝、鏡頭、材質、風格等要求"
+              />
+            </label>
+            <div className="button-row compact">
+              <button className="primary" onClick={() => void queueImageGeneration()} disabled={!selectedCharacter || imageBusy}>
+                排入生圖任務
               </button>
-            ))}
+              <button className="ghost" onClick={() => void copyPrompt()} disabled={!lastGeneratedPrompt}>
+                複製最新提示詞
+              </button>
+            </div>
           </div>
 
           <div className="layer-tabs">
@@ -292,6 +1519,706 @@ export function CharpassPanel(props: CharpassPanelProps) {
               </button>
             ))}
           </div>
+
+          <div className="image-sections">
+            {imageSections.length === 0 ? (
+              <div className="empty-state small">目前還沒有可顯示的圖片。先生成並寫回角色護照。</div>
+            ) : (
+              imageSections.map((section) => (
+                <section key={section.key} className="image-section">
+                  <div className="section-header compact">
+                    <h4>{section.title}</h4>
+                    <span className="pill">{section.items.length}</span>
+                  </div>
+                  <div className="image-grid">
+                    {section.items.map((item, index) => (
+                      <a
+                        key={`${section.key}-${item.path || item.uri || index}`}
+                        className="image-card"
+                        href={item.src}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <img src={item.src} alt={item.angle || item.note || section.title} loading="lazy" />
+                        <div className="image-meta">
+                          <strong>{item.angle || item.note || `image-${index + 1}`}</strong>
+                          <span>{item.path || item.uri}</span>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </section>
+              ))
+            )}
+          </div>
+
+          <section className="queue-panel">
+            <div className="section-header compact">
+              <h4>版本分支</h4>
+              <div className="status-strip">
+                <span className="pill">{versionSummary?.entity_id || '未載入'}</span>
+                <span className="pill">history {versionSummary?.history.length ?? 0}</span>
+                <span className="pill">branches {versionSummary?.branches.length ?? 0}</span>
+              </div>
+            </div>
+            {!versionSummary ? (
+              <div className="empty-state small">選擇角色後會顯示 `current.charpass`、歷史快照與衍生分支。</div>
+            ) : (
+              <>
+                <div className="queue-task-list">
+                  {versionSummary.history.map((item) => (
+                    <div key={`${item.kind}-${item.path}`} className="queue-task-card">
+                      <div className="queue-task-header">
+                        <div>
+                          <strong>{item.name}</strong>
+                          <div className="queue-task-meta">
+                            <span>{item.kind}</span>
+                            <span>{item.is_binary ? 'binary' : 'readable'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="queue-task-meta">
+                        <span>{item.path}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {sortedBranches.length ? (
+                  <div className="queue-task-list">
+                    {sortedBranches.map((branch) => {
+                      const branchImages = selectedCharacter
+                        ? branchDetailImages(apiBase, selectedCharacter.id, branch)
+                        : []
+                      const branchImageGroups = detailImageGroups(branchImages)
+                      const branchStatus = branchEffectiveStatus(branch)
+                      const branchAngles = sortAngles((branch.angles ?? []).map((item) => String(item)))
+                      const branchThumbnail =
+                        selectedCharacter && (branch.face_detail_asset_path || branch.thumbnail_asset_path)
+                          ? assetUrlFromPath(
+                              apiBase,
+                              selectedCharacter.id,
+                              String(branch.face_detail_asset_path ?? branch.thumbnail_asset_path ?? ''),
+                            )
+                          : ''
+                      return (
+                      <details
+                        key={`${branch.kind}-${branch.branch_id}`}
+                        className={`queue-task-card task-disclosure version-branch-card status-panel-${branchStatus}`}
+                      >
+                        <summary className="task-summary">
+                          <div className="task-summary-layout">
+                            {branchThumbnail ? (
+                              <a
+                                className="task-summary-thumb task-summary-thumb--branch"
+                                href={branchThumbnail}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={stopSummaryToggle}
+                                onMouseDown={(event) => event.stopPropagation()}
+                              >
+                                <img src={branchThumbnail} alt={branch.label} loading="lazy" />
+                              </a>
+                            ) : null}
+                            <div className="task-summary-main">
+                            <div className="task-summary-title-row">
+                              <strong>{branch.label}</strong>
+                              <div className="task-status-group">
+                                <span className={branchKindBadgeClass(branch.kind)}>{branch.kind || 'branch'}</span>
+                                {branch.purpose ? (
+                                  <span className={purposeBadgeClass(branch.purpose)}>{purposeLabel(branch.purpose)}</span>
+                                ) : null}
+                                <span className={statusBadgeClass(branchStatus)}>{statusLabel(branchStatus)}</span>
+                              </div>
+                            </div>
+                            <div className="queue-task-meta">
+                              <span>{branchTypeLabel(branch.kind, branch.purpose)}</span>
+                              {branch.updated_at ? <span>{formatDateTime(branch.updated_at)}</span> : null}
+                            </div>
+                            <p className="task-inline-summary">{branchSummary(branch)}</p>
+                            <p className="task-inline-summary subtle">{branchMetaSummary(branch)}</p>
+                            </div>
+                          </div>
+                        </summary>
+                        <div className="task-detail-content">
+                          {selectedCharacter ? (
+                            <section className="task-detail-section">
+                              <div className="section-header compact">
+                                <h4>人物關聯</h4>
+                              </div>
+                              <div className="task-character-card">
+                                {branchThumbnail ? (
+                                  <a className="task-character-thumb" href={branchThumbnail} target="_blank" rel="noreferrer">
+                                    <img src={branchThumbnail} alt={selectedCharacter.name || selectedCharacter.id} loading="lazy" />
+                                  </a>
+                                ) : null}
+                                <div className="task-character-meta">
+                                  <strong>{selectedCharacter.name || selectedCharacter.id}</strong>
+                                  <div className="queue-task-meta">
+                                    <span>角色 #{selectedCharacter.id}</span>
+                                    <span>分支 {branch.branch_id.slice(0, 8)}</span>
+                                    <span>{branchTypeLabel(branch.kind, branch.purpose)}</span>
+                                  </div>
+                                  <div className="task-chip-row">
+                                    {branch.purpose ? (
+                                      <span className={purposeBadgeClass(branch.purpose)}>{purposeLabel(branch.purpose)}</span>
+                                    ) : null}
+                                    <span className={statusBadgeClass(branchStatus)}>{statusLabel(branchStatus)}</span>
+                                    {branchAngles.map((angle) => (
+                                      <span key={`${branch.branch_id}-character-${angle}`} className="pill pill-ghost">
+                                        {angle}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </section>
+                          ) : null}
+                          <div className="task-chip-row detail-chip-row">
+                            {branchAngles.map((angle) => (
+                              <span key={`${branch.branch_id}-${angle}`} className="pill pill-ghost">
+                                {angle}
+                              </span>
+                            ))}
+                          </div>
+                          {branchImageGroups.faceDetail.length ? (
+                            <section className="task-detail-section">
+                              <div className="section-header compact">
+                                <h4>面部細節圖</h4>
+                                <span className="pill">{branchImageGroups.faceDetail.length}</span>
+                              </div>
+                              <div className="image-grid task-detail-image-grid">
+                                {branchImageGroups.faceDetail.map((item, index) => (
+                                  <a
+                                    key={`${branch.branch_id}-${item.path || index}`}
+                                    className={`image-card ${item.angle === 'face_detail' ? 'face-detail-priority' : ''}`}
+                                    href={item.src}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    <img src={item.src} alt={item.angle || item.note || `branch-image-${index + 1}`} loading="lazy" />
+                                    <div className="image-meta">
+                                      <strong>{item.angle || item.note || `image-${index + 1}`}</strong>
+                                      <span>{item.summary || item.path}</span>
+                                    </div>
+                                  </a>
+                                ))}
+                              </div>
+                            </section>
+                          ) : null}
+                          {branchImageGroups.otherAngles.length ? (
+                            <section className="task-detail-section">
+                              <div className="section-header compact">
+                                <h4>其他角度圖</h4>
+                                <span className="pill">{branchImageGroups.otherAngles.length}</span>
+                              </div>
+                              <div className="image-grid task-detail-image-grid">
+                                {branchImageGroups.otherAngles.map((item, index) => (
+                                  <a
+                                    key={`${branch.branch_id}-other-${item.path || index}`}
+                                    className="image-card"
+                                    href={item.src}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    <img src={item.src} alt={item.angle || item.note || `branch-image-${index + 1}`} loading="lazy" />
+                                    <div className="image-meta">
+                                      <strong>{item.angle || item.note || `image-${index + 1}`}</strong>
+                                      <span>{item.summary || item.path}</span>
+                                    </div>
+                                  </a>
+                                ))}
+                              </div>
+                            </section>
+                          ) : null}
+                          <div className="task-detail-grid task-detail-grid--meta">
+                            <section className="task-detail-section">
+                              <div className="section-header compact">
+                                <h4>分支摘要</h4>
+                              </div>
+                              <div className="task-meta-stack">
+                                <div className="task-meta-row">
+                                  <span>分支類型</span>
+                                  <strong>{branchTypeLabel(branch.kind, branch.purpose)}</strong>
+                                </div>
+                                <div className="task-meta-row">
+                                  <span>狀態</span>
+                                  <strong>{statusLabel(branchStatus)}</strong>
+                                </div>
+                              <div className="task-meta-row">
+                                <span>工作流</span>
+                                <strong>{branchStatus === 'ready' ? '候選分支可檢視' : statusLabel(branchStatus)}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>角度</span>
+                                <strong>{branchAngles.join(', ') || '-'}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>最後更新</span>
+                                <strong>{formatDateTime(branch.updated_at)}</strong>
+                              </div>
+                                <div className="task-meta-row task-meta-row-block">
+                                  <span>簡要摘要</span>
+                                  <strong>{branchSummary(branch)}</strong>
+                                </div>
+                              </div>
+                            </section>
+                            <section className="task-detail-section">
+                              <div className="section-header compact">
+                                <h4>分支路徑</h4>
+                              </div>
+                              <div className="task-meta-stack">
+                                {branch.record_path ? (
+                                  <div className="task-meta-row">
+                                    <span>record</span>
+                                    <strong>{branch.record_path}</strong>
+                                  </div>
+                                ) : null}
+                                {branch.images_index_path ? (
+                                  <div className="task-meta-row">
+                                    <span>images index</span>
+                                    <strong>{branch.images_index_path}</strong>
+                                  </div>
+                                ) : null}
+                                {branch.response_path ? (
+                                  <div className="task-meta-row">
+                                    <span>response</span>
+                                    <strong>{branch.response_path}</strong>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </section>
+                          </div>
+                          {branch.result_url ? (
+                            <div className="button-row compact">
+                              <a className="ghost link-button" href={`${apiBase}${branch.result_url}`} target="_blank" rel="noreferrer">
+                                查看結果
+                              </a>
+                            </div>
+                          ) : null}
+                          {branch.asset_paths?.length ? (
+                            <section className="task-detail-section">
+                              <div className="section-header compact">
+                                <h4>資產清單</h4>
+                              </div>
+                              <pre className="layer-preview queue-preview-block">{safeJson(branch.asset_paths)}</pre>
+                            </section>
+                          ) : null}
+                        </div>
+                      </details>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="empty-state small">目前還沒有衍生分支。</div>
+                )}
+              </>
+            )}
+          </section>
+
+          <section className="queue-panel">
+            <div className="section-header compact">
+              <h4>任務面板</h4>
+              <div className="status-strip">
+                <span className="pill">
+                  {queueData?.storage_mode === 'database' ? 'PostgreSQL' : queueData?.storage_mode === 'local' ? '本機 JSON' : '未載入'}
+                </span>
+                <span className="pill">pending {queueData?.stats.total_pending ?? 0}</span>
+                <span className="pill">ready {queueData?.stats.total_ready ?? 0}</span>
+                <span className="pill">failed {queueData?.stats.total_failed ?? 0}</span>
+                <span className="pill">shown {filteredQueueTasks.length}</span>
+              </div>
+            </div>
+            <div className="queue-toolbar">
+              <label className="field">
+                <span>狀態過濾</span>
+                <select value={queueStatusFilter} onChange={(event) => setQueueStatusFilter(event.target.value)}>
+                  <option value="">全部</option>
+                  <option value="pending">pending</option>
+                  <option value="accepted">accepted</option>
+                  <option value="rejected">rejected</option>
+                  <option value="ready">ready</option>
+                  <option value="failed">failed</option>
+                </select>
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={queueOnlySelected}
+                  onChange={(event) => setQueueOnlySelected(event.target.checked)}
+                />
+                <span>只看目前角色</span>
+              </label>
+              <div className="button-row compact">
+                <button className="ghost" onClick={() => void loadQueueTasks()} disabled={queueBusy}>
+                  刷新
+                </button>
+                <button className="secondary" onClick={() => void processNextTask()} disabled={queueBusy}>
+                  執行下一筆
+                </button>
+                <button className="primary" onClick={() => void processAllTasks()} disabled={queueBusy}>
+                  批次執行待生成
+                </button>
+              </div>
+            </div>
+            <p className="task-inline-summary subtle queue-toolbar-note">`執行` 只會生成候選圖片；只有 `接受入庫` 才會正式寫回角色護照。</p>
+            {filteredQueueTasks.length ? (
+              <div className="queue-task-list">
+                {filteredQueueTasks.map((task) => {
+                  const imageGen = taskImageGeneration(task)
+                  const angleList = sortAngles(asArray(imageGen.angles).map((item) => String(item)))
+                  const detailImages = taskDetailImages(apiBase, task)
+                  const heroImage = taskHeroImage(apiBase, task, detailImages)
+                  const galleryImages = detailImages.filter(
+                    (item) =>
+                      `${item.path || item.uri}::${item.angle || ''}` !==
+                      `${heroImage?.path || heroImage?.uri || ''}::${heroImage?.angle || ''}`,
+                  )
+                  const assetPaths = [...new Set(detailImages.map((item) => item.path).filter(Boolean))]
+                  const reviewLabel = reviewStatusLabel(task)
+                  const reviewStatus = taskReviewStatus(task)
+                  const effectiveStatus = effectiveTaskStatus(task)
+                  const workflowLabel = taskWorkflowLabel(task)
+                  const workflowHint = taskWorkflowHint(task)
+                  const characterSummary = characterSummaries[String(task.core_id)]
+                  const characterName = task.character_name || characterSummary?.name || `角色 ${task.core_id}`
+                  const thumbnailAssetPath = firstNonEmptyString(
+                    asRecord(characterSummary?.metadata).face_detail_asset_path,
+                    asRecord(characterSummary?.metadata).thumbnail_asset_path,
+                    imageGen.face_detail_asset_path,
+                    imageGen.thumbnail_asset_path,
+                    asRecord(imageGen.thumbnail_image).final_asset_path,
+                    asRecord(imageGen.thumbnail_image).asset_path,
+                  )
+                  const characterThumbnailSrc =
+                    thumbnailAssetPath ? assetUrlFromPath(apiBase, task.core_id, thumbnailAssetPath) : ''
+                  const headline = `${purposeLabel(String(imageGen.purpose ?? '').trim() || task.status)} · ${
+                    characterName
+                  }`
+                  return (
+                    <details key={task.id} className={`queue-task-card task-disclosure status-panel-${effectiveStatus}`}>
+                      <summary className="task-summary">
+                        <div className="task-summary-layout">
+                          {characterThumbnailSrc ? (
+                            <a
+                              className="task-summary-thumb"
+                              href={characterThumbnailSrc}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={stopSummaryToggle}
+                              onMouseDown={(event) => event.stopPropagation()}
+                            >
+                              <img src={characterThumbnailSrc} alt={characterName} loading="lazy" />
+                            </a>
+                          ) : null}
+                          <div className="task-summary-main">
+                          <div className="task-summary-title-row">
+                            <strong>#{task.id} · {headline}</strong>
+                            <div className="task-status-group">
+                              <span className={purposeBadgeClass(String(imageGen.purpose ?? '').trim() || 'identity')}>
+                                {purposeLabel(String(imageGen.purpose ?? '').trim() || 'identity')}
+                              </span>
+                              <span className={statusBadgeClass(effectiveStatus)}>{statusLabel(effectiveStatus)}</span>
+                              {reviewLabel ? (
+                                <span className={statusBadgeClass(reviewStatus || 'ready')}>審核 {reviewLabel}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="queue-task-meta">
+                            <span>priority {task.priority}</span>
+                            <span>{formatDateTime(task.created_at)}</span>
+                            <span>hash {(task.variant_hash || '').slice(0, 16)}...</span>
+                          </div>
+                          <p className="task-inline-summary">
+                            {detailImages.length
+                              ? `${detailImages[0]?.angle === 'face_detail' ? 'face_detail 優先' : '已含圖片'} · ${detailImages.length} 張`
+                              : responseSummary(task)}
+                            {angleList.length ? ` · ${angleList.join(', ')}` : ''}
+                          </p>
+                          <p className="task-inline-summary subtle">{workflowHint}</p>
+                          </div>
+                          <div className="task-summary-actions" onClick={(event) => event.stopPropagation()}>
+                            {task.status === 'pending' ? (
+                              <button
+                                className="secondary"
+                                onClick={(event) => {
+                                  stopSummaryToggle(event)
+                                  void processTask(task.id)
+                                }}
+                                onMouseDown={(event) => event.stopPropagation()}
+                                disabled={queueBusy}
+                              >
+                                執行生成
+                              </button>
+                            ) : null}
+                            {task.result_url ? (
+                              <a
+                                className="ghost link-button"
+                                href={`${apiBase}${task.result_url}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={stopSummaryToggle}
+                                onMouseDown={(event) => event.stopPropagation()}
+                              >
+                                查看結果
+                              </a>
+                            ) : null}
+                            {hasPendingAccept(task) ? (
+                              <>
+                                <button
+                                  className="primary"
+                                  onClick={(event) => {
+                                    stopSummaryToggle(event)
+                                    void reviewTask(task.id, true)
+                                  }}
+                                  onMouseDown={(event) => event.stopPropagation()}
+                                  disabled={queueBusy}
+                                >
+                                  接受入庫
+                                </button>
+                                <button
+                                  className="ghost"
+                                  onClick={(event) => {
+                                    stopSummaryToggle(event)
+                                    void reviewTask(task.id, false)
+                                  }}
+                                  onMouseDown={(event) => event.stopPropagation()}
+                                  disabled={queueBusy}
+                                >
+                                  拒絕
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      </summary>
+                      <div className="task-detail-content">
+                        {heroImage ? (
+                          <section className="task-detail-section">
+                            <div className="section-header compact">
+                              <h4>面部細節圖</h4>
+                              <span className="pill purpose-face-detail">固定首圖</span>
+                            </div>
+                            <a
+                              className="image-card task-hero-image face-detail-priority"
+                              href={heroImage.src}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <img src={heroImage.src} alt={heroImage.angle || heroImage.note || 'face_detail'} loading="lazy" />
+                              <div className="image-meta">
+                                <strong>{heroImage.angle || heroImage.note || 'face_detail'}</strong>
+                                <span>{heroImage.summary || heroImage.path || heroImage.uri}</span>
+                              </div>
+                            </a>
+                          </section>
+                        ) : null}
+                        {galleryImages.length ? (
+                          <section className="task-detail-section">
+                            <div className="section-header compact">
+                              <h4>其他角度圖</h4>
+                              <span className="pill">{galleryImages.length}</span>
+                            </div>
+                            <div className="image-grid task-detail-image-grid">
+                              {galleryImages.map((item, index) => (
+                                <a
+                                  key={`${task.id}-${item.path || item.uri || index}`}
+                                  className="image-card"
+                                  href={item.src}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  <img src={item.src} alt={item.angle || item.note || `task-image-${index + 1}`} loading="lazy" />
+                                  <div className="image-meta">
+                                    <strong>{item.angle || item.note || `image-${index + 1}`}</strong>
+                                    <span>{item.summary || item.path || item.uri}</span>
+                                  </div>
+                                </a>
+                              ))}
+                            </div>
+                          </section>
+                        ) : null}
+                        <section className="task-detail-section">
+                          <div className="section-header compact">
+                            <h4>人物關聯</h4>
+                            <span className="pill">{selectedCharacter?.id === String(task.core_id) ? '目前角色' : '跨角色任務'}</span>
+                          </div>
+                          <div className="task-character-card">
+                            {characterThumbnailSrc ? (
+                              <a className="task-character-thumb" href={characterThumbnailSrc} target="_blank" rel="noreferrer">
+                                <img src={characterThumbnailSrc} alt={characterName} loading="lazy" />
+                              </a>
+                            ) : null}
+                            <div className="task-character-meta">
+                              <strong>{characterName}</strong>
+                              <div className="queue-task-meta">
+                                <span>角色 #{task.core_id}</span>
+                                {selectedCharacter?.id === String(task.core_id) ? <span>目前選中</span> : null}
+                                <span>{purposeLabel(String(imageGen.purpose ?? '').trim() || 'identity')}</span>
+                              </div>
+                              <div className="task-chip-row">
+                                <span className={purposeBadgeClass(String(imageGen.purpose ?? '').trim() || 'identity')}>
+                                  {purposeLabel(String(imageGen.purpose ?? '').trim() || 'identity')}
+                                </span>
+                                {angleList.map((angle) => (
+                                  <span key={`${task.id}-angle-${angle}`} className="pill pill-ghost">
+                                    {angle}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </section>
+                        <div className="task-detail-grid task-detail-grid--meta">
+                          <section className="task-detail-section">
+                            <div className="section-header compact">
+                              <h4>任務摘要</h4>
+                            </div>
+                            <div className="task-meta-stack">
+                              <div className="task-meta-row">
+                                <span>工作流</span>
+                                <strong>{workflowLabel}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>狀態</span>
+                                <strong>{statusLabel(effectiveStatus)}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>審核</span>
+                                <strong>{reviewLabel ? `審核 ${reviewLabel}` : '尚未進入審核'}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>建立時間</span>
+                                <strong>{formatDateTime(task.created_at)}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>更新時間</span>
+                                <strong>{formatDateTime(task.updated_at)}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>Provider / Model</span>
+                                <strong>{summarizeText(`${imageGen.provider ?? '-'} / ${imageGen.model ?? '-'}`, '-', 80)}</strong>
+                              </div>
+                            </div>
+                          </section>
+                          <section className="task-detail-section">
+                            <div className="section-header compact">
+                              <h4>資產與回寫</h4>
+                            </div>
+                            <div className="task-meta-stack">
+                              <div className="task-meta-row">
+                                <span>圖片數</span>
+                                <strong>{detailImages.length || queueImageCollections(imageGen).length || 0}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>face_detail</span>
+                                <strong>{detailImages.some((item) => item.angle === 'face_detail') ? '有' : '無'}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>寫回實體</span>
+                                <strong>{String(asRecord(task.result_metadata).persist_entity_id ?? task.core_id)}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>入庫條件</span>
+                                <strong>{hasPendingAccept(task) ? '接受後入庫' : reviewStatus === 'accepted' ? '已入庫' : '未入庫'}</strong>
+                              </div>
+                              <div className="task-meta-row">
+                                <span>結果連結</span>
+                                <strong>{task.result_url ? '可開啟' : '尚無'}</strong>
+                              </div>
+                            </div>
+                          </section>
+                        </div>
+                        {promptText(task) || negativePromptText(task) ? (
+                          <div className="task-detail-grid">
+                            {promptText(task) ? (
+                              <section className="task-detail-section">
+                                <div className="section-header compact">
+                                  <h4>Prompt</h4>
+                                </div>
+                                <pre className="layer-preview queue-preview-block">{promptText(task)}</pre>
+                              </section>
+                            ) : null}
+                            {negativePromptText(task) ? (
+                              <section className="task-detail-section">
+                                <div className="section-header compact">
+                                  <h4>Negative Prompt</h4>
+                                </div>
+                                <pre className="layer-preview queue-preview-block">{negativePromptText(task)}</pre>
+                              </section>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        <section className="task-detail-section">
+                          <div className="section-header compact">
+                            <h4>參數</h4>
+                          </div>
+                          <pre className="layer-preview queue-preview-block">{safeJson(task.evolution_params ?? {})}</pre>
+                        </section>
+                        {task.error_message ? (
+                          <section className="task-detail-section">
+                            <div className="section-header compact">
+                              <h4>錯誤</h4>
+                            </div>
+                            <div className="error-banner">{task.error_message}</div>
+                          </section>
+                        ) : null}
+                        <section className="task-detail-section">
+                          <div className="section-header compact">
+                            <h4>回應摘要</h4>
+                          </div>
+                          <div className="task-meta-stack">
+                            <div className="task-meta-row task-meta-row-block">
+                              <span>摘要</span>
+                              <strong>{responseDetailSummary(task)}</strong>
+                            </div>
+                          </div>
+                          <pre className="layer-preview queue-preview-block">{safeJson(imageGen)}</pre>
+                        </section>
+                        <section className="task-detail-section">
+                          <div className="section-header compact">
+                            <h4>資產路徑</h4>
+                          </div>
+                          <pre className="layer-preview queue-preview-block">{safeJson(assetPaths)}</pre>
+                        </section>
+                      </div>
+                    </details>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="empty-state small">目前沒有符合條件的任務。</div>
+            )}
+
+            <div className="image-sections">
+              {queuePreviewItems.length === 0 ? (
+                <div className="empty-state small">任務產出的圖片會顯示在這裡，包含面部細節圖。</div>
+              ) : (
+                <section className="image-section">
+                  <div className="section-header compact">
+                    <h4>任務圖片預覽</h4>
+                    <span className="pill">{queuePreviewItems.length}</span>
+                  </div>
+                  <div className="image-grid">
+                    {queuePreviewItems.map((item, index) => (
+                      <a
+                        key={`${item.path}-${index}`}
+                        className="image-card"
+                        href={item.src}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <img src={item.src} alt={item.angle || item.note || `queue-image-${index + 1}`} loading="lazy" />
+                        <div className="image-meta">
+                          <strong>{item.angle === 'face_detail' ? 'face_detail' : item.angle || item.note || `image-${index + 1}`}</strong>
+                          <span>{item.path}</span>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          </section>
 
           <pre className="layer-preview">{JSON.stringify(asRecord(draft[layer]), null, 2)}</pre>
 

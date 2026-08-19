@@ -210,6 +210,7 @@ class QueueTaskItem(BaseModel):
     retry_count: int = 0
     max_retries: int = 3
     result_url: Optional[str] = None
+    result_metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
@@ -254,12 +255,13 @@ class GeneratedImageInfo(BaseModel):
     has_bytes: bool = False
     mime_type: str = "image/png"
     angle: Optional[str] = None
+    asset_path: Optional[str] = None
 
 
 class ImageGenerateRequest(BaseModel):
     """第三方生圖請求。不傳 provider 時走環境變數 CHARACTEROS_IMAGE_GEN_PROVIDER（預設 null）。"""
 
-    purpose: str = Field("identity", description="identity / outfit / expression / thumb")
+    purpose: str = Field("identity", description="identity / face_detail / outfit / expression / thumb")
     provider: Optional[str] = Field(None, description="null | http | openai | wan")
     model: Optional[str] = Field(None, description="覆蓋本次生圖模型，例如 wan2.7-image-pro")
     base_url: Optional[str] = Field(
@@ -274,11 +276,31 @@ class ImageGenerateRequest(BaseModel):
     n: int = Field(1, ge=1, le=4, description="multi_angle=false 時每次請求張數")
     multi_angle: bool = Field(
         True,
-        description="預設 true：依五視圖（正／背／左／右／四分之三）各生一張",
+        description="預設 true：依多視角（正／背／左／右／四分之三／頂／底）各生一張；identity 額外補面部細節圖",
     )
     persist: bool = Field(False, description="是否寫回本機 data/charpasses/{entity_id}/")
     entity_id: Optional[str] = Field(None, description="本機護照 entity_id；與 manifest 擇一")
     manifest: Optional[Dict[str, Any]] = Field(None, description="完整 .charpass manifest")
+
+
+class ImageQueueRequest(BaseModel):
+    """把生圖請求包成可由佇列處理的任務。"""
+
+    purpose: str = Field("identity", description="identity / face_detail / outfit / expression / thumb")
+    provider: Optional[str] = Field(None, description="null | http | openai | wan")
+    model: Optional[str] = Field(None, description="覆蓋本次生圖模型")
+    base_url: Optional[str] = Field(None, description="覆蓋本次生圖端點")
+    api_key: Optional[str] = Field(None, description="覆蓋本次生圖 API key")
+    extra: str = Field("", description="額外拼進正向提示詞的描述")
+    n: int = Field(1, ge=1, le=4)
+    multi_angle: bool = Field(True, description="是否使用多視角生圖")
+    persist: bool = Field(True, description="是否將圖片與完整回應寫回角色資料夾")
+    entity_id: Optional[str] = Field(None, description="指定持久化 entity_id")
+    age: Optional[int] = Field(None, ge=0, le=150, description="目標年齡")
+    emotion: Optional[str] = Field(None, description="情緒狀態")
+    scene: Optional[str] = Field(None, description="場景描述")
+    injury: Optional[float] = Field(None, ge=0.0, le=1.0, description="受傷程度")
+    priority: int = Field(0, ge=0, le=10, description="佇列優先級")
 
 
 class ImageGenerateResponse(BaseModel):
@@ -291,6 +313,13 @@ class ImageGenerateResponse(BaseModel):
     multi_angle: bool = True
     angles: List[str] = Field(default_factory=list)
     images: List[GeneratedImageInfo] = Field(default_factory=list)
+    images_by_angle: Dict[str, List[GeneratedImageInfo]] = Field(default_factory=dict)
+    face_detail_images: List[GeneratedImageInfo] = Field(default_factory=list)
+    thumbnail_image: Optional[GeneratedImageInfo] = None
+    thumbnail_asset_path: Optional[str] = None
+    face_detail_asset_path: Optional[str] = None
+    face_detail_count: int = 0
+    review: Dict[str, Any] = Field(default_factory=dict)
     manifest: Dict[str, Any] = Field(default_factory=dict)
 
 

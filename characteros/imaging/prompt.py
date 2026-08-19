@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from characteros.imaging.base import ImageGenRequest
-from narratron.charpass.style_prompt import PURPOSE_SLOTS, build_image_prompt, collect_ref_image_uris
+from narratron.charpass.style_prompt import (
+    PURPOSE_SLOTS,
+    build_image_prompt,
+    collect_ref_image_uris,
+    resolve_prompt_angle,
+)
 
 
 def assemble_request(
@@ -26,6 +31,7 @@ def assemble_request(
         angle=angle,
         multi_angle=multi_angle,
     )
+    resolved_angle = resolve_prompt_angle(purpose=purpose, angle=angle, multi_angle=multi_angle)
     extensions = manifest.get("_extensions") if isinstance(manifest.get("_extensions"), dict) else {}
     image_gen = extensions.get("image_gen") if isinstance(extensions.get("image_gen"), dict) else {}
     resolved_size = size or str(image_gen.get("size") or "1024x1024")
@@ -33,7 +39,8 @@ def assemble_request(
     slot = PURPOSE_SLOTS.get(purpose, PURPOSE_SLOTS["identity"])
     filename_prefix = slot["filename_prefix"]
     if multi_angle and angle:
-        filename_prefix = f"{filename_prefix}_{angle}"
+        if not (purpose == "face_detail" and angle == "face_detail"):
+            filename_prefix = f"{filename_prefix}_{angle}"
     return ImageGenRequest(
         purpose=purpose,
         prompt=built["positive"],
@@ -45,7 +52,7 @@ def assemble_request(
         extra={
             "asset_dir": slot["asset_dir"],
             "filename_prefix": filename_prefix,
-            "angle": angle or "",
+            "angle": resolved_angle,
             "multi_angle": multi_angle,
         },
     )

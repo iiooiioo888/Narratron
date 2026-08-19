@@ -1,7 +1,9 @@
 """CharacterOS 角色路由：查詢與變體請求。"""
 
+from pathlib import Path
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from characteros.deps import CharacterBackend, get_character_backend
@@ -12,6 +14,7 @@ from characteros.models.schema import (
     CharacterVariantResponse,
     VariantQueueResponse,
     ImageGenerateRequest,
+    ImageQueueRequest,
     ImageGenerateResponse,
     CharacterEditorResponse,
     CharacterEditorUpdateRequest,
@@ -21,8 +24,37 @@ from characteros.services.queue import QueueManager
 from characteros.storage.db_availability import is_database_available
 from characteros.storage.local_characters import LocalCharacterService
 from characteros.storage.local_queue import LocalQueueManager
+from narratron.charpass.store import CharpassStore
 
 router = APIRouter(prefix="/api/v1/characters", tags=["Characters"])
+
+
+def _manifest_dict(service: CharacterBackend, character_id: int) -> dict:
+    full = service.get_character_by_id(character_id)
+    if full.profile and full.profile.manifest:
+        return dict(full.profile.manifest)
+    return {}
+
+
+def _resolve_local_asset_path(character_id: int, asset_path: str, service: CharacterBackend) -> Path:
+    manifest = _manifest_dict(service, character_id)
+    meta = manifest.get("_meta") or {}
+    identity = manifest.get("_identity") or {}
+    entity_id = str(meta.get("entity_id") or identity.get("entity_id") or "").strip()
+    if not entity_id:
+        name = str(identity.get("name") or meta.get("character_name") or f"character-{character_id}").strip()
+        entity_id = f"character-{name}"
+
+    rel = Path(str(asset_path).replace("\\", "/"))
+    parts = [part for part in rel.parts if part not in {"", ".", ".."}]
+    if not parts:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+
+    root = CharpassStore().entity_dir(entity_id)
+    target = root.joinpath(*parts)
+    if not target.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    return target
 
 
 @router.get("", response_model=List[CharacterCoreResponse])
@@ -77,6 +109,10 @@ def request_variant(
     scene: Optional[str] = Query(None, description="場景描述"),
     injury: Optional[float] = Query(None, ge=0.0, le=1.0, description="受傷程度"),
     priority: int = Query(0, ge=0, le=10, description="優先級"),
+    queue_nonce: Optional[str] = Query(
+        None,
+        description="強制排入新的隊列任務 nonce（用於生圖點擊追蹤，避免 hash 冪等忽略重複請求）",
+    ),
     service: CharacterBackend = Depends(get_character_backend),
     db: Session = Depends(get_db),
 ):
@@ -112,6 +148,9 @@ def request_variant(
         evolution_params['scene_context'] = scene
     if injury is not None:
         evolution_params['injury_level'] = injury
+    if queue_nonce:
+        # 併入 variant_hash 計算，確保每次點擊都能在佇列面板新增一筆任務。
+        evolution_params['_queue_nonce'] = queue_nonce
     
     if isinstance(service, LocalCharacterService) or not is_database_available():
         from datetime import datetime, timezone
@@ -247,11 +286,8 @@ def generate_character_images(
     manifest: dict = {}
     if full.profile and full.profile.manifest:
         manifest = dict(full.profile.manifest)
-    if not manifest:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"角色 {character_id} 沒有可用的 Profile manifest",
-        )
+    # manifest 可允許為空：ImagingService 會自動補齊預設的
+    # `_style.character_style.visual`，以便在「尚未手動填完 manifest」時仍可生圖。
     identity = manifest.setdefault("_identity", {})
     meta = manifest.setdefault("_meta", {})
     identity.setdefault("name", full.core.name)
@@ -279,6 +315,69 @@ def generate_character_images(
     return ImageGenerateResponse.model_validate(payload)
 
 
+@router.post("/{character_id}/image-queue")
+def queue_character_image_generation(
+    character_id: int,
+    body: ImageQueueRequest,
+    service: CharacterBackend = Depends(get_character_backend),
+    db: Session = Depends(get_db),
+):
+    """把生圖工作排入 CharacterOS 任務佇列，由面板手動或批次處理。"""
+    evolution_params: dict = {}
+    if body.age is not None:
+        evolution_params["age_override"] = body.age
+    if body.emotion is not None:
+        evolution_params["emotion_state"] = body.emotion
+    if body.scene is not None:
+        evolution_params["scene_context"] = body.scene
+    if body.injury is not None:
+        evolution_params["injury_level"] = body.injury
+
+    from uuid import uuid4
+
+    evolution_params["_queue_nonce"] = f"img-{uuid4()}"
+    evolution_params["_image_request"] = {
+        "purpose": body.purpose,
+        "provider": body.provider,
+        "model": body.model,
+        "base_url": body.base_url,
+        "api_key": body.api_key,
+        "extra": body.extra,
+        "n": body.n,
+        "multi_angle": body.multi_angle,
+        "persist": body.persist,
+        "entity_id": body.entity_id,
+    }
+
+    if isinstance(service, LocalCharacterService) or not is_database_available():
+        full = service.get_character_by_id(character_id)
+        char_name = full.core.name if full and full.core else None
+        task, is_new = LocalQueueManager().request_variant_generation(
+            core_id=character_id,
+            evolution_params=evolution_params,
+            priority=body.priority,
+            character_name=char_name,
+        )
+        return {
+            "storage_mode": "local",
+            "queued": True,
+            "is_new": is_new,
+            "task": task,
+        }
+
+    variant, is_new = QueueManager(db).request_variant_generation(
+        core_id=character_id,
+        evolution_params=evolution_params,
+        priority=body.priority,
+    )
+    return {
+        "storage_mode": "database",
+        "queued": True,
+        "is_new": is_new,
+        "task": variant.to_dict(),
+    }
+
+
 @router.get("/{character_id}/editor", response_model=CharacterEditorResponse)
 def get_character_editor(
     character_id: int,
@@ -286,6 +385,52 @@ def get_character_editor(
 ):
     """完整角色編輯器讀取：core + active profile。"""
     return service.get_editor_payload(character_id)
+
+
+@router.get("/{character_id}/charpass")
+def get_character_charpass(
+    character_id: int,
+    service: CharacterBackend = Depends(get_character_backend),
+):
+    """取得角色目前可讀 charpass manifest。"""
+    return {"charpass": _manifest_dict(service, character_id)}
+
+
+@router.post("/{character_id}/charpass")
+def save_character_charpass(
+    character_id: int,
+    body: dict,
+    service: CharacterBackend = Depends(get_character_backend),
+):
+    """直接儲存角色目前 charpass，供前端面板寫回 JSON 護照。"""
+    manifest = body.get("charpass") if isinstance(body, dict) else None
+    if not isinstance(manifest, dict):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="body.charpass must be an object",
+        )
+    saved = service.save_charpass(character_id, manifest)
+    return {"charpass": saved}
+
+
+@router.get("/{character_id}/versions")
+def get_character_versions(
+    character_id: int,
+    service: CharacterBackend = Depends(get_character_backend),
+):
+    """取得角色目前版本快照與分支摘要。"""
+    return service.get_version_summary(character_id)
+
+
+@router.get("/{character_id}/assets/{asset_path:path}")
+def get_character_asset(
+    character_id: int,
+    asset_path: str,
+    service: CharacterBackend = Depends(get_character_backend),
+):
+    """唯讀提供角色本機資產，供面板預覽已生成圖片。"""
+    target = _resolve_local_asset_path(character_id, asset_path, service)
+    return FileResponse(target)
 
 
 @router.put("/{character_id}/editor", response_model=CharacterEditorResponse)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from narratron.charpass.schema import (
     LEGACY_MANIFEST_SIDECAR,
@@ -140,6 +141,21 @@ class CharpassStore:
             dest.write_bytes(blob)
             written[name] = dest
         return written
+
+    def write_json(self, entity_id: str, relative_path: str, payload: Any) -> Path:
+        """把 JSON 檔寫入角色資料夾下的指定相對路徑。"""
+        folder = self.entity_dir(entity_id)
+        rel = Path(str(relative_path).replace("\\", "/"))
+        parts = [part for part in rel.parts if part not in {"", ".", ".."}]
+        if not parts:
+            raise ValueError("relative_path must not be empty")
+        dest = folder.joinpath(*parts)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return dest
 
     def migrate_entity(self, entity_id: str) -> Path | None:
         """將舊 ZIP `current.charpass` 或 sidecar 轉為本機 JSON 格式。"""

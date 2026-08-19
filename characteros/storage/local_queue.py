@@ -10,12 +10,31 @@ from typing import Any, Optional
 
 from fastapi import HTTPException, status
 
+from characteros.imaging.settings import settings as imaging_settings
+from characteros.services.imaging import (
+    ImagingService,
+    finalize_reviewed_generation,
+    sync_review_artifacts,
+)
+from characteros.services.variant_processor import evolve_manifest, sanitize_evolution_params, utcnow_iso
+from characteros.services.variant_processor import extract_image_request
+from characteros.storage.local_characters import LocalCharacterService
 from characteros.utils.hash import compute_variant_hash
 from narratron.charpass.store import CharpassStore
 
 logger = logging.getLogger(__name__)
 
 QUEUE_FILENAME = ".characteros-queue.json"
+PREFERRED_RESULT_ANGLES = (
+    "face_detail",
+    "front",
+    "three_quarter",
+    "left",
+    "right",
+    "back",
+    "top",
+    "bottom",
+)
 
 
 def _utcnow() -> datetime:
@@ -32,6 +51,40 @@ def _parse_dt(value: Any) -> datetime:
         except ValueError:
             pass
     return _utcnow()
+
+
+def _prepare_result_urls(core_id: int, payload: dict[str, Any]) -> tuple[str, list[str]]:
+    images = payload.get("images") if isinstance(payload.get("images"), list) else []
+    image_urls: list[str] = []
+    representative_url: str | None = None
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        asset_path = str(image.get("asset_path") or "").strip()
+        if asset_path:
+            image_url = f"/api/v1/characters/{core_id}/assets/{asset_path}"
+            image_urls.append(image_url)
+            if representative_url is None:
+                representative_url = image_url
+    thumbnail_image = payload.get("thumbnail_image") if isinstance(payload.get("thumbnail_image"), dict) else {}
+    thumbnail_asset_path = str(thumbnail_image.get("asset_path") or "").strip()
+    if thumbnail_asset_path:
+        representative_url = f"/api/v1/characters/{core_id}/assets/{thumbnail_asset_path}"
+    else:
+        for angle in PREFERRED_RESULT_ANGLES:
+            for image in images:
+                if not isinstance(image, dict):
+                    continue
+                if str(image.get("angle") or "").strip() != angle:
+                    continue
+                asset_path = str(image.get("asset_path") or "").strip()
+                if asset_path:
+                    representative_url = f"/api/v1/characters/{core_id}/assets/{asset_path}"
+                    break
+            if representative_url:
+                break
+    result_url = representative_url or (image_urls[0] if image_urls else f"/api/v1/characters/{core_id}/variants")
+    return result_url, image_urls
 
 
 class LocalQueueManager:
@@ -63,6 +116,28 @@ class LocalQueueManager:
             json.dumps(data, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+
+    def _load_index(self) -> dict[str, Any]:
+        index_path = self.root / ".characteros-index.json"
+        if not index_path.is_file():
+            return {"next_id": 1, "entities": {}, "reverse": {}}
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"next_id": 1, "entities": {}, "reverse": {}}
+        if not isinstance(data, dict):
+            return {"next_id": 1, "entities": {}, "reverse": {}}
+        return data
+
+    def _entity_id_for_core_id(self, core_id: int) -> str:
+        index = self._load_index()
+        entity_id = (index.get("entities") or {}).get(str(core_id))
+        if not entity_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character core {core_id} not found (local mode)",
+            )
+        return str(entity_id)
 
     def request_variant_generation(
         self,
@@ -120,6 +195,244 @@ class LocalQueueManager:
             if int(task.get("id", 0)) == task_id:
                 return task
         return None
+
+    def process_task(
+        self,
+        task_id: int,
+        *,
+        character_service: LocalCharacterService | None = None,
+    ) -> dict[str, Any]:
+        """處理單一任務並把結果落到角色資料夾。"""
+        data = self._load()
+        tasks: list[dict[str, Any]] = data["tasks"]
+        task = next((item for item in tasks if int(item.get("id", 0)) == int(task_id)), None)
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Queue task {task_id} not found",
+            )
+        if str(task.get("status") or "") == "ready":
+            return task
+
+        started_at = _utcnow()
+        service = character_service or LocalCharacterService(self.root)
+        entity_id = self._entity_id_for_core_id(int(task["core_id"]))
+        output_dir = f"causal/variants/{task['id']}"
+
+        try:
+            full = service.get_character_by_id(int(task["core_id"]))
+            base_manifest = full.profile.manifest if full.profile else {}
+            raw_params = task.get("evolution_params") or {}
+            params = sanitize_evolution_params(raw_params)
+            image_request = extract_image_request(raw_params)
+            evolved_manifest = evolve_manifest(base_manifest, params)
+
+            store = CharpassStore(self.root)
+            record = {
+                "task_id": int(task["id"]),
+                "core_id": int(task["core_id"]),
+                "character_name": task.get("character_name") or full.core.name,
+                "variant_hash": task.get("variant_hash"),
+                "status": "ready",
+                "processed_at": utcnow_iso(),
+                "evolution_params": params,
+            }
+            store.write_json(entity_id, f"{output_dir}/evolved-manifest.json", evolved_manifest)
+            store.write_json(entity_id, f"{output_dir}/record.json", record)
+
+            finished_at = _utcnow()
+            task["status"] = "ready"
+            task["character_name"] = task.get("character_name") or full.core.name
+            task["result_url"] = f"/api/v1/characters/{task['core_id']}/assets/{output_dir}/evolved-manifest.json"
+            result_metadata = {
+                "entity_id": entity_id,
+                "output_dir": output_dir,
+                "record_path": f"{output_dir}/record.json",
+                "evolved_manifest_path": f"{output_dir}/evolved-manifest.json",
+                "evolved_manifest": evolved_manifest,
+                "processed_at": finished_at.isoformat(),
+                "evolution_params": params,
+            }
+            if image_request:
+                persist_enabled = bool(image_request.get("persist", True))
+                payload = ImagingService(store=store).generate_for_manifest(
+                    evolved_manifest,
+                    purpose=str(image_request.get("purpose") or "identity"),
+                    provider_name=str(image_request.get("provider") or imaging_settings.get_provider() or "null"),
+                    extra=str(image_request.get("extra") or ""),
+                    n=int(image_request.get("n") or 1),
+                    model=str(image_request.get("model") or imaging_settings.get_model() or ""),
+                    base_url=str(image_request.get("base_url") or imaging_settings.get_base_url() or ""),
+                    api_key=str(image_request.get("api_key") or imaging_settings.get_api_key() or ""),
+                    persist_entity_id=entity_id if persist_enabled else None,
+                    multi_angle=bool(image_request.get("multi_angle", True)),
+                    auto_accept=False,
+                )
+                task["result_url"], image_urls = _prepare_result_urls(int(task["core_id"]), payload)
+                result_metadata["persist_entity_id"] = entity_id if persist_enabled else None
+                result_metadata["thumbnail_asset_path"] = payload.get("thumbnail_asset_path")
+                result_metadata["face_detail_asset_path"] = payload.get("face_detail_asset_path")
+                result_metadata["face_detail_count"] = payload.get("face_detail_count") or 0
+                result_metadata["image_request"] = image_request
+                result_metadata["image_generation"] = {
+                    "provider": payload.get("provider"),
+                    "model": payload.get("model"),
+                    "purpose": payload.get("purpose"),
+                    "prompt": payload.get("prompt"),
+                    "negative_prompt": payload.get("negative_prompt"),
+                    "multi_angle": payload.get("multi_angle"),
+                    "angles": payload.get("angles") or [],
+                    "images": payload.get("images") or [],
+                    "image_urls": image_urls,
+                    "images_by_angle": payload.get("images_by_angle") or {},
+                    "face_detail_images": payload.get("face_detail_images") or [],
+                    "face_detail_asset_path": payload.get("face_detail_asset_path"),
+                    "face_detail_count": payload.get("face_detail_count") or 0,
+                    "thumbnail_image": payload.get("thumbnail_image"),
+                    "thumbnail_asset_path": payload.get("thumbnail_asset_path"),
+                    "review": payload.get("review") or {},
+                }
+                result_metadata["review_status"] = (
+                    (payload.get("review") or {}).get("status")
+                    if isinstance(payload.get("review"), dict)
+                    else None
+                )
+            task["result_metadata"] = result_metadata
+            task["error_message"] = None
+            task["queue_wait_ms"] = max(
+                0,
+                int((started_at - _parse_dt(task.get("created_at"))).total_seconds() * 1000),
+            )
+            task["generation_duration_ms"] = max(
+                0,
+                int((finished_at - started_at).total_seconds() * 1000),
+            )
+            task["updated_at"] = finished_at.isoformat()
+        except Exception as exc:
+            task["status"] = "failed"
+            task["retry_count"] = int(task.get("retry_count") or 0) + 1
+            task["error_message"] = str(exc)
+            task["updated_at"] = _utcnow().isoformat()
+
+        self._save(data)
+        return task
+
+    def review_task(
+        self,
+        task_id: int,
+        *,
+        accepted: bool,
+        character_service: LocalCharacterService | None = None,
+    ) -> dict[str, Any]:
+        """人工接受或拒絕已完成的生圖任務。"""
+        data = self._load()
+        tasks: list[dict[str, Any]] = data["tasks"]
+        task = next((item for item in tasks if int(item.get("id", 0)) == int(task_id)), None)
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Queue task {task_id} not found",
+            )
+
+        if str(task.get("status") or "") != "ready":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only ready tasks can be reviewed",
+            )
+
+        image_generation = (
+            task.get("result_metadata", {}).get("image_generation")
+            if isinstance(task.get("result_metadata"), dict)
+            else None
+        )
+        if not isinstance(image_generation, dict):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This task has no image generation result to review",
+            )
+
+        review = image_generation.get("review") if isinstance(image_generation.get("review"), dict) else {}
+        current_status = str(review.get("status") or "").strip() or "pending"
+        if current_status == "accepted" and accepted:
+            return task
+        if current_status == "accepted" and not accepted:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Accepted tasks cannot be rejected after publish",
+            )
+        if current_status == "rejected" and not accepted:
+            return task
+
+        if accepted:
+            service = character_service or LocalCharacterService(self.root)
+            entity_id = str(
+                task.get("result_metadata", {}).get("persist_entity_id")
+                or review.get("entity_id")
+                or ""
+            ).strip()
+            if not entity_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This task has no staged assets to accept",
+                )
+            promoted = finalize_reviewed_generation(entity_id, image_generation, store=CharpassStore(self.root))
+            service.save_charpass(int(task["core_id"]), promoted["manifest"])
+            promoted_payload = promoted["payload"]
+            image_generation.update(promoted_payload)
+            task["result_metadata"]["image_generation"] = image_generation
+            task["result_url"], _image_urls = _prepare_result_urls(int(task["core_id"]), image_generation)
+            task["result_metadata"]["thumbnail_asset_path"] = image_generation.get("thumbnail_asset_path")
+            task["result_metadata"]["face_detail_asset_path"] = image_generation.get("face_detail_asset_path")
+            task["result_metadata"]["face_detail_count"] = image_generation.get("face_detail_count") or 0
+        else:
+            review["status"] = "rejected"
+            review["rejected_at"] = utcnow_iso()
+            image_generation["review"] = review
+            task["result_metadata"]["image_generation"] = image_generation
+        entity_id = str(
+            task.get("result_metadata", {}).get("persist_entity_id")
+            or review.get("entity_id")
+            or ""
+        ).strip()
+        if entity_id:
+            sync_review_artifacts(entity_id, image_generation, store=CharpassStore(self.root))
+
+        task["result_metadata"]["review_status"] = image_generation.get("review", {}).get("status")
+        task["updated_at"] = _utcnow().isoformat()
+        self._save(data)
+        return task
+
+    def process_next(
+        self,
+        *,
+        character_service: LocalCharacterService | None = None,
+    ) -> Optional[dict[str, Any]]:
+        """處理優先級最高且最早建立的 pending 任務。"""
+        tasks = self.list_tasks(status="pending", limit=1)
+        if not tasks:
+            return None
+        return self.process_task(
+            int(tasks[0]["id"]),
+            character_service=character_service,
+        )
+
+    def process_all(
+        self,
+        *,
+        limit: int = 20,
+        character_service: LocalCharacterService | None = None,
+    ) -> list[dict[str, Any]]:
+        """批次處理多筆 pending 任務。"""
+        pending = self.list_tasks(status="pending", limit=max(1, min(limit, 200)))
+        processed: list[dict[str, Any]] = []
+        for task in pending:
+            processed.append(
+                self.process_task(
+                    int(task["id"]),
+                    character_service=character_service,
+                )
+            )
+        return processed
 
     def list_tasks(
         self,

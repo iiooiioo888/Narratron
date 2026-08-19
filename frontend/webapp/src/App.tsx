@@ -24,6 +24,30 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {}
 }
 
+function deriveCharacterImageMetadata(charpass: Record<string, unknown>): Record<string, string> {
+  const meta = asRecord(charpass._meta)
+  const identity = asRecord(charpass._identity)
+  const refs = Array.isArray(identity.ref_images) ? identity.ref_images : []
+  const items = refs
+    .map((item) => asRecord(item))
+    .filter((item) => typeof item.path === 'string' && String(item.path).trim())
+
+  const faceDetail = items.find((item) => String(item.angle ?? '').trim() === 'face_detail')
+  const thumbnail =
+    String(meta.thumbnail ?? '').trim() ||
+    String(faceDetail?.path ?? '').trim() ||
+    String(items[0]?.path ?? '').trim()
+
+  const result: Record<string, string> = {}
+  if (thumbnail) {
+    result.thumbnail_asset_path = thumbnail
+  }
+  if (faceDetail) {
+    result.face_detail_asset_path = String(faceDetail.path).trim()
+  }
+  return result
+}
+
 function fmtDate(value?: string): string {
   if (!value) {
     return '-'
@@ -171,9 +195,11 @@ export default function App() {
     const index = nextEntities.findIndex((entity) => entity.id === entityId)
     const current =
       index >= 0 ? nextEntities[index] : { id: entityId, kind: 'character', name: String(extra?.name ?? entityId) }
+    const derivedImageMetadata = deriveCharacterImageMetadata(charpass)
     const payload = {
       ...asRecord(current.payload),
       charpass,
+      ...derivedImageMetadata,
       ...(extra?.note !== undefined ? { note: extra.note } : {}),
       ...(extra?.continuity_tokens !== undefined ? { continuity_tokens: extra.continuity_tokens } : {}),
     }
