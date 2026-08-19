@@ -115,6 +115,7 @@ def test_local_queue_image_task_requires_acceptance_before_manifest_update(local
     review = processed["result_metadata"]["image_generation"]["review"]
     assert processed["status"] == "ready"
     assert review["status"] == "pending"
+    assert processed["result_metadata"]["image_generation"]["review_status"] == "pending"
     assert processed["result_url"].startswith(f"/api/v1/characters/{core_id}/assets/causal/review/")
     assert processed["result_metadata"]["thumbnail_asset_path"].startswith("causal/review/identity/")
     assert processed["result_metadata"]["image_generation"]["thumbnail_asset_path"].startswith("causal/review/identity/")
@@ -126,8 +127,14 @@ def test_local_queue_image_task_requires_acceptance_before_manifest_update(local
     accepted = queue.review_task(int(task["id"]), accepted=True, character_service=service)
     assert accepted["result_metadata"]["image_generation"]["review"]["status"] == "accepted"
     assert accepted["result_metadata"]["review_status"] == "accepted"
+    assert accepted["result_metadata"]["image_generation"]["review_status"] == "accepted"
     assert accepted["result_metadata"]["thumbnail_asset_path"].startswith("assets/identity/")
     assert accepted["result_metadata"]["image_generation"]["thumbnail_asset_path"].startswith("assets/identity/")
+    record = json.loads(
+        (local_root / "character-test" / "causal" / "variants" / str(task["id"]) / "record.json").read_text(encoding="utf-8")
+    )
+    assert record["review_status"] == "accepted"
+    assert record["thumbnail_asset_path"].startswith("assets/identity/")
 
     manifest_after = service.get_character_by_id(core_id).profile.manifest
     assert manifest_after["_identity"]["ref_images"]
@@ -157,6 +164,7 @@ def test_local_queue_reject_keeps_manifest_unpublished(local_root: Path) -> None
     rejected = queue.review_task(int(task["id"]), accepted=False, character_service=service)
     assert rejected["result_metadata"]["review_status"] == "rejected"
     assert rejected["result_metadata"]["image_generation"]["review"]["status"] == "rejected"
+    assert rejected["result_metadata"]["image_generation"]["review_status"] == "rejected"
     assert rejected["result_url"] == processed["result_url"]
 
     manifest_after = service.get_character_by_id(core_id).profile.manifest
@@ -166,6 +174,36 @@ def test_local_queue_reject_keeps_manifest_unpublished(local_root: Path) -> None
         str(item.get("asset_path") or "").startswith("assets/identity/")
         for item in rejected["result_metadata"]["image_generation"]["images"]
     )
+    record = json.loads(
+        (local_root / "character-test" / "causal" / "variants" / str(task["id"]) / "record.json").read_text(encoding="utf-8")
+    )
+    assert record["review_status"] == "rejected"
+    assert record["thumbnail_asset_path"].startswith("causal/review/identity/")
+
+
+def test_local_queue_prefers_face_detail_as_result_url_when_available(local_root: Path) -> None:
+    service = LocalCharacterService(local_root)
+    core_id = service.list_characters()["items"][0].id
+    queue = LocalQueueManager(local_root)
+
+    task, _is_new = queue.request_variant_generation(
+        core_id=core_id,
+        evolution_params={
+            "_queue_nonce": "img-face-detail-url",
+            "_image_request": {
+                "purpose": "identity",
+                "provider": "null",
+                "multi_angle": True,
+                "persist": True,
+            },
+        },
+        character_name="測試角色",
+    )
+
+    processed = queue.process_task(int(task["id"]), character_service=service)
+    assert processed["result_metadata"]["face_detail_asset_path"].startswith("causal/review/identity/")
+    assert processed["result_metadata"]["thumbnail_asset_path"].startswith("causal/review/identity/")
+    assert "face_detail" in processed["result_url"]
 
 
 def test_version_summary_includes_pending_image_review_branch(local_root: Path) -> None:
@@ -199,11 +237,49 @@ def test_version_summary_includes_pending_image_review_branch(local_root: Path) 
     assert image_branches[0]["has_face_detail"] is False
     assert image_branches[0]["purpose_summary"] == "identity"
     assert image_branches[0]["angles_summary"] == "front"
+    assert image_branches[0]["summary_fields"]["purpose"] == "identity"
+    assert image_branches[0]["summary_fields"]["angles"] == ["front"]
     assert "pending" in image_branches[0]["summary"]
     assert image_branches[0]["thumbnail_asset_path"].startswith("causal/review/identity/")
-    assert image_branches[0]["sort_key"].startswith("2:")
+    assert image_branches[0]["sort_key"].startswith("0:")
     assert image_branches[0]["sort_order"] == 0
     assert image_branches[0]["result_url"].startswith(f"/api/v1/characters/{core_id}/assets/causal/review/")
+
+
+def test_version_summary_includes_queue_variant_branch_metadata(local_root: Path) -> None:
+    service = LocalCharacterService(local_root)
+    core_id = service.list_characters()["items"][0].id
+    queue = LocalQueueManager(local_root)
+
+    task, _is_new = queue.request_variant_generation(
+        core_id=core_id,
+        evolution_params={
+            "_queue_nonce": "img-variant-branch",
+            "_image_request": {
+                "purpose": "identity",
+                "provider": "null",
+                "multi_angle": True,
+                "persist": True,
+            },
+        },
+        character_name="測試角色",
+    )
+
+    processed = queue.process_task(int(task["id"]), character_service=service)
+    summary = service.get_version_summary(core_id)
+    branch = next(item for item in summary["branches"] if item["kind"] == "variant")
+
+    assert branch["branch_id"] == str(processed["id"])
+    assert branch["review_status"] == "pending"
+    assert branch["effective_status"] == "pending"
+    assert branch["has_face_detail"] is True
+    assert branch["summary_fields"]["has_face_detail"] is True
+    assert branch["summary_fields"]["purpose"] == "identity"
+    assert branch["hero_asset_path"] == branch["face_detail_asset_path"]
+    assert branch["representative_asset_path"] == branch["face_detail_asset_path"]
+    assert branch["representative_angle"] == "face_detail"
+    assert branch["sort_priority"] == 1
+    assert branch["result_url"].endswith(branch["face_detail_asset_path"])
 
 
 def test_version_summary_prefers_face_detail_as_branch_thumbnail(local_root: Path) -> None:
@@ -240,9 +316,188 @@ def test_version_summary_prefers_face_detail_as_branch_thumbnail(local_root: Pat
     assert branch["has_face_detail"] is True
     assert branch["face_detail_asset_path"].endswith("ref_face_face_detail_001.png")
     assert branch["thumbnail_asset_path"].endswith("ref_face_face_detail_001.png")
+    assert branch["hero_asset_path"].endswith("ref_face_face_detail_001.png")
+    assert branch["summary_fields"]["has_face_detail"] is True
+    assert branch["summary_fields"]["face_detail_count"] == 1
     assert branch["result_url"].endswith("ref_face_face_detail_001.png")
     assert branch["angles"][0] == "face_detail"
     assert branch["sort_key"].startswith("1:")
+
+
+def test_version_summary_orders_face_detail_branch_first_for_same_timestamp(local_root: Path) -> None:
+    service = LocalCharacterService(local_root)
+    core_id = service.list_characters()["items"][0].id
+    entity_dir = local_root / "character-test"
+    image_root = entity_dir / "causal" / "image_gen"
+    shared_timestamp = "2026-08-19T10:00:00Z"
+
+    identity_dir = image_root / "identity" / "job-identity"
+    identity_dir.mkdir(parents=True)
+    (identity_dir / "full-response.json").write_text(
+        json.dumps({"review": {"status": "pending"}, "created_at": shared_timestamp}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (identity_dir / "record.json").write_text(
+        json.dumps({"created_at": shared_timestamp}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (identity_dir / "images-index.json").write_text(
+        json.dumps(
+            {
+                "images": [
+                    {
+                        "filename": "ref_face_front_001.png",
+                        "angle": "front",
+                        "asset_path": "causal/review/identity/job-identity/ref_face_front_001.png",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    face_detail_dir = image_root / "face_detail" / "job-face-detail-priority"
+    face_detail_dir.mkdir(parents=True)
+    (face_detail_dir / "full-response.json").write_text(
+        json.dumps({"review": {"status": "pending"}, "created_at": shared_timestamp}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (face_detail_dir / "record.json").write_text(
+        json.dumps({"created_at": shared_timestamp}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (face_detail_dir / "images-index.json").write_text(
+        json.dumps(
+            {
+                "images": [
+                    {
+                        "filename": "ref_face_face_detail_001.png",
+                        "angle": "face_detail",
+                        "asset_path": "causal/review/face_detail/job-face-detail-priority/ref_face_face_detail_001.png",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    summary = service.get_version_summary(core_id)
+    image_branches = [branch for branch in summary["branches"] if branch["kind"] == "image_gen"]
+    assert image_branches[0]["branch_id"] == "job-face-detail-priority"
+    assert image_branches[0]["purpose"] == "face_detail"
+    assert image_branches[0]["sort_key"].startswith("2:")
+    assert image_branches[1]["branch_id"] == "job-identity"
+
+
+def test_version_summary_queue_branch_falls_back_to_top_level_asset_fields(local_root: Path) -> None:
+    service = LocalCharacterService(local_root)
+    queue_data = {
+        "next_id": 2,
+        "tasks": [
+            {
+                "id": 1,
+                "core_id": 1,
+                "character_name": "測試角色",
+                "profile_version": 1,
+                "variant_hash": "fallback-branch",
+                "evolution_params": {},
+                "status": "ready",
+                "priority": 0,
+                "result_url": None,
+                "result_metadata": {
+                    "review_status": "pending",
+                    "thumbnail_asset_path": "causal/review/identity/fallback/front.png",
+                    "face_detail_asset_path": "causal/review/identity/fallback/face_detail.png",
+                    "image_generation": {
+                        "purpose": "identity",
+                        "images": [],
+                        "images_by_angle": {},
+                    },
+                },
+                "error_message": None,
+                "retry_count": 0,
+                "max_retries": 3,
+                "queue_wait_ms": 0,
+                "generation_duration_ms": 0,
+                "created_at": "2026-08-19T10:00:00Z",
+                "updated_at": "2026-08-19T10:00:01Z",
+            }
+        ],
+    }
+    (local_root / ".characteros-queue.json").write_text(
+        json.dumps(queue_data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    summary = service.get_version_summary(1)
+    branch = next(item for item in summary["branches"] if item["kind"] == "variant")
+    assert branch["face_detail_asset_path"] == "causal/review/identity/fallback/face_detail.png"
+    assert branch["thumbnail_asset_path"] == "causal/review/identity/fallback/face_detail.png"
+    assert branch["hero_asset_path"] == "causal/review/identity/fallback/face_detail.png"
+    assert branch["angles"] == ["face_detail", "front"]
+    assert branch["result_url"].endswith("causal/review/identity/fallback/face_detail.png")
+
+
+def test_version_summary_infers_face_detail_from_review_payload_metadata(local_root: Path) -> None:
+    service = LocalCharacterService(local_root)
+    queue_data = {
+        "next_id": 2,
+        "tasks": [
+            {
+                "id": 1,
+                "core_id": 1,
+                "character_name": "測試角色",
+                "profile_version": 1,
+                "variant_hash": "inferred-face-detail",
+                "evolution_params": {},
+                "status": "ready",
+                "priority": 0,
+                "result_url": None,
+                "result_metadata": {
+                    "review_status": "pending",
+                    "image_generation": {
+                        "purpose": "identity",
+                        "images": [
+                            {
+                                "filename": "generated_001.png",
+                                "asset_path": "causal/review/identity/job-1/generated_001.png",
+                                "final_asset_path": "assets/face_detail/generated_001.png",
+                                "prompt": "[face_detail] same character facial close-up",
+                            }
+                        ],
+                        "images_by_angle": {},
+                    },
+                },
+                "error_message": None,
+                "retry_count": 0,
+                "max_retries": 3,
+                "queue_wait_ms": 0,
+                "generation_duration_ms": 0,
+                "created_at": "2026-08-19T10:00:00Z",
+                "updated_at": "2026-08-19T10:00:01Z",
+            }
+        ],
+    }
+    (local_root / ".characteros-queue.json").write_text(
+        json.dumps(queue_data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    summary = service.get_version_summary(1)
+    branch = next(item for item in summary["branches"] if item["kind"] == "variant")
+    assert branch["has_face_detail"] is True
+    assert branch["face_detail_count"] == 1
+    assert branch["face_detail_asset_path"] == "causal/review/identity/job-1/generated_001.png"
+    assert branch["thumbnail_asset_path"] == "causal/review/identity/job-1/generated_001.png"
+    assert branch["hero_asset_path"] == "causal/review/identity/job-1/generated_001.png"
+    assert branch["angles"] == ["face_detail"]
+    assert branch["summary_fields"]["face_detail_count"] == 1
 
 
 def test_local_store_save_charpass_and_version_summary(local_root: Path) -> None:

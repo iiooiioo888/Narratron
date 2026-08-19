@@ -58,6 +58,8 @@ interface QueueTask {
   variant_hash: string
   evolution_params: Record<string, unknown>
   status: string
+  review_status?: string | null
+  effective_status?: string | null
   priority: number
   error_message?: string | null
   result_url?: string | null
@@ -236,7 +238,26 @@ interface VersionBranchItem {
   images_by_angle?: Record<string, unknown>
   thumbnail_asset_path?: string
   face_detail_asset_path?: string
+  hero_asset_path?: string
+  has_face_detail?: boolean
+  face_detail_count?: number
   image_count?: number
+  purpose_summary?: string
+  summary?: string
+  angles_summary?: string
+  prompt?: string
+  final_prompt?: string
+  revised_prompt?: string
+  negative_prompt?: string
+  evolution_params?: Record<string, unknown>
+  request?: Record<string, unknown>
+  response?: Record<string, unknown>
+  review?: Record<string, unknown>
+  summary_fields?: Record<string, unknown>
+  provider?: string
+  model?: string
+  sort_order?: number
+  manifest_path?: string
 }
 
 interface CharacterVersionSummary {
@@ -298,10 +319,22 @@ function taskImageGeneration(task: QueueTask): Record<string, unknown> {
 function taskReviewStatus(task: QueueTask): string {
   const imageGen = taskImageGeneration(task)
   const review = asRecord(imageGen.review)
-  return normalizeStatus(String(review.status ?? asRecord(task.result_metadata).review_status ?? ''))
+  return normalizeStatus(
+    String(
+      review.status ??
+        imageGen.review_status ??
+        asRecord(task.result_metadata).review_status ??
+        task.review_status ??
+        '',
+    ),
+  )
 }
 
 function effectiveTaskStatus(task: QueueTask): string {
+  const explicit = normalizeStatus(firstNonEmptyString(task.effective_status))
+  if (explicit) {
+    return explicit
+  }
   const reviewStatus = taskReviewStatus(task)
   if (reviewStatus === 'accepted' || reviewStatus === 'rejected') {
     return reviewStatus
@@ -310,7 +343,7 @@ function effectiveTaskStatus(task: QueueTask): string {
 }
 
 function branchEffectiveStatus(branch: VersionBranchItem): string {
-  const explicit = normalizeStatus(branch.effective_status)
+  const explicit = normalizeStatus(firstNonEmptyString(branch.effective_status))
   if (explicit) {
     return explicit
   }
@@ -392,6 +425,35 @@ function statusBadgeClass(value?: string): string {
   return STATUS_BADGE_CLASS[status] ?? 'status-badge neutral'
 }
 
+function statusDisplay(value?: string): string {
+  const status = normalizeStatus(value)
+  if (!status) {
+    return statusLabel(value)
+  }
+  return `${statusLabel(status)} · ${status}`
+}
+
+function branchSummaryFields(branch: VersionBranchItem): Record<string, unknown> {
+  return asRecord(branch.summary_fields)
+}
+
+function branchPurpose(branch: VersionBranchItem): string {
+  const summaryFields = branchSummaryFields(branch)
+  return firstNonEmptyString(branch.purpose, branch.purpose_summary, summaryFields.purpose)
+}
+
+function branchHeroAssetPath(branch: VersionBranchItem): string {
+  const summaryFields = branchSummaryFields(branch)
+  return firstNonEmptyString(
+    branch.face_detail_asset_path,
+    branch.hero_asset_path,
+    branch.thumbnail_asset_path,
+    summaryFields.face_detail_asset_path,
+    summaryFields.hero_asset_path,
+    summaryFields.thumbnail_asset_path,
+  )
+}
+
 function angleSortValue(angle?: string): number {
   const normalized = String(angle ?? '').trim()
   const index = PREFERRED_ANGLE_ORDER.indexOf(normalized)
@@ -409,7 +471,7 @@ function sortAngles(angles: string[]): string[] {
 }
 
 function branchSortValue(branch: VersionBranchItem): number {
-  const purpose = String(branch.purpose ?? '').trim()
+  const purpose = branchPurpose(branch)
   if (purpose === 'face_detail') {
     return 0
   }
@@ -417,7 +479,7 @@ function branchSortValue(branch: VersionBranchItem): number {
   if (angles.includes('face_detail')) {
     return 1
   }
-  if (branch.face_detail_asset_path) {
+  if (branchHeroAssetPath(branch) || branch.has_face_detail || (branch.face_detail_count ?? 0) > 0) {
     return 2
   }
   return 3
@@ -434,9 +496,18 @@ function reviewSortValue(status?: string): number {
 }
 
 function branchSummary(branch: VersionBranchItem): string {
+  if (branch.summary) {
+    return summarizeText(branch.summary, '尚無額外摘要', 180)
+  }
+  const summaryFields = branchSummaryFields(branch)
+  const inlineSummary = firstNonEmptyString(summaryFields.summary, summaryFields.status_summary, summaryFields.purpose)
+  if (inlineSummary) {
+    return summarizeText(inlineSummary, '尚無額外摘要', 180)
+  }
   const parts: string[] = []
-  if (branch.purpose) {
-    parts.push(`${purposeLabel(branch.purpose)} 分支`)
+  const purpose = branchPurpose(branch)
+  if (purpose) {
+    parts.push(`${purposeLabel(purpose)} 分支`)
   }
   const sortedAngles = sortAngles((branch.angles ?? []).map((item) => String(item)))
   if (sortedAngles.length) {
@@ -454,7 +525,7 @@ function branchSummary(branch: VersionBranchItem): string {
 function branchMetaSummary(branch: VersionBranchItem): string {
   const parts: string[] = []
   if (branch.effective_status || branch.review_status || branch.status) {
-    parts.push(statusLabel(branchEffectiveStatus(branch)))
+    parts.push(statusDisplay(branchEffectiveStatus(branch)))
   }
   if (branch.job_id) {
     parts.push(`job ${String(branch.job_id).slice(0, 8)}`)
@@ -468,6 +539,26 @@ function branchMetaSummary(branch: VersionBranchItem): string {
     parts.push('有結果')
   }
   return parts.join(' · ') || '等待更多分支資料'
+}
+
+function branchShortSummary(branch: VersionBranchItem): string {
+  const parts = [branchTypeLabel(branch.kind, branch.purpose), branchSummary(branch), branchMetaSummary(branch)].filter(Boolean)
+  return summarizeText(parts.join(' · '), '等待更多分支資料', 180)
+}
+
+function branchOverviewLines(branch: VersionBranchItem, branchStatus: string, branchAngles: string[]): string[] {
+  const purpose = branchPurpose(branch)
+  return [
+    purpose ? `${purposeLabel(purpose)} 分支` : '',
+    branchTypeLabel(branch.kind, purpose),
+    branchAngles.length ? `角度 ${branchAngles.join(', ')}` : '',
+    branch.image_count != null
+      ? `${branch.image_count} 張圖片`
+      : branch.asset_paths?.length
+        ? `${branch.asset_paths.length} 張圖片`
+        : '',
+    `狀態 ${statusLabel(branchStatus)}`,
+  ].filter(Boolean)
 }
 
 function responseSummary(task: QueueTask): string {
@@ -497,6 +588,53 @@ function responseDetailSummary(task: QueueTask): string {
     detailSummary || '',
   ].filter(Boolean)
   return parts.join(' · ') || '目前沒有更詳細的回應摘要'
+}
+
+function responseSummaryRows(task: QueueTask): Array<{ label: string; value: string }> {
+  const imageGen = taskImageGeneration(task)
+  const review = asRecord(imageGen.review)
+  return [
+    { label: '摘要', value: responseDetailSummary(task) },
+    { label: 'Provider', value: firstNonEmptyString(imageGen.provider) || '-' },
+    { label: 'Model', value: firstNonEmptyString(imageGen.model) || '-' },
+    { label: '用途', value: firstNonEmptyString(imageGen.purpose) || '-' },
+    { label: 'Review', value: firstNonEmptyString(review.status, imageGen.review_status) || '-' },
+    {
+      label: '輸出數',
+      value: String(taskDetailImages('', task).length || queueImageCollections(imageGen).length || 0),
+    },
+  ]
+}
+
+function taskParamSummary(task: QueueTask): string {
+  const params = asRecord(task.evolution_params)
+  const parts = [
+    params.seed != null ? `seed ${String(params.seed)}` : '',
+    params.steps != null ? `${String(params.steps)} steps` : '',
+    params.guidance_scale != null ? `cfg ${String(params.guidance_scale)}` : '',
+    params.width != null && params.height != null ? `${String(params.width)}x${String(params.height)}` : '',
+  ].filter(Boolean)
+  return parts.join(' · ') || '使用預設參數'
+}
+
+function taskDetailSections(task: QueueTask): string[] {
+  const sections: string[] = []
+  const detailImages = taskDetailImages('', task)
+  if (taskHeroImage('', task, detailImages)) sections.push('面部細節圖')
+  if (detailImages.some((item) => item.angle !== 'face_detail')) sections.push('其他角度圖')
+  if (promptText(task)) sections.push('Prompt')
+  if (negativePromptText(task)) sections.push('Negative')
+  if (Object.keys(asRecord(task.evolution_params)).length) sections.push('參數')
+  if (task.error_message) sections.push('錯誤')
+  sections.push('回應摘要')
+  return sections
+}
+
+function parseAnglesSummary(value?: string): string[] {
+  return String(value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
 }
 
 function promptText(task: QueueTask): string {
@@ -581,8 +719,6 @@ function taskHeroImage(apiBase: string, task: QueueTask, detailImages: TaskImage
     firstNonEmptyString(
       imageGen.face_detail_asset_path,
       asRecord(task.result_metadata).face_detail_asset_path,
-      asRecord(imageGen.thumbnail_image).final_asset_path,
-      asRecord(imageGen.thumbnail_image).asset_path,
     ),
   ).trim()
   if (!faceDetailAssetPath) {
@@ -593,6 +729,45 @@ function taskHeroImage(apiBase: string, task: QueueTask, detailImages: TaskImage
     angle: 'face_detail',
     note: String(imageGen.purpose ?? 'identity'),
     src: assetUrlFromPath(apiBase, task.core_id, faceDetailAssetPath),
+  }
+}
+
+function taskThumbnailSrc(
+  apiBase: string,
+  task: QueueTask,
+  detailImages: TaskImageDetail[],
+  fallbackSummary?: CharacterSummary,
+): string {
+  const imageGen = taskImageGeneration(task)
+  const taskPreview = taskPreviewMetadata(task)
+  const thumbnailAssetPath = firstNonEmptyString(
+    taskPreview.face_detail_asset_path,
+    taskPreview.thumbnail_asset_path,
+    imageGen.face_detail_asset_path,
+    imageGen.thumbnail_asset_path,
+    asRecord(imageGen.thumbnail_image).final_asset_path,
+    asRecord(imageGen.thumbnail_image).asset_path,
+    detailImages[0]?.path,
+    asRecord(fallbackSummary?.metadata).face_detail_asset_path,
+    asRecord(fallbackSummary?.metadata).thumbnail_asset_path,
+  )
+  return thumbnailAssetPath ? assetUrlFromPath(apiBase, task.core_id, thumbnailAssetPath) : ''
+}
+
+function branchHeroImage(apiBase: string, characterId: string, branch: VersionBranchItem, detailImages: TaskImageDetail[]): TaskImageDetail | null {
+  const firstFaceDetail = detailImages.find((item) => item.angle === 'face_detail')
+  if (firstFaceDetail) {
+    return firstFaceDetail
+  }
+  const heroPath = branchHeroAssetPath(branch)
+  if (!heroPath) {
+    return null
+  }
+  return {
+    path: heroPath,
+    angle: heroPath === firstNonEmptyString(branch.face_detail_asset_path, String(branchSummaryFields(branch).face_detail_asset_path ?? '')) ? 'face_detail' : undefined,
+    note: branchPurpose(branch) || branch.kind,
+    src: assetUrlFromPath(apiBase, characterId, heroPath),
   }
 }
 
@@ -614,7 +789,7 @@ function branchDetailImages(apiBase: string, characterId: string, branch: Versio
     bucket.set(key, {
       path: assetPath,
       angle,
-      note: branch.purpose || branch.kind,
+      note: branchPurpose(branch) || branch.kind,
       src: assetUrlFromPath(apiBase, characterId, assetPath),
       summary: imageSummary(item, 72),
     })
@@ -635,6 +810,10 @@ function branchDetailImages(apiBase: string, characterId: string, branch: Versio
   if (branch.face_detail_asset_path) {
     registerImage({ asset_path: branch.face_detail_asset_path }, 'face_detail')
   }
+  const fallbackHeroAssetPath = firstNonEmptyString(branch.hero_asset_path, String(branchSummaryFields(branch).hero_asset_path ?? ''))
+  if (fallbackHeroAssetPath) {
+    registerImage({ asset_path: fallbackHeroAssetPath }, fallbackHeroAssetPath === branch.face_detail_asset_path ? 'face_detail' : undefined)
+  }
 
   return [...bucket.values()].sort((left, right) => {
     const sortDelta = angleSortValue(left.angle) - angleSortValue(right.angle)
@@ -643,6 +822,135 @@ function branchDetailImages(apiBase: string, characterId: string, branch: Versio
     }
     return String(left.path).localeCompare(String(right.path))
   })
+}
+
+function branchDetailSections(branch: VersionBranchItem, detailImages: TaskImageDetail[]): string[] {
+  const sections: string[] = []
+  if (detailImages.some((item) => item.angle === 'face_detail')) sections.push('face_detail')
+  if (detailImages.some((item) => item.angle !== 'face_detail')) sections.push('angles')
+  if (branchPromptText(branch)) sections.push('Prompt')
+  if (branchNegativePromptText(branch)) sections.push('Negative')
+  if (Object.keys(branchEvolutionParams(branch)).length) sections.push('參數')
+  if (branch.asset_paths?.length) sections.push('資產')
+  if (branch.result_url) sections.push('結果')
+  return sections
+}
+
+function branchPromptText(branch: VersionBranchItem): string {
+  const rawBranch = asRecord(branch as unknown)
+  const request = asRecord(rawBranch.request)
+  const response = asRecord(rawBranch.response)
+  const summaryFields = branchSummaryFields(branch)
+  return firstNonEmptyString(
+    branch.prompt,
+    branch.final_prompt,
+    branch.revised_prompt,
+    summaryFields.prompt,
+    summaryFields.final_prompt,
+    summaryFields.revised_prompt,
+    request.prompt,
+    request.final_prompt,
+    request.revised_prompt,
+    response.prompt,
+    response.final_prompt,
+    response.revised_prompt,
+  )
+}
+
+function branchNegativePromptText(branch: VersionBranchItem): string {
+  const rawBranch = asRecord(branch as unknown)
+  const request = asRecord(rawBranch.request)
+  const response = asRecord(rawBranch.response)
+  const summaryFields = branchSummaryFields(branch)
+  return firstNonEmptyString(
+    branch.negative_prompt,
+    summaryFields.negative_prompt,
+    request.negative_prompt,
+    response.negative_prompt,
+  )
+}
+
+function branchEvolutionParams(branch: VersionBranchItem): Record<string, unknown> {
+  const rawBranch = asRecord(branch as unknown)
+  const request = asRecord(rawBranch.request)
+  const response = asRecord(rawBranch.response)
+  const summaryFields = branchSummaryFields(branch)
+  const candidates = [
+    branch.evolution_params,
+    asRecord(summaryFields.evolution_params),
+    asRecord(summaryFields.params),
+    asRecord(rawBranch.params),
+    asRecord(rawBranch.request_params),
+    asRecord(request.evolution_params),
+    asRecord(request.params),
+    asRecord(response.evolution_params),
+    asRecord(response.params),
+  ]
+  for (const candidate of candidates) {
+    const record = asRecord(candidate)
+    if (Object.keys(record).length) {
+      return record
+    }
+  }
+  return {}
+}
+
+function deriveAngles(candidates: Array<string | undefined | null>): string[] {
+  const unique = new Set<string>()
+  for (const value of candidates) {
+    const normalized = String(value ?? '').trim()
+    if (normalized) {
+      unique.add(normalized)
+    }
+  }
+  return sortAngles([...unique])
+}
+
+function taskAngleList(task: QueueTask, detailImages: TaskImageDetail[]): string[] {
+  const imageGen = taskImageGeneration(task)
+  const imagesByAngle = asRecord(imageGen.images_by_angle)
+  const nestedAngles = Object.keys(imagesByAngle)
+  const faceDetailImages = asArray(imageGen.face_detail_images)
+  const directAngles = asArray(imageGen.angles).map((item) => String(item))
+  return deriveAngles([
+    ...directAngles,
+    ...nestedAngles,
+    ...(faceDetailImages.length ? ['face_detail'] : []),
+    ...detailImages.map((item) => item.angle),
+  ])
+}
+
+function branchAngleList(branch: VersionBranchItem, detailImages: TaskImageDetail[]): string[] {
+  const summaryFields = branchSummaryFields(branch)
+  return deriveAngles([
+    ...(branch.angles ?? []).map((item) => String(item)),
+    ...parseAnglesSummary(branch.angles_summary),
+    ...parseAnglesSummary(String(summaryFields.angles_summary ?? '')),
+    ...detailImages.map((item) => item.angle),
+  ])
+}
+
+function branchThumbnailSrc(
+  apiBase: string,
+  characterId: string,
+  branch: VersionBranchItem,
+  branchHero: TaskImageDetail | null,
+  branchImages: TaskImageDetail[],
+): string {
+  const thumbnailPath = firstNonEmptyString(
+    branch.face_detail_asset_path,
+    branch.hero_asset_path,
+    branch.thumbnail_asset_path,
+    String(branchSummaryFields(branch).face_detail_asset_path ?? ''),
+    String(branchSummaryFields(branch).hero_asset_path ?? ''),
+    String(branchSummaryFields(branch).thumbnail_asset_path ?? ''),
+    branchHero?.path,
+    branchImages[0]?.path,
+  )
+  if (thumbnailPath) {
+    return assetUrlFromPath(apiBase, characterId, thumbnailPath)
+  }
+  return branchHero?.src ?? ''
 }
 
 function asImageRefList(value: unknown): ImageRefItem[] {
@@ -715,6 +1023,54 @@ function taskWorkflowHint(task: QueueTask): string {
   }
   if (effectiveStatus === 'ready') {
     return '圖片可供檢視，目前無需額外操作。'
+  }
+  return '目前無需額外操作。'
+}
+
+function branchWorkflowLabel(branch: VersionBranchItem): string {
+  const effectiveStatus = branchEffectiveStatus(branch)
+  const reviewStatus = normalizeStatus(branch.review_status)
+  if (effectiveStatus === 'pending') {
+    return '等待生成'
+  }
+  if (effectiveStatus === 'failed') {
+    return '分支生成失敗'
+  }
+  if (effectiveStatus === 'accepted') {
+    return '分支已接受'
+  }
+  if (effectiveStatus === 'rejected') {
+    return '分支已拒絕'
+  }
+  if (effectiveStatus === 'ready' && reviewStatus === 'pending') {
+    return '待審核決定是否採用'
+  }
+  if (effectiveStatus === 'ready') {
+    return '候選分支已就緒'
+  }
+  return statusLabel(effectiveStatus)
+}
+
+function branchWorkflowHint(branch: VersionBranchItem): string {
+  const effectiveStatus = branchEffectiveStatus(branch)
+  const reviewStatus = normalizeStatus(branch.review_status)
+  if (effectiveStatus === 'pending') {
+    return '分支仍在等待後端生成，尚未產出可檢視圖片。'
+  }
+  if (effectiveStatus === 'failed') {
+    return '分支生成失敗，可回頭檢查輸出與後端記錄。'
+  }
+  if (effectiveStatus === 'accepted') {
+    return '這個分支已被採用，可視為目前有效候選結果。'
+  }
+  if (effectiveStatus === 'rejected') {
+    return '這個分支已被標記拒絕，保留作記錄但不建議採用。'
+  }
+  if (effectiveStatus === 'ready' && reviewStatus === 'pending') {
+    return '圖片已生成完成，但仍待人工審核是否接受。'
+  }
+  if (effectiveStatus === 'ready') {
+    return '候選分支可直接檢視，目前沒有額外待辦。'
   }
   return '目前無需額外操作。'
 }
@@ -1110,19 +1466,14 @@ export function CharpassPanel(props: CharpassPanelProps) {
     const items: GeneratedImageItem[] = []
     for (const task of filteredQueueTasks) {
       const imageGen = taskImageGeneration(task)
-      const images = asArray(imageGen.images)
-      for (const image of images) {
-        const imageRecord = asRecord(image)
-        const assetPath = String(imageRecord.asset_path ?? '').trim()
-        if (!assetPath) {
-          continue
-        }
+      const detailImages = taskDetailImages(apiBase, task)
+      for (const image of detailImages) {
         items.push({
-          path: assetPath,
-          uri: String(imageRecord.url ?? '').trim() || undefined,
-          angle: String(imageRecord.angle ?? '').trim() || undefined,
+          path: image.path,
+          uri: image.uri,
+          angle: image.angle,
           note: `${String(imageGen.purpose ?? 'identity')} · ${task.character_name || task.core_id}`,
-          src: assetUrlFromPath(apiBase, task.core_id, assetPath),
+          src: image.src,
         })
       }
     }
@@ -1134,6 +1485,10 @@ export function CharpassPanel(props: CharpassPanelProps) {
       return []
     }
     return [...versionSummary.branches].sort((left, right) => {
+      const explicitSortDelta = (left.sort_order ?? Number.MAX_SAFE_INTEGER) - (right.sort_order ?? Number.MAX_SAFE_INTEGER)
+      if (Number.isFinite(explicitSortDelta) && explicitSortDelta !== 0) {
+        return explicitSortDelta
+      }
       const branchDelta = branchSortValue(left) - branchSortValue(right)
       if (branchDelta !== 0) {
         return branchDelta
@@ -1586,24 +1941,43 @@ export function CharpassPanel(props: CharpassPanelProps) {
                 {sortedBranches.length ? (
                   <div className="queue-task-list">
                     {sortedBranches.map((branch) => {
+                      const branchPurposeValue = branchPurpose(branch)
                       const branchImages = selectedCharacter
                         ? branchDetailImages(apiBase, selectedCharacter.id, branch)
                         : []
-                      const branchImageGroups = detailImageGroups(branchImages)
+                      const branchHero = selectedCharacter
+                        ? branchHeroImage(apiBase, selectedCharacter.id, branch, branchImages)
+                        : null
+                      const branchGalleryImages = branchImages.filter(
+                        (item) =>
+                          `${item.path || ''}::${item.angle || ''}` !==
+                          `${branchHero?.path || ''}::${branchHero?.angle || ''}`,
+                      )
+                      const branchImageGroups = detailImageGroups(branchGalleryImages)
                       const branchStatus = branchEffectiveStatus(branch)
-                      const branchAngles = sortAngles((branch.angles ?? []).map((item) => String(item)))
-                      const branchThumbnail =
-                        selectedCharacter && (branch.face_detail_asset_path || branch.thumbnail_asset_path)
-                          ? assetUrlFromPath(
-                              apiBase,
-                              selectedCharacter.id,
-                              String(branch.face_detail_asset_path ?? branch.thumbnail_asset_path ?? ''),
-                            )
-                          : ''
+                      const branchReviewStatus = normalizeStatus(branch.review_status)
+                      const branchReviewLabel =
+                        branchReviewStatus === 'pending'
+                          ? '待接受'
+                          : branchReviewStatus === 'accepted'
+                            ? '已接受'
+                            : branchReviewStatus === 'rejected'
+                              ? '已拒絕'
+                              : branchReviewStatus || ''
+                      const branchWorkflow = branchWorkflowLabel(branch)
+                      const branchWorkflowDescription = branchWorkflowHint(branch)
+                      const branchAngles = branchAngleList(branch, branchImages)
+                      const branchSectionLabels = branchDetailSections(branch, branchImages)
+                      const branchPrompt = branchPromptText(branch)
+                      const branchNegativePrompt = branchNegativePromptText(branch)
+                      const branchParams = branchEvolutionParams(branch)
+                      const branchThumbnail = selectedCharacter
+                        ? branchThumbnailSrc(apiBase, selectedCharacter.id, branch, branchHero, branchImages)
+                        : ''
                       return (
                       <details
                         key={`${branch.kind}-${branch.branch_id}`}
-                        className={`queue-task-card task-disclosure version-branch-card status-panel-${branchStatus}`}
+                        className={`queue-task-card task-disclosure version-branch-card status-panel-${branchStatus} version-branch-purpose-${normalizeStatus(branchPurposeValue) || 'unknown'}`}
                       >
                         <summary className="task-summary">
                           <div className="task-summary-layout">
@@ -1620,26 +1994,81 @@ export function CharpassPanel(props: CharpassPanelProps) {
                               </a>
                             ) : null}
                             <div className="task-summary-main">
-                            <div className="task-summary-title-row">
-                              <strong>{branch.label}</strong>
-                              <div className="task-status-group">
-                                <span className={branchKindBadgeClass(branch.kind)}>{branch.kind || 'branch'}</span>
-                                {branch.purpose ? (
-                                  <span className={purposeBadgeClass(branch.purpose)}>{purposeLabel(branch.purpose)}</span>
-                                ) : null}
-                                <span className={statusBadgeClass(branchStatus)}>{statusLabel(branchStatus)}</span>
+                              <div className="task-summary-title-row">
+                                <div className="task-summary-heading">
+                                  <strong>{branch.label}</strong>
+                                  <span className="task-summary-subtitle">{branchTypeLabel(branch.kind, branch.purpose)}</span>
+                                </div>
+                                <div className="task-status-group">
+                                  <span className={statusBadgeClass(branchStatus)}>{statusLabel(branchStatus)}</span>
+                                  {branchReviewLabel ? (
+                                    <span className={statusBadgeClass(branchReviewStatus || 'ready')}>審核 {branchReviewLabel}</span>
+                                  ) : null}
+                                  {branchPurposeValue ? (
+                                    <span className={purposeBadgeClass(branchPurposeValue)}>{purposeLabel(branchPurposeValue)}</span>
+                                  ) : null}
+                                  <span className={branchKindBadgeClass(branch.kind)}>{branch.kind || 'branch'}</span>
+                                </div>
                               </div>
-                            </div>
-                            <div className="queue-task-meta">
-                              <span>{branchTypeLabel(branch.kind, branch.purpose)}</span>
-                              {branch.updated_at ? <span>{formatDateTime(branch.updated_at)}</span> : null}
-                            </div>
-                            <p className="task-inline-summary">{branchSummary(branch)}</p>
-                            <p className="task-inline-summary subtle">{branchMetaSummary(branch)}</p>
+                              <div className="queue-task-meta">
+                                <span>branch {branch.branch_id.slice(0, 8)}</span>
+                                {branch.updated_at ? <span>{formatDateTime(branch.updated_at)}</span> : null}
+                              </div>
+                              <p className="task-inline-summary">{branchShortSummary(branch)}</p>
+                              <div className="task-summary-overview">
+                                {[branchWorkflow, ...branchOverviewLines(branch, branchStatus, branchAngles)].map((line) => (
+                                  <span key={`${branch.branch_id}-${line}`} className="summary-outline-pill">
+                                    {line}
+                                  </span>
+                                ))}
+                              </div>
+                              <p className="task-inline-summary subtle">
+                                {branchImageGroups.faceDetail.length || branchHero?.angle === 'face_detail'
+                                  ? 'face_detail 優先'
+                                  : '一般分支'}
+                                {` · ${branchWorkflowDescription}`}
+                                {branchSectionLabels.length ? ` · 詳情含 ${branchSectionLabels.join(' / ')}` : ''}
+                              </p>
+                              {branchAngles.length ? (
+                                <div className="task-chip-row task-chip-row-tight">
+                                  {branchAngles.map((angle) => (
+                                    <span
+                                      key={`${branch.branch_id}-summary-${angle}`}
+                                      className={angle === 'face_detail' ? 'pill purpose-face-detail' : 'pill pill-ghost'}
+                                    >
+                                      {angle}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         </summary>
                         <div className="task-detail-content">
+                          {branchHero ? (
+                            <section className="task-detail-section">
+                              <div className="section-header compact">
+                                <h4>面部細節首圖</h4>
+                                <span className="pill purpose-face-detail">
+                                  {branchHero.angle === 'face_detail' ? '固定首圖' : '縮圖回退'}
+                                </span>
+                              </div>
+                              <a
+                                className={`image-card task-hero-image ${
+                                  branchHero.angle === 'face_detail' ? 'face-detail-priority' : ''
+                                }`}
+                                href={branchHero.src}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <img src={branchHero.src} alt={branchHero.angle || branchHero.note || branch.label} loading="lazy" />
+                                <div className="image-meta">
+                                  <strong>{branchHero.angle || branchHero.note || 'branch-image'}</strong>
+                                  <span>{branchHero.summary || branchHero.path || branchHero.uri}</span>
+                                </div>
+                              </a>
+                            </section>
+                          ) : null}
                           {selectedCharacter ? (
                             <section className="task-detail-section">
                               <div className="section-header compact">
@@ -1656,15 +2085,18 @@ export function CharpassPanel(props: CharpassPanelProps) {
                                   <div className="queue-task-meta">
                                     <span>角色 #{selectedCharacter.id}</span>
                                     <span>分支 {branch.branch_id.slice(0, 8)}</span>
-                                    <span>{branchTypeLabel(branch.kind, branch.purpose)}</span>
+                                    <span>{branchTypeLabel(branch.kind, branchPurposeValue)}</span>
                                   </div>
                                   <div className="task-chip-row">
-                                    {branch.purpose ? (
-                                      <span className={purposeBadgeClass(branch.purpose)}>{purposeLabel(branch.purpose)}</span>
+                                    {branchPurposeValue ? (
+                                      <span className={purposeBadgeClass(branchPurposeValue)}>{purposeLabel(branchPurposeValue)}</span>
                                     ) : null}
-                                    <span className={statusBadgeClass(branchStatus)}>{statusLabel(branchStatus)}</span>
+                                    <span className={statusBadgeClass(branchStatus)}>{statusDisplay(branchStatus)}</span>
                                     {branchAngles.map((angle) => (
-                                      <span key={`${branch.branch_id}-character-${angle}`} className="pill pill-ghost">
+                                      <span
+                                        key={`${branch.branch_id}-character-${angle}`}
+                                        className={angle === 'face_detail' ? 'pill purpose-face-detail' : 'pill pill-ghost'}
+                                      >
                                         {angle}
                                       </span>
                                     ))}
@@ -1675,7 +2107,10 @@ export function CharpassPanel(props: CharpassPanelProps) {
                           ) : null}
                           <div className="task-chip-row detail-chip-row">
                             {branchAngles.map((angle) => (
-                              <span key={`${branch.branch_id}-${angle}`} className="pill pill-ghost">
+                              <span
+                                key={`${branch.branch_id}-${angle}`}
+                                className={angle === 'face_detail' ? 'pill purpose-face-detail' : 'pill pill-ghost'}
+                              >
                                 {angle}
                               </span>
                             ))}
@@ -1730,6 +2165,34 @@ export function CharpassPanel(props: CharpassPanelProps) {
                               </div>
                             </section>
                           ) : null}
+                          {branchPrompt || branchNegativePrompt ? (
+                            <div className="task-detail-grid">
+                              {branchPrompt ? (
+                                <section className="task-detail-section">
+                                  <div className="section-header compact">
+                                    <h4>Prompt</h4>
+                                  </div>
+                                  <pre className="layer-preview queue-preview-block">{branchPrompt}</pre>
+                                </section>
+                              ) : null}
+                              {branchNegativePrompt ? (
+                                <section className="task-detail-section">
+                                  <div className="section-header compact">
+                                    <h4>Negative Prompt</h4>
+                                  </div>
+                                  <pre className="layer-preview queue-preview-block">{branchNegativePrompt}</pre>
+                                </section>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {Object.keys(branchParams).length ? (
+                            <section className="task-detail-section">
+                              <div className="section-header compact">
+                                <h4>演化參數</h4>
+                              </div>
+                              <pre className="layer-preview queue-preview-block">{safeJson(branchParams)}</pre>
+                            </section>
+                          ) : null}
                           <div className="task-detail-grid task-detail-grid--meta">
                             <section className="task-detail-section">
                               <div className="section-header compact">
@@ -1738,28 +2201,38 @@ export function CharpassPanel(props: CharpassPanelProps) {
                               <div className="task-meta-stack">
                                 <div className="task-meta-row">
                                   <span>分支類型</span>
-                                  <strong>{branchTypeLabel(branch.kind, branch.purpose)}</strong>
+                                  <strong>{branchTypeLabel(branch.kind, branchPurposeValue)}</strong>
                                 </div>
                                 <div className="task-meta-row">
                                   <span>狀態</span>
-                                  <strong>{statusLabel(branchStatus)}</strong>
+                                  <strong>{statusDisplay(branchStatus)}</strong>
                                 </div>
-                              <div className="task-meta-row">
-                                <span>工作流</span>
-                                <strong>{branchStatus === 'ready' ? '候選分支可檢視' : statusLabel(branchStatus)}</strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>角度</span>
-                                <strong>{branchAngles.join(', ') || '-'}</strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>最後更新</span>
-                                <strong>{formatDateTime(branch.updated_at)}</strong>
-                              </div>
+                                <div className="task-meta-row">
+                                  <span>工作流</span>
+                                  <strong>{branchWorkflow}</strong>
+                                </div>
+                                <div className="task-meta-row task-meta-row-block">
+                                  <span>說明</span>
+                                  <strong>{branchWorkflowDescription}</strong>
+                                </div>
+                                <div className="task-meta-row">
+                                  <span>角度</span>
+                                  <strong>{branchAngles.join(', ') || '-'}</strong>
+                                </div>
+                                <div className="task-meta-row">
+                                  <span>最後更新</span>
+                                  <strong>{formatDateTime(branch.updated_at)}</strong>
+                                </div>
                                 <div className="task-meta-row task-meta-row-block">
                                   <span>簡要摘要</span>
                                   <strong>{branchSummary(branch)}</strong>
                                 </div>
+                                {branch.purpose_summary ? (
+                                  <div className="task-meta-row task-meta-row-block">
+                                    <span>用途摘要</span>
+                                    <strong>{branch.purpose_summary}</strong>
+                                  </div>
+                                ) : null}
                               </div>
                             </section>
                             <section className="task-detail-section">
@@ -1783,6 +2256,12 @@ export function CharpassPanel(props: CharpassPanelProps) {
                                   <div className="task-meta-row">
                                     <span>response</span>
                                     <strong>{branch.response_path}</strong>
+                                  </div>
+                                ) : null}
+                                {branch.manifest_path ? (
+                                  <div className="task-meta-row">
+                                    <span>manifest</span>
+                                    <strong>{branch.manifest_path}</strong>
                                   </div>
                                 ) : null}
                               </div>
@@ -1853,44 +2332,39 @@ export function CharpassPanel(props: CharpassPanelProps) {
                   刷新
                 </button>
                 <button className="secondary" onClick={() => void processNextTask()} disabled={queueBusy}>
-                  執行下一筆
+                  生成下一筆候選圖
                 </button>
                 <button className="primary" onClick={() => void processAllTasks()} disabled={queueBusy}>
-                  批次執行待生成
+                  批次生成候選圖
                 </button>
               </div>
             </div>
-            <p className="task-inline-summary subtle queue-toolbar-note">`執行` 只會生成候選圖片；只有 `接受入庫` 才會正式寫回角色護照。</p>
+            <p className="task-inline-summary subtle queue-toolbar-note">
+              `生成` 只會產出候選圖片與待審核分支；只有 `接受入庫` 才會正式寫回角色護照。
+            </p>
             {filteredQueueTasks.length ? (
               <div className="queue-task-list">
                 {filteredQueueTasks.map((task) => {
                   const imageGen = taskImageGeneration(task)
-                  const angleList = sortAngles(asArray(imageGen.angles).map((item) => String(item)))
                   const detailImages = taskDetailImages(apiBase, task)
+                  const angleList = taskAngleList(task, detailImages)
                   const heroImage = taskHeroImage(apiBase, task, detailImages)
                   const galleryImages = detailImages.filter(
                     (item) =>
                       `${item.path || item.uri}::${item.angle || ''}` !==
                       `${heroImage?.path || heroImage?.uri || ''}::${heroImage?.angle || ''}`,
                   )
+                  const imageGroups = detailImageGroups(galleryImages)
                   const assetPaths = [...new Set(detailImages.map((item) => item.path).filter(Boolean))]
                   const reviewLabel = reviewStatusLabel(task)
                   const reviewStatus = taskReviewStatus(task)
                   const effectiveStatus = effectiveTaskStatus(task)
                   const workflowLabel = taskWorkflowLabel(task)
                   const workflowHint = taskWorkflowHint(task)
+                  const detailSectionLabels = taskDetailSections(task)
                   const characterSummary = characterSummaries[String(task.core_id)]
                   const characterName = task.character_name || characterSummary?.name || `角色 ${task.core_id}`
-                  const thumbnailAssetPath = firstNonEmptyString(
-                    asRecord(characterSummary?.metadata).face_detail_asset_path,
-                    asRecord(characterSummary?.metadata).thumbnail_asset_path,
-                    imageGen.face_detail_asset_path,
-                    imageGen.thumbnail_asset_path,
-                    asRecord(imageGen.thumbnail_image).final_asset_path,
-                    asRecord(imageGen.thumbnail_image).asset_path,
-                  )
-                  const characterThumbnailSrc =
-                    thumbnailAssetPath ? assetUrlFromPath(apiBase, task.core_id, thumbnailAssetPath) : ''
+                  const characterThumbnailSrc = taskThumbnailSrc(apiBase, task, detailImages, characterSummary)
                   const headline = `${purposeLabel(String(imageGen.purpose ?? '').trim() || task.status)} · ${
                     characterName
                   }`
@@ -1911,30 +2385,51 @@ export function CharpassPanel(props: CharpassPanelProps) {
                             </a>
                           ) : null}
                           <div className="task-summary-main">
-                          <div className="task-summary-title-row">
-                            <strong>#{task.id} · {headline}</strong>
-                            <div className="task-status-group">
-                              <span className={purposeBadgeClass(String(imageGen.purpose ?? '').trim() || 'identity')}>
-                                {purposeLabel(String(imageGen.purpose ?? '').trim() || 'identity')}
-                              </span>
-                              <span className={statusBadgeClass(effectiveStatus)}>{statusLabel(effectiveStatus)}</span>
-                              {reviewLabel ? (
-                                <span className={statusBadgeClass(reviewStatus || 'ready')}>審核 {reviewLabel}</span>
+                            <div className="task-summary-title-row">
+                              <div className="task-summary-heading">
+                                <strong>#{task.id} · {headline}</strong>
+                                <span className="task-summary-subtitle">{workflowLabel}</span>
+                              </div>
+                              <div className="task-status-group">
+                                <span className={statusBadgeClass(effectiveStatus)}>{statusLabel(effectiveStatus)}</span>
+                                <span className={purposeBadgeClass(String(imageGen.purpose ?? '').trim() || 'identity')}>
+                                  {purposeLabel(String(imageGen.purpose ?? '').trim() || 'identity')}
+                                </span>
+                                {reviewLabel ? (
+                                  <span className={statusBadgeClass(reviewStatus || 'ready')}>審核 {reviewLabel}</span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="queue-task-meta">
+                              <span>priority {task.priority}</span>
+                              <span>{formatDateTime(task.created_at)}</span>
+                              <span>hash {(task.variant_hash || '').slice(0, 16)}...</span>
+                            </div>
+                            <p className="task-inline-summary">
+                              {detailImages.length
+                                ? `${heroImage?.angle === 'face_detail' ? 'face_detail 優先' : '已含圖片'} · ${detailImages.length} 張`
+                                : responseSummary(task)}
+                              {angleList.length ? ` · ${angleList.join(', ')}` : ''}
+                            </p>
+                            <div className="task-summary-overview">
+                              <span className="summary-outline-pill">{taskParamSummary(task)}</span>
+                              <span className="summary-outline-pill">{workflowHint}</span>
+                              {detailSectionLabels.length ? (
+                                <span className="summary-outline-pill">詳情含 {detailSectionLabels.join(' / ')}</span>
                               ) : null}
                             </div>
-                          </div>
-                          <div className="queue-task-meta">
-                            <span>priority {task.priority}</span>
-                            <span>{formatDateTime(task.created_at)}</span>
-                            <span>hash {(task.variant_hash || '').slice(0, 16)}...</span>
-                          </div>
-                          <p className="task-inline-summary">
-                            {detailImages.length
-                              ? `${detailImages[0]?.angle === 'face_detail' ? 'face_detail 優先' : '已含圖片'} · ${detailImages.length} 張`
-                              : responseSummary(task)}
-                            {angleList.length ? ` · ${angleList.join(', ')}` : ''}
-                          </p>
-                          <p className="task-inline-summary subtle">{workflowHint}</p>
+                            {angleList.length ? (
+                              <div className="task-chip-row task-chip-row-tight">
+                                {angleList.map((angle) => (
+                                  <span
+                                    key={`${task.id}-summary-angle-${angle}`}
+                                    className={angle === 'face_detail' ? 'pill purpose-face-detail' : 'pill pill-ghost'}
+                                  >
+                                    {angle}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
                           <div className="task-summary-actions" onClick={(event) => event.stopPropagation()}>
                             {task.status === 'pending' ? (
@@ -1947,7 +2442,7 @@ export function CharpassPanel(props: CharpassPanelProps) {
                                 onMouseDown={(event) => event.stopPropagation()}
                                 disabled={queueBusy}
                               >
-                                執行生成
+                                生成候選圖
                               </button>
                             ) : null}
                             {task.result_url ? (
@@ -2012,14 +2507,39 @@ export function CharpassPanel(props: CharpassPanelProps) {
                             </a>
                           </section>
                         ) : null}
-                        {galleryImages.length ? (
+                        {imageGroups.faceDetail.length ? (
+                          <section className="task-detail-section">
+                            <div className="section-header compact">
+                              <h4>更多 face_detail 圖</h4>
+                              <span className="pill purpose-face-detail">{imageGroups.faceDetail.length}</span>
+                            </div>
+                            <div className="image-grid task-detail-image-grid">
+                              {imageGroups.faceDetail.map((item, index) => (
+                                <a
+                                  key={`${task.id}-face-detail-${item.path || item.uri || index}`}
+                                  className="image-card face-detail-priority"
+                                  href={item.src}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  <img src={item.src} alt={item.angle || item.note || `task-face-detail-${index + 1}`} loading="lazy" />
+                                  <div className="image-meta">
+                                    <strong>{item.angle || item.note || `face-detail-${index + 1}`}</strong>
+                                    <span>{item.summary || item.path || item.uri}</span>
+                                  </div>
+                                </a>
+                              ))}
+                            </div>
+                          </section>
+                        ) : null}
+                        {imageGroups.otherAngles.length ? (
                           <section className="task-detail-section">
                             <div className="section-header compact">
                               <h4>其他角度圖</h4>
-                              <span className="pill">{galleryImages.length}</span>
+                              <span className="pill">{imageGroups.otherAngles.length}</span>
                             </div>
                             <div className="image-grid task-detail-image-grid">
-                              {galleryImages.map((item, index) => (
+                              {imageGroups.otherAngles.map((item, index) => (
                                 <a
                                   key={`${task.id}-${item.path || item.uri || index}`}
                                   className="image-card"
@@ -2037,6 +2557,57 @@ export function CharpassPanel(props: CharpassPanelProps) {
                             </div>
                           </section>
                         ) : null}
+                        {promptText(task) || negativePromptText(task) ? (
+                          <div className="task-detail-grid">
+                            {promptText(task) ? (
+                              <section className="task-detail-section">
+                                <div className="section-header compact">
+                                  <h4>Prompt</h4>
+                                </div>
+                                <pre className="layer-preview queue-preview-block">{promptText(task)}</pre>
+                              </section>
+                            ) : null}
+                            {negativePromptText(task) ? (
+                              <section className="task-detail-section">
+                                <div className="section-header compact">
+                                  <h4>Negative Prompt</h4>
+                                </div>
+                                <pre className="layer-preview queue-preview-block">{negativePromptText(task)}</pre>
+                              </section>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        <section className="task-detail-section">
+                          <div className="section-header compact">
+                            <h4>參數</h4>
+                          </div>
+                          <pre className="layer-preview queue-preview-block">{safeJson(task.evolution_params ?? {})}</pre>
+                        </section>
+                        {task.error_message ? (
+                          <section className="task-detail-section">
+                            <div className="section-header compact">
+                              <h4>錯誤</h4>
+                            </div>
+                            <div className="error-banner">{task.error_message}</div>
+                          </section>
+                        ) : null}
+                        <section className="task-detail-section">
+                          <div className="section-header compact">
+                            <h4>回應摘要</h4>
+                          </div>
+                          <div className="task-meta-stack">
+                            {responseSummaryRows(task).map((row) => (
+                              <div
+                                key={`${task.id}-response-${row.label}`}
+                                className={`task-meta-row ${row.label === '摘要' ? 'task-meta-row-block' : ''}`}
+                              >
+                                <span>{row.label}</span>
+                                <strong>{row.value}</strong>
+                              </div>
+                            ))}
+                          </div>
+                          <pre className="layer-preview queue-preview-block">{safeJson(imageGen)}</pre>
+                        </section>
                         <section className="task-detail-section">
                           <div className="section-header compact">
                             <h4>人物關聯</h4>
@@ -2077,6 +2648,10 @@ export function CharpassPanel(props: CharpassPanelProps) {
                               <div className="task-meta-row">
                                 <span>工作流</span>
                                 <strong>{workflowLabel}</strong>
+                              </div>
+                              <div className="task-meta-row task-meta-row-block">
+                                <span>說明</span>
+                                <strong>{workflowHint}</strong>
                               </div>
                               <div className="task-meta-row">
                                 <span>狀態</span>
@@ -2119,7 +2694,15 @@ export function CharpassPanel(props: CharpassPanelProps) {
                               </div>
                               <div className="task-meta-row">
                                 <span>入庫條件</span>
-                                <strong>{hasPendingAccept(task) ? '接受後入庫' : reviewStatus === 'accepted' ? '已入庫' : '未入庫'}</strong>
+                                <strong>
+                                  {hasPendingAccept(task)
+                                    ? '待接受後才入庫'
+                                    : reviewStatus === 'accepted'
+                                      ? '已接受並入庫'
+                                      : reviewStatus === 'rejected'
+                                        ? '已拒絕，不入庫'
+                                        : '尚未入庫'}
+                                </strong>
                               </div>
                               <div className="task-meta-row">
                                 <span>結果連結</span>
@@ -2128,52 +2711,6 @@ export function CharpassPanel(props: CharpassPanelProps) {
                             </div>
                           </section>
                         </div>
-                        {promptText(task) || negativePromptText(task) ? (
-                          <div className="task-detail-grid">
-                            {promptText(task) ? (
-                              <section className="task-detail-section">
-                                <div className="section-header compact">
-                                  <h4>Prompt</h4>
-                                </div>
-                                <pre className="layer-preview queue-preview-block">{promptText(task)}</pre>
-                              </section>
-                            ) : null}
-                            {negativePromptText(task) ? (
-                              <section className="task-detail-section">
-                                <div className="section-header compact">
-                                  <h4>Negative Prompt</h4>
-                                </div>
-                                <pre className="layer-preview queue-preview-block">{negativePromptText(task)}</pre>
-                              </section>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        <section className="task-detail-section">
-                          <div className="section-header compact">
-                            <h4>參數</h4>
-                          </div>
-                          <pre className="layer-preview queue-preview-block">{safeJson(task.evolution_params ?? {})}</pre>
-                        </section>
-                        {task.error_message ? (
-                          <section className="task-detail-section">
-                            <div className="section-header compact">
-                              <h4>錯誤</h4>
-                            </div>
-                            <div className="error-banner">{task.error_message}</div>
-                          </section>
-                        ) : null}
-                        <section className="task-detail-section">
-                          <div className="section-header compact">
-                            <h4>回應摘要</h4>
-                          </div>
-                          <div className="task-meta-stack">
-                            <div className="task-meta-row task-meta-row-block">
-                              <span>摘要</span>
-                              <strong>{responseDetailSummary(task)}</strong>
-                            </div>
-                          </div>
-                          <pre className="layer-preview queue-preview-block">{safeJson(imageGen)}</pre>
-                        </section>
                         <section className="task-detail-section">
                           <div className="section-header compact">
                             <h4>資產路徑</h4>

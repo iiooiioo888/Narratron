@@ -67,9 +67,15 @@ def _prepare_result_urls(
                 representative_url = image_url
 
     thumbnail_image = payload.get("thumbnail_image") if isinstance(payload.get("thumbnail_image"), dict) else {}
-    thumbnail_asset_path = str(thumbnail_image.get("asset_path") or "").strip()
-    if thumbnail_asset_path:
-        representative_url = f"/api/v1/characters/{core_id}/assets/{thumbnail_asset_path}"
+    thumbnail_asset_path = str(
+        payload.get("thumbnail_asset_path")
+        or thumbnail_image.get("asset_path")
+        or ""
+    ).strip()
+    face_detail_asset_path = str(payload.get("face_detail_asset_path") or "").strip()
+    representative_asset_path = face_detail_asset_path or thumbnail_asset_path
+    if representative_asset_path:
+        representative_url = f"/api/v1/characters/{core_id}/assets/{representative_asset_path}"
     else:
         for angle in PREFERRED_RESULT_ANGLES:
             for image in images:
@@ -84,11 +90,43 @@ def _prepare_result_urls(
             if representative_url:
                 break
     result_url = representative_url or (image_urls[0] if image_urls else f"/api/v1/characters/{core_id}/variants")
+    review = payload.get("review") if isinstance(payload.get("review"), dict) else {}
+    review_status = str(review.get("status") or "").strip() or None
+    normalized_angles: list[str] = []
+    for angle in payload.get("angles") or []:
+        normalized = str(angle or "").strip()
+        if normalized and normalized not in normalized_angles:
+            normalized_angles.append(normalized)
+    if "face_detail" not in normalized_angles and face_detail_asset_path:
+        normalized_angles.insert(0, "face_detail")
+    representative_angle = None
+    if face_detail_asset_path:
+        representative_angle = "face_detail"
+    elif thumbnail_asset_path:
+        representative_angle = next(
+            (
+                str(image.get("angle") or "").strip()
+                for image in images
+                if isinstance(image, dict)
+                and str(image.get("asset_path") or "").strip() == thumbnail_asset_path
+                and str(image.get("angle") or "").strip()
+            ),
+            "front",
+        )
+    representative_asset_path = face_detail_asset_path or thumbnail_asset_path or None
     metadata = {
         "processed_at": processed_at,
         "thumbnail_asset_path": thumbnail_asset_path or None,
-        "face_detail_asset_path": payload.get("face_detail_asset_path"),
+        "face_detail_asset_path": face_detail_asset_path or None,
         "face_detail_count": payload.get("face_detail_count") or 0,
+        "has_face_detail": bool(payload.get("face_detail_count") or face_detail_asset_path),
+        "representative_asset_path": representative_asset_path,
+        "representative_angle": representative_angle,
+        "review_status": review_status,
+        "effective_status": review_status or ("ready" if images else None),
+        "purpose": payload.get("purpose"),
+        "angles": normalized_angles,
+        "image_count": len(image_urls),
         "image_generation": {
             "provider": payload.get("provider"),
             "model": payload.get("model"),
@@ -101,14 +139,68 @@ def _prepare_result_urls(
             "image_urls": image_urls,
             "images_by_angle": payload.get("images_by_angle") or {},
             "face_detail_images": payload.get("face_detail_images") or [],
-            "face_detail_asset_path": payload.get("face_detail_asset_path"),
+            "face_detail_asset_path": face_detail_asset_path or None,
             "face_detail_count": payload.get("face_detail_count") or 0,
             "thumbnail_image": payload.get("thumbnail_image"),
             "thumbnail_asset_path": thumbnail_asset_path or None,
-            "review": payload.get("review") or {},
+            "review": review,
+            "review_status": review_status,
+            "has_face_detail": bool(payload.get("face_detail_count") or face_detail_asset_path),
+            "representative_asset_path": representative_asset_path,
+            "representative_angle": representative_angle,
+            "image_count": len(image_urls),
         },
     }
     return result_url, metadata
+
+
+def _apply_review_metadata(
+    result_metadata: dict[str, Any],
+    image_generation: dict[str, Any],
+) -> None:
+    review = image_generation.get("review") if isinstance(image_generation.get("review"), dict) else {}
+    review_status = str(review.get("status") or "").strip() or None
+    thumbnail_asset_path = str(image_generation.get("thumbnail_asset_path") or "").strip() or None
+    face_detail_asset_path = str(image_generation.get("face_detail_asset_path") or "").strip() or None
+    representative_asset_path = face_detail_asset_path or thumbnail_asset_path
+    representative_angle = None
+    if face_detail_asset_path:
+        representative_angle = "face_detail"
+    elif thumbnail_asset_path:
+        representative_angle = next(
+            (
+                str(image.get("angle") or "").strip()
+                for image in (image_generation.get("images") or [])
+                if isinstance(image, dict)
+                and str(image.get("asset_path") or "").strip() == thumbnail_asset_path
+                and str(image.get("angle") or "").strip()
+            ),
+            "front",
+        )
+    angles: list[str] = []
+    for angle in image_generation.get("angles") or []:
+        normalized = str(angle or "").strip()
+        if normalized and normalized not in angles:
+            angles.append(normalized)
+    if "face_detail" not in angles and face_detail_asset_path:
+        angles.insert(0, "face_detail")
+    image_generation["review_status"] = review_status
+    image_generation["has_face_detail"] = bool(image_generation.get("face_detail_count") or face_detail_asset_path)
+    image_generation["representative_asset_path"] = representative_asset_path
+    image_generation["representative_angle"] = representative_angle
+    image_generation["image_count"] = len(image_generation.get("image_urls") or [])
+    result_metadata["image_generation"] = image_generation
+    result_metadata["thumbnail_asset_path"] = thumbnail_asset_path
+    result_metadata["face_detail_asset_path"] = face_detail_asset_path
+    result_metadata["face_detail_count"] = image_generation.get("face_detail_count") or 0
+    result_metadata["has_face_detail"] = bool(image_generation.get("face_detail_count") or face_detail_asset_path)
+    result_metadata["representative_asset_path"] = representative_asset_path
+    result_metadata["representative_angle"] = representative_angle
+    result_metadata["review_status"] = review_status
+    result_metadata["effective_status"] = review_status or result_metadata.get("status") or "ready"
+    result_metadata["purpose"] = image_generation.get("purpose")
+    result_metadata["angles"] = angles
+    result_metadata["image_count"] = len(image_generation.get("image_urls") or [])
 
 
 class QueueManager:
@@ -392,7 +484,6 @@ class QueueManager:
             promoted = finalize_reviewed_generation(entity_id, image_generation)
             CharacterService(self.db).save_charpass(variant.core_id, promoted["manifest"])
             image_generation.update(promoted["payload"])
-            result_metadata["image_generation"] = image_generation
             variant.result_url, image_meta = _prepare_result_urls(
                 variant.core_id,
                 image_generation,
@@ -403,12 +494,11 @@ class QueueManager:
             review["status"] = "rejected"
             review["rejected_at"] = datetime.now(timezone.utc).isoformat()
             image_generation["review"] = review
-            result_metadata["image_generation"] = image_generation
         entity_id = str(result_metadata.get("persist_entity_id") or review.get("entity_id") or "").strip()
         if entity_id:
             sync_review_artifacts(entity_id, image_generation)
 
-        result_metadata["review_status"] = image_generation.get("review", {}).get("status")
+        _apply_review_metadata(result_metadata, image_generation)
         variant.result_metadata = result_metadata
         self.db.add(variant)
         self.db.commit()

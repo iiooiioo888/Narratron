@@ -94,21 +94,43 @@ def test_face_detail_prompt_locks_same_identity_and_face_details() -> None:
     prompt = build_image_prompt(_styled_manifest(), purpose="identity", angle="face_detail", multi_angle=True)
     assert prompt["angle"] == "face_detail"
     assert "extreme facial close-up" in prompt["positive"]
+    assert "head-and-shoulders portrait" not in prompt["positive"]
     assert "single character only" in prompt["positive"]
     assert "one face only, one head only" in prompt["positive"]
+    assert "close-up portrait of only the same single character" in prompt["positive"]
     assert "same character identity as the turnaround references" in prompt["positive"]
     assert "use the same person as all identity reference images" in prompt["positive"]
+    assert "the face must match the same character from the identity turnaround set" in prompt["positive"]
+    assert "render this angle as the same single subject from the identity turnaround set" in prompt["positive"]
     assert "facial landmarks and micro details clearly readable" in prompt["positive"]
     assert "no hands covering face" in prompt["positive"]
+    assert "cinematic realism" in prompt["positive"]
+    assert "卡爾 reference sheet for face_detail" in prompt["positive"]
 
 
 def test_face_detail_purpose_defaults_to_face_detail_rules() -> None:
     prompt = build_image_prompt(_styled_manifest(), purpose="face_detail", multi_angle=False)
     assert prompt["angle"] == "face_detail"
     assert "extreme facial close-up" in prompt["positive"]
+    assert "one face only" in prompt["positive"]
     assert "same character identity as the turnaround references" in prompt["positive"]
     assert "single character only" in prompt["positive"]
     assert "one face only, one head only" in prompt["positive"]
+    assert "卡爾 reference sheet for face_detail" in prompt["positive"]
+
+
+def test_identity_angle_prompt_keeps_style_fields_on_every_angle() -> None:
+    data = _styled_manifest()
+    for angle in ("front", "back", "left", "right", "three_quarter", "top", "bottom", "face_detail"):
+        prompt = build_image_prompt(data, purpose="identity", angle=angle, multi_angle=True)
+        assert "cinematic realism" in prompt["positive"]
+        assert "冷調都市" in prompt["positive"]
+        assert "highly detailed face" in prompt["positive"]
+        assert "lean build" in prompt["positive"]
+        assert "consistency notes: 臉必須一致" in prompt["positive"]
+        assert "single character only" in prompt["positive"]
+        assert "multiple characters" in prompt["negative"]
+        assert "lineup" in prompt["negative"]
 
 
 def test_angle_prompt_preserves_forward_compatible_visual_fields() -> None:
@@ -119,6 +141,18 @@ def test_angle_prompt_preserves_forward_compatible_visual_fields() -> None:
     assert "three-quarter view" in prompt["positive"]
     assert "custom lens: anamorphic" in prompt["positive"]
     assert "render engine: octane" in prompt["positive"]
+
+
+def test_angle_prompt_preserves_forward_compatible_art_prompt_fields() -> None:
+    data = _styled_manifest()
+    data["_style"]["character_style"]["art_prompt"]["surface_finish"] = "subtle skin sheen"
+    data["_style"]["character_style"]["art_prompt"]["material_response"] = ["cloth fibers visible", "natural skin scattering"]
+    prompt = build_image_prompt(data, purpose="identity", angle="left", multi_angle=True)
+    assert "left side profile" in prompt["positive"]
+    assert "90-degree angle" in prompt["positive"]
+    assert "surface finish: subtle skin sheen" in prompt["positive"]
+    assert "material response: cloth fibers visible, natural skin scattering" in prompt["positive"]
+    assert "render this angle as the same single subject from the identity turnaround set" in prompt["positive"]
 
 
 def test_single_identity_request_defaults_to_front_angle() -> None:
@@ -145,6 +179,15 @@ def test_unknown_style_fields_roundtrip() -> None:
     data["_style"]["character_style"]["visual"]["custom_lens"] = "anamorphic"
     dumped = manifest_to_dict(data)
     assert dumped["_style"]["character_style"]["visual"]["custom_lens"] == "anamorphic"
+
+
+def test_created_by_style_preset_backfills_visual_style_fields() -> None:
+    data = _styled_manifest()
+    data["_meta"]["created_by"] = "painterly concept art, warm rim light"
+    data["_style"]["character_style"]["visual"] = {}
+    prompt = build_image_prompt(data, purpose="identity", angle="front", multi_angle=True)
+    assert "painterly concept art" in prompt["positive"]
+    assert "warm rim light" in prompt["positive"]
 
 
 def test_null_provider_dry_run(tmp_path: Path) -> None:
@@ -188,7 +231,29 @@ def test_face_detail_generation_uses_single_face_detail_angle(tmp_path: Path) ->
     assert payload["angles"] == ["face_detail"]
     assert len(payload["images"]) == 1
     assert payload["images"][0]["angle"] == "face_detail"
-    assert payload["images"][0]["filename"].startswith("face_detail_")
+    assert payload["images"][0]["filename"].startswith("ref_face_face_detail_")
+
+
+def test_face_detail_summary_can_recover_angle_from_prompt_metadata(tmp_path: Path) -> None:
+    service = ImagingService(store=CharpassStore(tmp_path))
+    payload = service.generate_for_manifest(
+        _styled_manifest(),
+        purpose="face_detail",
+        provider_name="null",
+        persist_entity_id="character-卡爾",
+        multi_angle=False,
+        auto_accept=False,
+    )
+    image = payload["images"][0]
+    image.pop("angle", None)
+    image.pop("requested_angle", None)
+    image["asset_path"] = "causal/review/face_detail/job-1/generated_001.png"
+    image["final_asset_path"] = "assets/face_detail/generated_001.png"
+
+    promoted = finalize_reviewed_generation("character-卡爾", payload, store=service.store)
+    assert promoted["payload"]["face_detail_count"] == 1
+    assert promoted["payload"]["face_detail_asset_path"] == "assets/face_detail/generated_001.png"
+    assert promoted["payload"]["thumbnail_asset_path"] == "assets/face_detail/generated_001.png"
 
 
 def test_persist_downloads_remote_images_and_writes_generation_records(
@@ -331,8 +396,56 @@ def test_persist_pending_review_stages_assets_until_accept(
 
     promoted = finalize_reviewed_generation("character-卡爾", payload, store=service.store)
     assert promoted["payload"]["review"]["status"] == "accepted"
+    assert promoted["payload"]["review_status"] == "accepted"
     assert promoted["payload"]["images"][0]["asset_path"] == image["final_asset_path"]
     assert promoted["payload"]["thumbnail_asset_path"] == image["final_asset_path"]
+
+
+def test_images_index_persists_face_detail_and_review_summary(tmp_path: Path) -> None:
+    service = ImagingService(store=CharpassStore(tmp_path))
+    payload = service.generate_for_manifest(
+        _styled_manifest(),
+        purpose="identity",
+        provider_name="null",
+        persist_entity_id="character-卡爾",
+        auto_accept=False,
+    )
+
+    job_id = payload["review"]["job_id"]
+    images_index = service.store.read_json(
+        "character-卡爾",
+        f"causal/image_gen/identity/{job_id}/images-index.json",
+    )
+    assert images_index["review"]["status"] == "pending"
+    assert images_index["review_status"] == "pending"
+    assert images_index["thumbnail_asset_path"].startswith("causal/review/identity/")
+    assert images_index["face_detail_asset_path"].startswith("causal/review/identity/")
+    assert images_index["face_detail_count"] >= 1
+    assert images_index["face_detail_images"][0]["angle"] == "face_detail"
+    assert images_index["thumbnail_image"]["angle"] == "face_detail"
+
+
+def test_review_sync_updates_record_summary_after_accept(tmp_path: Path) -> None:
+    service = ImagingService(store=CharpassStore(tmp_path))
+    payload = service.generate_for_manifest(
+        _styled_manifest(),
+        purpose="identity",
+        provider_name="null",
+        persist_entity_id="character-卡爾",
+        multi_angle=False,
+        auto_accept=False,
+    )
+
+    promoted = finalize_reviewed_generation("character-卡爾", payload, store=service.store)
+    job_id = promoted["payload"]["review"]["job_id"]
+    record = service.store.read_json(
+        "character-卡爾",
+        f"causal/image_gen/identity/{job_id}/record.json",
+    )
+    assert record["review_status"] == "accepted"
+    assert record["accepted_at"]
+    assert record["thumbnail_asset_path"].startswith("assets/identity/")
+    assert record["asset_paths"][0].startswith("assets/identity/")
 
 
 def test_outfit_purpose_writes_style_refs() -> None:

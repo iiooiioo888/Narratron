@@ -1,5 +1,7 @@
 """CharacterOS API 請求／回應的 Pydantic 驗證模式。"""
 
+from __future__ import annotations
+
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
@@ -184,6 +186,63 @@ class CharacterEditorResponse(BaseModel):
     profile: CharacterProfileResponse
 
 
+class VersionHistoryItemResponse(BaseModel):
+    """角色版本歷史檔案摘要。"""
+
+    name: str
+    path: str
+    kind: str
+    is_binary: bool = False
+
+
+class VersionBranchSummaryResponse(BaseModel):
+    """角色版本分支摘要，供前端穩定呈現 review 與縮圖資訊。"""
+
+    kind: str
+    branch_id: str
+    label: str
+    purpose: Optional[str] = None
+    job_id: Optional[str] = None
+    status: str
+    review_status: Optional[str] = None
+    effective_status: Optional[str] = None
+    result_url: Optional[str] = None
+    asset_paths: List[str] = Field(default_factory=list)
+    angles: List[str] = Field(default_factory=list)
+    angles_summary: str = ""
+    images_by_angle: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+    thumbnail_asset_path: Optional[str] = None
+    face_detail_asset_path: Optional[str] = None
+    hero_asset_path: Optional[str] = None
+    representative_asset_path: Optional[str] = None
+    representative_angle: Optional[str] = None
+    has_face_detail: bool = False
+    face_detail_count: int = 0
+    face_detail_summary: str = ""
+    image_count: int = 0
+    purpose_summary: str = ""
+    review_label: str = ""
+    sort_priority: int = 0
+    summary_fields: Dict[str, Any] = Field(default_factory=dict)
+    summary: str = ""
+    sort_key: str = ""
+    sort_order: int = 0
+    updated_at: Optional[str] = None
+    manifest_path: Optional[str] = None
+    record_path: Optional[str] = None
+    images_index_path: Optional[str] = None
+    response_path: Optional[str] = None
+
+
+class CharacterVersionSummaryResponse(BaseModel):
+    """角色版本快照與分支摘要。"""
+
+    entity_id: str
+    current_path: str
+    history: List[VersionHistoryItemResponse] = Field(default_factory=list)
+    branches: List[VersionBranchSummaryResponse] = Field(default_factory=list)
+
+
 # ============================================
 # Admin & Stats Schemas
 # ============================================
@@ -256,6 +315,7 @@ class GeneratedImageInfo(BaseModel):
     mime_type: str = "image/png"
     angle: Optional[str] = None
     asset_path: Optional[str] = None
+    final_asset_path: Optional[str] = None
 
 
 class ImageGenerateRequest(BaseModel):
@@ -320,6 +380,7 @@ class ImageGenerateResponse(BaseModel):
     face_detail_asset_path: Optional[str] = None
     face_detail_count: int = 0
     review: Dict[str, Any] = Field(default_factory=dict)
+    review_status: Optional[str] = None
     manifest: Dict[str, Any] = Field(default_factory=dict)
 
 

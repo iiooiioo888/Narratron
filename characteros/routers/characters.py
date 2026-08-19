@@ -18,6 +18,7 @@ from characteros.models.schema import (
     ImageGenerateResponse,
     CharacterEditorResponse,
     CharacterEditorUpdateRequest,
+    CharacterVersionSummaryResponse,
 )
 from characteros.services.characters import CharacterService
 from characteros.services.queue import QueueManager
@@ -413,7 +414,7 @@ def save_character_charpass(
     return {"charpass": saved}
 
 
-@router.get("/{character_id}/versions")
+@router.get("/{character_id}/versions", response_model=CharacterVersionSummaryResponse)
 def get_character_versions(
     character_id: int,
     service: CharacterBackend = Depends(get_character_backend),

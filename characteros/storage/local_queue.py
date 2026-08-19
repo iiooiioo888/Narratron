@@ -67,9 +67,15 @@ def _prepare_result_urls(core_id: int, payload: dict[str, Any]) -> tuple[str, li
             if representative_url is None:
                 representative_url = image_url
     thumbnail_image = payload.get("thumbnail_image") if isinstance(payload.get("thumbnail_image"), dict) else {}
-    thumbnail_asset_path = str(thumbnail_image.get("asset_path") or "").strip()
-    if thumbnail_asset_path:
-        representative_url = f"/api/v1/characters/{core_id}/assets/{thumbnail_asset_path}"
+    thumbnail_asset_path = str(
+        payload.get("thumbnail_asset_path")
+        or thumbnail_image.get("asset_path")
+        or ""
+    ).strip()
+    face_detail_asset_path = str(payload.get("face_detail_asset_path") or "").strip()
+    representative_asset_path = face_detail_asset_path or thumbnail_asset_path
+    if representative_asset_path:
+        representative_url = f"/api/v1/characters/{core_id}/assets/{representative_asset_path}"
     else:
         for angle in PREFERRED_RESULT_ANGLES:
             for image in images:
@@ -85,6 +91,20 @@ def _prepare_result_urls(core_id: int, payload: dict[str, Any]) -> tuple[str, li
                 break
     result_url = representative_url or (image_urls[0] if image_urls else f"/api/v1/characters/{core_id}/variants")
     return result_url, image_urls
+
+
+def _apply_review_metadata(
+    result_metadata: dict[str, Any],
+    image_generation: dict[str, Any],
+) -> None:
+    review = image_generation.get("review") if isinstance(image_generation.get("review"), dict) else {}
+    review_status = str(review.get("status") or "").strip() or None
+    image_generation["review_status"] = review_status
+    result_metadata["image_generation"] = image_generation
+    result_metadata["thumbnail_asset_path"] = image_generation.get("thumbnail_asset_path")
+    result_metadata["face_detail_asset_path"] = image_generation.get("face_detail_asset_path")
+    result_metadata["face_detail_count"] = image_generation.get("face_detail_count") or 0
+    result_metadata["review_status"] = review_status
 
 
 class LocalQueueManager:
@@ -291,12 +311,26 @@ class LocalQueueManager:
                     "thumbnail_image": payload.get("thumbnail_image"),
                     "thumbnail_asset_path": payload.get("thumbnail_asset_path"),
                     "review": payload.get("review") or {},
+                    "review_status": (
+                        (payload.get("review") or {}).get("status")
+                        if isinstance(payload.get("review"), dict)
+                        else None
+                    ),
                 }
                 result_metadata["review_status"] = (
                     (payload.get("review") or {}).get("status")
                     if isinstance(payload.get("review"), dict)
                     else None
                 )
+                record.update(
+                    {
+                        "review_status": result_metadata["review_status"],
+                        "thumbnail_asset_path": result_metadata.get("thumbnail_asset_path"),
+                        "face_detail_asset_path": result_metadata.get("face_detail_asset_path"),
+                        "face_detail_count": result_metadata.get("face_detail_count") or 0,
+                    }
+                )
+                store.write_json(entity_id, f"{output_dir}/record.json", record)
             task["result_metadata"] = result_metadata
             task["error_message"] = None
             task["queue_wait_ms"] = max(
@@ -379,16 +413,11 @@ class LocalQueueManager:
             service.save_charpass(int(task["core_id"]), promoted["manifest"])
             promoted_payload = promoted["payload"]
             image_generation.update(promoted_payload)
-            task["result_metadata"]["image_generation"] = image_generation
             task["result_url"], _image_urls = _prepare_result_urls(int(task["core_id"]), image_generation)
-            task["result_metadata"]["thumbnail_asset_path"] = image_generation.get("thumbnail_asset_path")
-            task["result_metadata"]["face_detail_asset_path"] = image_generation.get("face_detail_asset_path")
-            task["result_metadata"]["face_detail_count"] = image_generation.get("face_detail_count") or 0
         else:
             review["status"] = "rejected"
             review["rejected_at"] = utcnow_iso()
             image_generation["review"] = review
-            task["result_metadata"]["image_generation"] = image_generation
         entity_id = str(
             task.get("result_metadata", {}).get("persist_entity_id")
             or review.get("entity_id")
@@ -397,7 +426,25 @@ class LocalQueueManager:
         if entity_id:
             sync_review_artifacts(entity_id, image_generation, store=CharpassStore(self.root))
 
-        task["result_metadata"]["review_status"] = image_generation.get("review", {}).get("status")
+        _apply_review_metadata(task["result_metadata"], image_generation)
+        variant_record_path = task["result_metadata"].get("record_path")
+        if entity_id and isinstance(variant_record_path, str) and variant_record_path.strip():
+            variant_record = CharpassStore(self.root).read_json(entity_id, variant_record_path)
+            if not isinstance(variant_record, dict):
+                variant_record = {}
+            review_status = task["result_metadata"].get("review_status")
+            variant_record.update(
+                {
+                    "status": "ready",
+                    "review_status": review_status,
+                    "accepted_at": review.get("accepted_at"),
+                    "rejected_at": review.get("rejected_at"),
+                    "thumbnail_asset_path": task["result_metadata"].get("thumbnail_asset_path"),
+                    "face_detail_asset_path": task["result_metadata"].get("face_detail_asset_path"),
+                    "face_detail_count": task["result_metadata"].get("face_detail_count") or 0,
+                }
+            )
+            CharpassStore(self.root).write_json(entity_id, variant_record_path, variant_record)
         task["updated_at"] = _utcnow().isoformat()
         self._save(data)
         return task

@@ -32,6 +32,12 @@ ANGLE_SORT_ORDER = {
     "bottom": 7,
 }
 
+ANGLE_HINTS = {
+    "face_detail": ("face_detail", "face-detail", "face detail"),
+}
+
+KNOWN_ANGLES = tuple(ANGLE_SORT_ORDER.keys())
+
 
 def _parse_dt(value: Any) -> datetime:
     if isinstance(value, datetime):
@@ -82,11 +88,15 @@ def _sort_images(images: Any) -> list[dict[str, Any]]:
     if not isinstance(images, list):
         return []
     items = [dict(item) for item in images if isinstance(item, dict)]
+    for item in items:
+        normalized_angle = _image_angle_value(item)
+        if normalized_angle:
+            item["angle"] = normalized_angle
     items.sort(
         key=lambda item: (
-            ANGLE_SORT_ORDER.get(str(item.get("angle") or ""), 999),
-            str(item.get("filename") or ""),
-            str(item.get("asset_path") or ""),
+            ANGLE_SORT_ORDER.get(_image_angle_value(item), 999),
+            str(item.get("filename") or item.get("final_asset_path") or ""),
+            str(item.get("asset_path") or item.get("final_asset_path") or ""),
         )
     )
     return items
@@ -95,9 +105,149 @@ def _sort_images(images: Any) -> list[dict[str, Any]]:
 def _images_by_angle_summary(images: Any) -> dict[str, list[dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item in _sort_images(images):
-        angle = str(item.get("angle") or "unclassified")
+        angle = _image_angle_value(item) or "unclassified"
+        item["angle"] = angle
         grouped.setdefault(angle, []).append(item)
     return grouped
+
+
+def _normalize_angle(value: Any) -> str:
+    raw = str(value or "").strip()
+    return raw if raw else ""
+
+
+def _infer_angle_from_text(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip().lower()
+        if not text:
+            continue
+        for angle, hints in ANGLE_HINTS.items():
+            if any(hint in text for hint in hints):
+                return angle
+        for angle in KNOWN_ANGLES:
+            normalized = angle.replace("_", " ")
+            if f"[{angle}]" in text or angle in text or normalized in text:
+                return angle
+    return ""
+
+
+def _infer_angle_from_prompt(prompt: Any) -> str:
+    text = str(prompt or "").strip().lower()
+    if not text:
+        return ""
+    for angle in KNOWN_ANGLES:
+        if f"[{angle}]" in text:
+            return angle
+    return ""
+
+
+def _image_angle_value(image: dict[str, Any]) -> str:
+    if not isinstance(image, dict):
+        return ""
+    explicit = _normalize_angle(image.get("angle"))
+    if explicit:
+        return explicit
+    requested_angle = _normalize_angle(image.get("requested_angle"))
+    if requested_angle:
+        return requested_angle
+    prompt_angle = _infer_angle_from_prompt(image.get("prompt"))
+    if prompt_angle:
+        return prompt_angle
+    purpose = str(image.get("purpose") or image.get("requested_purpose") or "").strip()
+    if purpose == "face_detail":
+        return "face_detail"
+    return _infer_angle_from_text(
+        image.get("final_asset_path"),
+        image.get("asset_path"),
+        image.get("filename"),
+        image.get("note"),
+        image.get("prompt"),
+        image.get("uri"),
+        image.get("url"),
+    )
+
+
+def _summary_images_from_payload(
+    image_generation: dict[str, Any],
+    result_metadata: dict[str, Any],
+) -> list[dict[str, Any]]:
+    images = image_generation.get("images")
+    if isinstance(images, list) and images:
+        return images
+
+    flattened: list[dict[str, Any]] = []
+    images_by_angle = image_generation.get("images_by_angle")
+    if isinstance(images_by_angle, dict):
+        for angle, entries in images_by_angle.items():
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                normalized = dict(entry)
+                normalized.setdefault("angle", str(angle))
+                normalized.setdefault(
+                    "filename",
+                    normalized.get("asset_path") or normalized.get("final_asset_path") or str(angle),
+                )
+                flattened.append(normalized)
+    if flattened:
+        return flattened
+
+    fallback_images: list[dict[str, Any]] = []
+    for source in (
+        image_generation.get("face_detail_images"),
+        [image_generation.get("thumbnail_image")],
+    ):
+        if not isinstance(source, list):
+            continue
+        for entry in source:
+            if not isinstance(entry, dict):
+                continue
+            normalized = dict(entry)
+            normalized.setdefault("angle", _image_angle_value(normalized) or "unclassified")
+            normalized.setdefault(
+                "filename",
+                normalized.get("asset_path") or normalized.get("final_asset_path") or normalized.get("angle") or "image",
+            )
+            fallback_images.append(normalized)
+
+    for angle, asset_path in (
+        ("face_detail", result_metadata.get("face_detail_asset_path")),
+        ("front", result_metadata.get("thumbnail_asset_path")),
+    ):
+        path = str(asset_path or "").strip()
+        if not path:
+            continue
+        fallback_images.append(
+            {
+                "angle": angle,
+                "asset_path": path,
+                "filename": path,
+            }
+        )
+    return fallback_images
+
+
+def _summary_images_from_manifest(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    identity = manifest.get("_identity") if isinstance(manifest.get("_identity"), dict) else {}
+    refs = identity.get("ref_images") if isinstance(identity.get("ref_images"), list) else []
+    images: list[dict[str, Any]] = []
+    for ref in refs:
+        if not isinstance(ref, dict):
+            continue
+        path = str(ref.get("path") or "").strip()
+        if not path:
+            continue
+        angle = str(ref.get("angle") or "").strip() or None
+        images.append(
+            {
+                "angle": angle,
+                "asset_path": path,
+                "filename": path,
+            }
+        )
+    return images
 
 
 def _branch_summary(
@@ -137,9 +287,17 @@ def _branch_summary(
     angles_summary = ", ".join(angles)
     has_face_detail = bool(face_detail_images)
     image_count = len(asset_paths)
-    sort_priority = 0 if str(purpose or "").strip() == "face_detail" else 1 if has_face_detail else 2
+    # `branches` 會以 reverse=True 排序，因此數值越大代表越前面。
+    sort_priority = 2 if str(purpose or "").strip() == "face_detail" else 1 if has_face_detail else 0
     status_summary = effective_status or normalized_status
     face_detail_summary = f"face_detail x{len(face_detail_images)}" if face_detail_images else ""
+    hero_asset_path = (
+        str(face_detail_images[0].get("asset_path") or "").strip()
+        if face_detail_images
+        else thumbnail_asset_path
+    )
+    representative_angle = "face_detail" if face_detail_images else (angles[0] if angles else None)
+    review_label = normalized_review_status or normalized_status
     return {
         "status": status_summary,
         "review_status": normalized_review_status,
@@ -154,8 +312,34 @@ def _branch_summary(
         ),
         "has_face_detail": has_face_detail,
         "face_detail_count": len(face_detail_images),
+        "face_detail_summary": face_detail_summary,
         "image_count": image_count,
         "purpose_summary": purpose_summary,
+        "hero_asset_path": hero_asset_path or None,
+        "representative_asset_path": hero_asset_path or None,
+        "representative_angle": representative_angle,
+        "review_label": review_label,
+        "sort_priority": sort_priority,
+        "summary_fields": {
+            "status": status_summary,
+            "review_status": normalized_review_status,
+            "effective_status": effective_status,
+            "purpose": purpose_summary,
+            "angles": angles,
+            "angles_summary": angles_summary,
+            "image_count": image_count,
+            "has_face_detail": has_face_detail,
+            "face_detail_count": len(face_detail_images),
+            "thumbnail_asset_path": thumbnail_asset_path,
+            "face_detail_asset_path": (
+                str(face_detail_images[0].get("asset_path") or "").strip() if face_detail_images else None
+            ),
+            "hero_asset_path": hero_asset_path or None,
+            "representative_asset_path": hero_asset_path or None,
+            "representative_angle": representative_angle,
+            "review_label": review_label,
+            "sort_priority": sort_priority,
+        },
         "summary": " | ".join(
             part
             for part in (
@@ -170,6 +354,30 @@ def _branch_summary(
         "sort_key": f"{sort_priority}:{str(updated_at or '')}:{kind}:{branch_id}",
         "updated_at": updated_at,
     }
+
+
+def _branch_quality_score(branch: dict[str, Any]) -> tuple[int, int, int]:
+    images_by_angle = branch.get("images_by_angle") if isinstance(branch.get("images_by_angle"), dict) else {}
+    return (
+        1 if str(branch.get("review_status") or "").strip() else 0,
+        len(branch.get("asset_paths") or []),
+        len(images_by_angle),
+    )
+
+
+def _dedupe_branches(branches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: dict[tuple[str, str], dict[str, Any]] = {}
+    for branch in branches:
+        key = (str(branch.get("kind") or ""), str(branch.get("branch_id") or ""))
+        current = deduped.get(key)
+        if current is None:
+            deduped[key] = branch
+            continue
+        candidate_score = (_branch_quality_score(branch), str(branch.get("updated_at") or ""))
+        current_score = (_branch_quality_score(current), str(current.get("updated_at") or ""))
+        if candidate_score >= current_score:
+            deduped[key] = branch
+    return list(deduped.values())
 
 
 def _image_job_branches(folder: Path, character_id: int) -> list[dict[str, Any]]:
@@ -202,7 +410,11 @@ def _image_job_branches(folder: Path, character_id: int) -> list[dict[str, Any]]
                 or full_response.get("created_at")
                 or _read_json_file(job_dir / "record.json").get("created_at"),
             )
-            result_path = summary.get("thumbnail_asset_path") or (summary.get("asset_paths") or [None])[0]
+            result_path = (
+                summary.get("hero_asset_path")
+                or summary.get("thumbnail_asset_path")
+                or (summary.get("asset_paths") or [None])[0]
+            )
             branches.append(
                 {
                     "kind": "image_gen",
@@ -262,7 +474,9 @@ def _latest_image_branches(manifest: dict[str, Any], character_id: int) -> list[
             updated_at=item.get("updated_at"),
         )
         result_path = (
-            item.get("thumbnail_asset_path")
+            item.get("face_detail_asset_path")
+            or item.get("thumbnail_asset_path")
+            or summary.get("hero_asset_path")
             or summary.get("thumbnail_asset_path")
             or (summary.get("asset_paths") or [None])[0]
         )
@@ -611,12 +825,30 @@ class LocalCharacterService:
                 if not path.is_dir():
                     continue
                 record_path = path / "record.json"
+                manifest_path = path / "evolved-manifest.json"
                 record: dict[str, Any] = {}
+                evolved_manifest: dict[str, Any] = {}
                 if record_path.is_file():
                     try:
                         record = json.loads(record_path.read_text(encoding="utf-8"))
                     except (OSError, json.JSONDecodeError):
                         record = {}
+                if manifest_path.is_file():
+                    try:
+                        evolved_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        evolved_manifest = {}
+                status_value = str(record.get("status") or "ready")
+                review_status = str(record.get("review_status") or "").strip() or None
+                summary = _branch_summary(
+                    _summary_images_from_manifest(evolved_manifest),
+                    kind="variant",
+                    branch_id=path.name,
+                    purpose=record.get("purpose"),
+                    status=status_value,
+                    review_status=review_status,
+                    updated_at=record.get("processed_at"),
+                )
                 branches.append(
                     {
                         "kind": "variant",
@@ -624,22 +856,53 @@ class LocalCharacterService:
                         "label": f"variant/{path.name}",
                         "manifest_path": f"causal/variants/{path.name}/evolved-manifest.json",
                         "record_path": f"causal/variants/{path.name}/record.json",
-                        "status": record.get("status") or "ready",
-                        "review_status": None,
-                        "effective_status": record.get("status") or "ready",
-                        "purpose_summary": "variant",
-                        "angles_summary": "",
-                        "summary": "variant",
-                        "has_face_detail": False,
-                        "image_count": 0,
-                        "asset_paths": [],
-                        "angles": [],
-                        "thumbnail_asset_path": None,
-                        "face_detail_asset_path": None,
-                        "updated_at": record.get("processed_at"),
-                        "sort_key": f"2:{str(record.get('processed_at') or '')}:variant:{path.name}",
+                        **summary,
                     }
                 )
+
+        from characteros.storage.local_queue import LocalQueueManager
+
+        queue = LocalQueueManager(self.root)
+        for task in queue.list_tasks(core_id=character_id, limit=200):
+            result_metadata = task.get("result_metadata") if isinstance(task.get("result_metadata"), dict) else {}
+            image_generation = (
+                result_metadata.get("image_generation")
+                if isinstance(result_metadata.get("image_generation"), dict)
+                else {}
+            )
+            if not image_generation:
+                continue
+            images = _summary_images_from_payload(image_generation, result_metadata)
+            summary = _branch_summary(
+                images,
+                kind="variant",
+                branch_id=str(task.get("id") or ""),
+                purpose=image_generation.get("purpose"),
+                status=str(task.get("status") or "ready"),
+                review_status=result_metadata.get("review_status"),
+                updated_at=task.get("updated_at"),
+            )
+            result_path = (
+                summary.get("hero_asset_path")
+                or summary.get("thumbnail_asset_path")
+                or result_metadata.get("face_detail_asset_path")
+                or result_metadata.get("thumbnail_asset_path")
+                or (summary.get("asset_paths") or [None])[0]
+            )
+            branches.append(
+                {
+                    "kind": "variant",
+                    "branch_id": str(task.get("id") or ""),
+                    "label": f"variant/{task.get('id')}",
+                    "purpose": image_generation.get("purpose"),
+                    **summary,
+                    "result_url": (
+                        f"/api/v1/characters/{character_id}/assets/{result_path}"
+                        if isinstance(result_path, str) and result_path.strip()
+                        else task.get("result_url")
+                    ),
+                }
+            )
 
         branches.extend(_image_job_branches(folder, character_id))
         existing_ids = {str(item.get("branch_id") or "") for item in branches}
@@ -647,6 +910,7 @@ class LocalCharacterService:
             if str(branch.get("branch_id") or "") in existing_ids:
                 continue
             branches.append(branch)
+        branches = _dedupe_branches(branches)
         branches.sort(
             key=lambda item: (
                 str(item.get("updated_at") or ""),

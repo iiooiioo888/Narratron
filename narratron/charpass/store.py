@@ -157,6 +157,22 @@ class CharpassStore:
         )
         return dest
 
+    def read_json(self, entity_id: str, relative_path: str) -> dict[str, Any]:
+        """讀取角色資料夾下的 JSON 檔；不存在或格式錯誤時回傳空 dict。"""
+        folder = self.entity_dir(entity_id)
+        rel = Path(str(relative_path).replace("\\", "/"))
+        parts = [part for part in rel.parts if part not in {"", ".", ".."}]
+        if not parts:
+            return {}
+        path = folder.joinpath(*parts)
+        if not path.is_file():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
     def migrate_entity(self, entity_id: str) -> Path | None:
         """將舊 ZIP `current.charpass` 或 sidecar 轉為本機 JSON 格式。"""
         folder = self.entity_dir(entity_id)

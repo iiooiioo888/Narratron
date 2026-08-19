@@ -35,6 +35,8 @@ ANGLE_HINTS = {
     "face_detail": ("face_detail", "face-detail", "face detail"),
 }
 
+KNOWN_ANGLES = tuple(ANGLE_SORT_ORDER.keys())
+
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -122,6 +124,20 @@ def _infer_angle_from_text(*values: Any) -> str:
         for angle, hints in ANGLE_HINTS.items():
             if any(hint in text for hint in hints):
                 return angle
+        for angle in KNOWN_ANGLES:
+            normalized = angle.replace("_", " ")
+            if f"[{angle}]" in text or angle in text or normalized in text:
+                return angle
+    return ""
+
+
+def _infer_angle_from_prompt(prompt: Any) -> str:
+    text = str(prompt or "").strip().lower()
+    if not text:
+        return ""
+    for angle in KNOWN_ANGLES:
+        if f"[{angle}]" in text:
+            return angle
     return ""
 
 
@@ -131,11 +147,21 @@ def _image_angle_value(image: dict[str, Any]) -> str:
     explicit = _normalize_angle(image.get("angle"))
     if explicit:
         return explicit
+    requested_angle = _normalize_angle(image.get("requested_angle"))
+    if requested_angle:
+        return requested_angle
+    prompt_angle = _infer_angle_from_prompt(image.get("prompt"))
+    if prompt_angle:
+        return prompt_angle
+    purpose = str(image.get("purpose") or image.get("requested_purpose") or "").strip()
+    if purpose == "face_detail":
+        return "face_detail"
     return _infer_angle_from_text(
         image.get("final_asset_path"),
         image.get("asset_path"),
         image.get("filename"),
         image.get("note"),
+        image.get("prompt"),
         image.get("uri"),
         image.get("url"),
     )
@@ -247,6 +273,8 @@ def sync_review_artifacts(
     paths = _review_file_paths(safe_payload)
     full_response_path = paths["full_response_path"]
     images_index_path = paths["images_index_path"]
+    record_path = paths["record_path"]
+    review = safe_payload.get("review") if isinstance(safe_payload.get("review"), dict) else {}
     if full_response_path:
         active_store.write_json(entity_id, full_response_path, safe_payload)
     if images_index_path:
@@ -267,6 +295,28 @@ def sync_review_artifacts(
                 "review": safe_payload.get("review") or {},
             },
         )
+    if record_path:
+        existing_record = active_store.read_json(entity_id, record_path)
+        if not isinstance(existing_record, dict):
+            existing_record = {}
+        existing_record.update(
+            {
+                "job_id": review.get("job_id"),
+                "purpose": safe_payload.get("purpose"),
+                "provider": safe_payload.get("provider"),
+                "model": safe_payload.get("model"),
+                "status": "ready",
+                "review_status": str(review.get("status") or "").strip() or None,
+                "accepted_at": review.get("accepted_at"),
+                "rejected_at": review.get("rejected_at"),
+                "thumbnail_asset_path": safe_payload.get("thumbnail_asset_path"),
+                "face_detail_asset_path": safe_payload.get("face_detail_asset_path"),
+                "face_detail_count": safe_payload.get("face_detail_count") or 0,
+                "asset_paths": _ordered_asset_paths(safe_payload.get("images") or []),
+                "angles": list((safe_payload.get("images_by_angle") or {}).keys()),
+            }
+        )
+        active_store.write_json(entity_id, record_path, existing_record)
 
 
 def _entity_file_path(store: CharpassStore, entity_id: str, relative_path: str) -> Path:
@@ -315,8 +365,10 @@ def finalize_reviewed_generation(
 
     review["status"] = "accepted"
     review["accepted_at"] = _utcnow()
+    review.pop("rejected_at", None)
     payload.update(_image_payload_summary(images))
     payload["review"] = review
+    payload["review_status"] = "accepted"
     sync_review_artifacts(entity_id, payload, store=active_store)
     return {"manifest": manifest, "payload": payload}
 
@@ -605,11 +657,16 @@ class ImagingService:
                 "url": image.url,
                 "has_bytes": image.data is not None,
                 "mime_type": image.mime_type,
-            "angle": _resolved_image_angle(request, image) or _infer_angle_from_text(image.filename, image.url),
+                "angle": _resolved_image_angle(request, image) or _infer_angle_from_text(image.filename, image.url),
+                "requested_angle": (
+                    str(request.extra.get("angle") or "").strip() if isinstance(request.extra, dict) else ""
+                ),
+                "requested_purpose": purpose,
+                "prompt": combined_prompt if multi_angle else request.prompt,
                 "asset_path": _asset_path_for_image(
                     _asset_dir_for_generated_image(request, image),
                     image.filename,
-                _resolved_image_angle(request, image) or _infer_angle_from_text(image.filename, image.url),
+                    _resolved_image_angle(request, image) or _infer_angle_from_text(image.filename, image.url),
                 ),
             }
             for image in result.images
@@ -668,6 +725,7 @@ class ImagingService:
                 "record_path": f"{purpose_dir}/record.json",
                 "images_index_path": f"{purpose_dir}/images-index.json",
             }
+            payload["review_status"] = payload["review"]["status"]
             self.store.write_json(entity_id, f"{purpose_dir}/request.json", generation_record["request"])
             self.store.write_json(
                 entity_id,
@@ -695,8 +753,15 @@ class ImagingService:
                     "model": result.model,
                     "entity_id": entity_id,
                     "asset_dir": str(request.extra.get("asset_dir") or PURPOSE_SLOTS.get(request.purpose, PURPOSE_SLOTS["identity"])["asset_dir"]),
+                    "thumbnail_image": payload.get("thumbnail_image"),
+                    "thumbnail_asset_path": payload.get("thumbnail_asset_path"),
+                    "face_detail_images": payload.get("face_detail_images") or [],
+                    "face_detail_asset_path": payload.get("face_detail_asset_path"),
+                    "face_detail_count": payload.get("face_detail_count") or 0,
                     "images": final_images_payload,
                     "images_by_angle": _group_images_by_angle(final_images_payload),
+                    "review": payload.get("review") or {},
+                    "review_status": payload.get("review_status"),
                 },
             )
             assets = {

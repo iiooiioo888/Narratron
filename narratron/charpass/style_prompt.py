@@ -9,14 +9,14 @@ from narratron.charpass.schema import parse_manifest
 
 PURPOSE_SLOTS: dict[str, dict[str, str]] = {
     "identity": {
-        "shot": "head-and-shoulders portrait, face clearly visible, neutral expression",
+        "shot": "single character turnaround reference, one person only, face clearly visible, neutral expression, model sheet consistency",
         "asset_dir": "assets/identity",
         "filename_prefix": "ref_face",
     },
     "face_detail": {
-        "shot": "single character extreme facial close-up, highly detailed eyes skin lips nose and facial structure, neutral expression",
+        "shot": "single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference",
         "asset_dir": "assets/face_detail",
-        "filename_prefix": "face_detail",
+        "filename_prefix": "ref_face_face_detail",
     },
     "outfit": {
         "shot": "full-body standing, outfit clearly visible, studio lighting",
@@ -50,12 +50,12 @@ MULTI_VIEW_ANGLES: list[dict[str, str]] = [
     {
         "key": "left",
         "label": "left side view",
-        "shot": "left side profile, 90-degree angle, full body, neutral standing pose",
+        "shot": "left side profile, 90-degree angle, profile view, full body, neutral standing pose",
     },
     {
         "key": "right",
         "label": "right side view",
-        "shot": "right side profile, 90-degree angle, full body, neutral standing pose",
+        "shot": "right side profile, 90-degree angle, profile view, full body, neutral standing pose",
     },
     {
         "key": "three_quarter",
@@ -78,13 +78,14 @@ IDENTITY_SUPPLEMENTAL_ANGLES: list[dict[str, str]] = [
     {
         "key": "face_detail",
         "label": "face detail",
-        "shot": "single character extreme facial close-up, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as turnaround sheet",
+        "shot": "single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference",
     }
 ]
 
 # prompt 用的 layout 描述文字（給第三方生圖模型參考）
 MULTI_VIEW_BASE = (
     "single character only, one person only, full body isolated subject, "
+    "each image contains exactly one character, "
     "consistent identity outfit hair and body proportions, "
     "clean neutral studio background, even soft lighting, model sheet quality, "
     "no text labels, no duplicate figure, no collage"
@@ -110,6 +111,11 @@ FACE_DETAIL_LOCK_GUARD = (
     "no hands covering face, no accessories blocking facial features"
 )
 
+IDENTITY_ANGLE_LOCK_GUARD = (
+    "render this angle as the same single subject from the identity turnaround set, preserve the exact same face, "
+    "hair silhouette, skin tone, outfit design cues and body proportions"
+)
+
 DEFAULT_SINGLE_ANGLE_BY_PURPOSE: dict[str, str] = {
     "identity": "front",
     "face_detail": "face_detail",
@@ -127,6 +133,14 @@ DEFAULT_CHARACTER_STYLE_PRESET = "3D建模風格, T型體"
 DEFAULT_STYLE_MEDIUM = "3D建模風格"
 DEFAULT_STYLE_AESTHETIC = "T型體"
 DEFAULT_CREATED_BY = DEFAULT_CHARACTER_STYLE_PRESET
+
+
+def _parse_style_preset(value: Any) -> tuple[str, str]:
+    raw = str(value or "").replace("，", ",").strip()
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    medium = parts[0] if parts else ""
+    aesthetic = ", ".join(parts[1:]) if len(parts) > 1 else ""
+    return medium, aesthetic
 
 
 def apply_default_character_style(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -159,9 +173,21 @@ def apply_default_character_style(manifest: dict[str, Any]) -> dict[str, Any]:
         character_style["visual"] = visual
 
     if not visual.get("medium"):
-        visual["medium"] = DEFAULT_STYLE_MEDIUM
+        visual["medium"] = ""
     if not visual.get("aesthetic"):
-        visual["aesthetic"] = DEFAULT_STYLE_AESTHETIC
+        visual["aesthetic"] = ""
+
+    derived_medium = ""
+    derived_aesthetic = ""
+    if isinstance(meta, dict):
+        derived_medium, derived_aesthetic = _parse_style_preset(meta.get("created_by"))
+    if not derived_medium and character_style.get("preset"):
+        derived_medium, derived_aesthetic = _parse_style_preset(character_style.get("preset"))
+
+    if not visual.get("medium"):
+        visual["medium"] = derived_medium or DEFAULT_STYLE_MEDIUM
+    if not visual.get("aesthetic"):
+        visual["aesthetic"] = derived_aesthetic or DEFAULT_STYLE_AESTHETIC
 
     return manifest
 
@@ -293,45 +319,56 @@ def _append_style_prompt_parts(
     art: dict[str, Any],
     consistency_notes: str,
     name: str,
-    purpose: str,
+    prompt_purpose: str,
 ) -> None:
     if visual.get("medium"):
-        parts.append(str(visual["medium"]))
+        _extend_unique(parts, str(visual["medium"]))
     if visual.get("aesthetic"):
-        parts.append(str(visual["aesthetic"]))
+        _extend_unique(parts, str(visual["aesthetic"]))
     if visual.get("lighting"):
-        parts.append(str(visual["lighting"]))
+        _extend_unique(parts, str(visual["lighting"]))
     if visual.get("camera"):
-        parts.append(str(visual["camera"]))
+        _extend_unique(parts, str(visual["camera"]))
     if visual.get("note"):
-        parts.append(str(visual["note"]))
+        _extend_unique(parts, str(visual["note"]))
     keywords = _normalize_prompt_list(visual.get("keywords"))
     if keywords:
         _extend_unique(parts, *keywords)
     palette = _normalize_prompt_list(visual.get("color_palette"))
     if palette:
-        parts.append("color palette: " + ", ".join(palette))
+        _extend_unique(parts, "color palette: " + ", ".join(palette))
     _append_freeform_fields(
         parts,
         visual,
         skip={"medium", "aesthetic", "lighting", "camera", "note", "keywords", "color_palette"},
     )
     if outfit.get("description"):
-        parts.append("outfit: " + str(outfit["description"]))
+        _extend_unique(parts, "outfit: " + str(outfit["description"]))
     if hair_dict.get("style"):
-        parts.append("hair: " + str(hair_dict["style"]))
+        _extend_unique(parts, "hair: " + str(hair_dict["style"]))
     descriptors = _normalize_prompt_list(style.get("additional_descriptors"))
     if descriptors:
         _extend_unique(parts, *descriptors)
     template = str(art.get("template") or "").strip()
     if template:
-        parts.append(template.replace("{name}", name).replace("{purpose}", purpose))
+        _extend_unique(parts, template.replace("{name}", name).replace("{purpose}", prompt_purpose))
     if art.get("positive"):
-        parts.append(str(art["positive"]))
+        _extend_unique(parts, str(art["positive"]))
     if art.get("note"):
-        parts.append(str(art["note"]))
+        _extend_unique(parts, str(art["note"]))
+    _append_freeform_fields(
+        parts,
+        art,
+        skip={"template", "positive", "negative", "strength", "note"},
+    )
     if consistency_notes:
-        parts.append("consistency notes: " + consistency_notes)
+        _extend_unique(parts, "consistency notes: " + consistency_notes)
+
+
+def _effective_prompt_purpose(*, purpose: str, effective_angle: str) -> str:
+    if effective_angle == "face_detail":
+        return "face_detail"
+    return purpose
 
 
 def _append_angle_prompt_parts(
@@ -344,18 +381,24 @@ def _append_angle_prompt_parts(
 ) -> None:
     angle_def = ANGLE_BY_KEY.get(effective_angle)
     is_face_detail = purpose == "face_detail" or effective_angle == "face_detail"
+    prompt_slot = PURPOSE_SLOTS["face_detail"] if is_face_detail else slot
     if angle_def:
-        _extend_unique(parts, slot["shot"], angle_def["shot"])
+        _extend_unique(parts, prompt_slot["shot"], angle_def["shot"])
     else:
-        _extend_unique(parts, slot["shot"])
+        _extend_unique(parts, prompt_slot["shot"])
 
     if is_face_detail:
         _extend_unique(
             parts,
             SINGLE_CHARACTER_GUARD,
             "one face only, one head only, no split-screen, no collage, no multi-panel composition",
+            "close-up portrait of only the same single character, not a lineup, not a contact sheet, not multiple crops",
             "use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure",
+            "the face must match the same character from the identity turnaround set, no redesign, no face variation, no alternate person",
+            "keep the same visual style rendering, medium, aesthetic treatment, lighting language and material response as the character style profile",
+            IDENTITY_LOCK_GUARD,
             FACE_DETAIL_LOCK_GUARD,
+            IDENTITY_ANGLE_LOCK_GUARD,
         )
         return
 
@@ -363,7 +406,9 @@ def _append_angle_prompt_parts(
         parts,
         SINGLE_CHARACTER_GUARD,
         "exactly one character, one pose, one camera angle, no crowd, no partner, no background character",
+        "keep the same named character, same rendering style, same visual medium, same aesthetic treatment and same design language",
         IDENTITY_LOCK_GUARD,
+        IDENTITY_ANGLE_LOCK_GUARD,
     )
     if multi_angle or angle_def:
         _extend_unique(parts, MULTI_VIEW_BASE)
@@ -402,10 +447,12 @@ def build_image_prompt(
     name = str(identity.get("name") or meta.get("character_name") or "character")
     age = identity.get("age_appearance")
     species = identity.get("species") or "human"
+    effective_angle = resolve_prompt_angle(purpose=purpose, angle=angle, multi_angle=multi_angle)
+    prompt_purpose = _effective_prompt_purpose(purpose=purpose, effective_angle=effective_angle)
 
     parts: list[str] = [f"{name}, {species}"]
     if age:
-        parts.append(str(age))
+        _extend_unique(parts, str(age))
     _append_style_prompt_parts(
         parts,
         visual=visual,
@@ -415,9 +462,8 @@ def build_image_prompt(
         art=art,
         consistency_notes=consistency_notes,
         name=name,
-        purpose=purpose,
+        prompt_purpose=prompt_purpose,
     )
-    effective_angle = resolve_prompt_angle(purpose=purpose, angle=angle, multi_angle=multi_angle)
     _append_angle_prompt_parts(
         parts,
         slot=slot,
@@ -426,7 +472,7 @@ def build_image_prompt(
         multi_angle=multi_angle,
     )
     if extra:
-        parts.append(extra.strip())
+        _extend_unique(parts, extra.strip())
 
     positive = ", ".join(part.strip().rstrip(",") for part in parts if str(part).strip())
     negative = _merge_negative_prompt(
@@ -434,6 +480,8 @@ def build_image_prompt(
         MULTI_VIEW_NEGATIVE if multi_angle else "",
         "multiple characters, extra person, duplicate figure, identity drift, different face, face swap",
         "split face, double head, extra limbs",
+        "two people, group shot, lineup, contact sheet, diptych, triptych, mirrored subject",
+        "identity mismatch, alternate hairstyle, alternate costume, inconsistent facial structure",
     )
     return {
         "positive": positive,
