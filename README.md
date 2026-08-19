@@ -267,6 +267,7 @@ uvicorn narratron.api.app:app --reload
 | 頂級算力 | `Big Core` | 大核 |
 | 執行智能體 | `Runner` | 執行器 |
 | 因果壓縮 | `Compressor` | 壓縮器 |
+| 角色後端 | `CharacterOS` | 角色控制子系統（`characteros/`） |
 
 核心機制：`State Vault` ＋ `Causal Link` ＋ `Compressor`。
 

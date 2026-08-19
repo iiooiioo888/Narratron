@@ -1,9 +1,7 @@
-"""
-Narratron CharacterOS - Models __init__
-"""
+"""CharacterOS 資料模型匯出。"""
 
-from app.models.database import Base, engine, SessionLocal, get_db
-from app.models.orm import (
+from characteros.models.database import Base, engine, SessionLocal, get_db
+from characteros.models.orm import (
     CharacterCore,
     CharacterProfile,
     CharacterVariant,

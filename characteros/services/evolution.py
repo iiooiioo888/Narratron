@@ -1,8 +1,4 @@
-"""
-Narratron CharacterOS - Evolution Engine v1
-負責將演化參數轉換為最終的 evolved_manifest
-目前使用手動規則映射，後續可擴展為 AI 驅動
-"""
+"""CharacterOS 演化引擎：Profile + 演化參數 → evolved_manifest。"""
 
 from typing import Dict, Any, Optional
 import copy

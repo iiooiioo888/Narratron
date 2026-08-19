@@ -1,7 +1,4 @@
-"""
-Narratron CharacterOS - Health Check Router
-健康檢查端點
-"""
+"""CharacterOS 健康檢查路由。"""
 
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, status
@@ -9,8 +6,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from app.models.database import get_db
-from app.models.schemas import HealthCheckResponse
+from characteros.models.database import get_db
+from characteros.models.schema import HealthCheckResponse
 
 router = APIRouter(tags=["Health"])
 

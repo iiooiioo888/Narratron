@@ -149,12 +149,14 @@ narratron/
   hardware/     # Big/Mid/Alt/Light Core + Scheduler + Tier Store
   models/       # Model Farm 介面（FLUX/Wan/Veo/TTS/FFmpeg）
   charpass/     # Character Passport（.charpass 格式層，非智能體）
+characteros/    # CharacterOS；入口 characteros/main.py（演化／變體後端）
 frontend/       # Pad / Timeline / Dashboard / Map / Player 僅文件
+gui/            # Streamlit 本機控制台
 ```
 
-角色護照規格：[`docs/charpass.md`](charpass.md)。Dashboard 角色檢視為總覽子面板。程式：[`narratron/charpass/`](../narratron/charpass/)。
+角色護照規格：[`docs/charpass.md`](charpass.md)。Dashboard 角色檢視為總覽子面板。程式：[`narratron/charpass/`](../narratron/charpass/)。演化後端：[`characteros/`](../characteros/)。
 
-根目錄基礎設施：[`docker-compose.yml`](../docker-compose.yml)（PostgreSQL、Redis、Chroma）；Vault DDL：[`docker/init-vault.sql`](../docker/init-vault.sql)。
+根目錄基礎設施：[`docker-compose.yml`](../docker-compose.yml)（PostgreSQL、Redis、Chroma）；Vault DDL：[`docker/init-vault.sql`](../docker/init-vault.sql)；CharacterOS 庫：[`docker/init-characteros.sh`](../docker/init-characteros.sh)。
 
 ---
 

@@ -1,5 +1,5 @@
 # Narratron 本機基礎設施
-# 對應白皮書資料層：State Vault / Cache / Vec
+# 對應白皮書資料層：State Vault / Cache / Vec；並初始化 CharacterOS 專用庫
 # 用法：cp .env.example .env && docker compose up -d
 # 應用層預設 VAULT_BACKEND=memory；切 postgres 後才寫入此庫。
 
@@ -17,6 +17,8 @@ services:
     volumes:
       - narratron_pg:/var/lib/postgresql/data
       - ./docker/init-vault.sql:/docker-entrypoint-initdb.d/01-vault.sql:ro
+      - ./docker/init-characteros.sh:/docker-entrypoint-initdb.d/02-characteros.sh:ro
+      - ./characteros/migrations/schema.sql:/opt/characteros/schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-narratron} -d ${POSTGRES_DB:-narratron_vault}"]
       interval: 5s

@@ -1,23 +1,18 @@
-"""
-Narratron CharacterOS - Characters Router
-核心 API：角色查詢與變體請求
-"""
+"""CharacterOS 角色路由：查詢與變體請求。"""
 
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
-from app.models.database import get_db
-from app.models.schemas import (
+from characteros.models.database import get_db
+from characteros.models.schema import (
     CharacterFullResponse,
     CharacterCoreResponse,
     CharacterVariantResponse,
-    CharacterVariantRequest,
-    VariantQueueResponse
+    VariantQueueResponse,
 )
-from app.services.character_service import CharacterService
-from app.services.evolution_engine import EvolutionEngine
-from app.services.queue_manager import QueueManager
+from characteros.services.characters import CharacterService
+from characteros.services.queue import QueueManager
 
 router = APIRouter(prefix="/api/v1/characters", tags=["Characters"])
 
@@ -153,7 +148,7 @@ def list_character_variants(
     
     可用於監控生成進度或查看歷史變體
     """
-    from app.models.orm import CharacterVariant
+    from characteros.models.orm import CharacterVariant
     
     query = db.query(CharacterVariant).filter(
         CharacterVariant.core_id == character_id

@@ -81,6 +81,30 @@ CHARPASS: Final = (
     "narratron/charpass/",
 )
 
+# 角色控制子系統（非智能體、非外掛；與格式層分目錄）
+# 目錄名 = 套件名 characteros/；模組 snake_case，不加 character_ 前綴或 _service/_utils/_manager/_engine 後綴
+CHARACTEROS: Final = (
+    "CharacterOS",
+    "角色控制子系統",
+    "characteros/",
+    "characteros/main.py",
+)
+
+CHARACTEROS_MODULES: Final = (
+    "characteros/main.py",
+    "characteros/models/database.py",
+    "characteros/models/orm.py",
+    "characteros/models/schema.py",
+    "characteros/routers/admin.py",
+    "characteros/routers/characters.py",
+    "characteros/routers/health.py",
+    "characteros/services/characters.py",
+    "characteros/services/evolution.py",
+    "characteros/services/queue.py",
+    "characteros/utils/hash.py",
+    "characteros/migrations/schema.sql",
+)
+
 ARCHITECTURE_PATHS: Final = (
     "frontend/pad.md",
     "frontend/timeline.md",
@@ -108,8 +132,10 @@ ARCHITECTURE_PATHS: Final = (
     "narratron/hardware/scheduler.py",
     "narratron/hardware/tier_store.py",
     "narratron/models/farm.py",
+    "characteros/main.py",
     "docker-compose.yml",
     "docker/init-vault.sql",
+    "docker/init-characteros.sh",
 )
 
 # 程式識別符中禁止出現的別名（類名 / 檔名 stem）

@@ -1,14 +1,16 @@
-"""
-Narratron CharacterOS - Character Service
-負責角色核心與 Profile 的查詢邏輯
-"""
+"""CharacterOS 角色查詢服務。"""
 
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
 
-from app.models.orm import CharacterCore, CharacterProfile, CharacterVariant
-from app.models.schemas import CharacterFullResponse, CharacterCoreResponse, CharacterProfileResponse
+from characteros.models.orm import CharacterCore, CharacterProfile, CharacterVariant
+from characteros.models.schema import (
+    CharacterCoreResponse,
+    CharacterFullResponse,
+    CharacterProfileResponse,
+    CharacterVariantResponse,
+)
 
 
 class CharacterService:

@@ -1,14 +1,11 @@
-"""
-Narratron CharacterOS - Admin Router
-管理用 API：佇列統計、系統指標
-"""
+"""CharacterOS 管理路由：佇列統計與系統指標。"""
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.models.database import get_db
-from app.models.schemas import QueueStatsResponse, SystemMetricsResponse
-from app.services.queue_manager import QueueManager
+from characteros.models.database import get_db
+from characteros.models.schema import QueueStatsResponse, SystemMetricsResponse
+from characteros.services.queue import QueueManager
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
 
@@ -39,7 +36,7 @@ def get_system_metrics(db: Session = Depends(get_db)):
     - API 回應時間 P95
     - 總角色數、Profile 數、變體數
     """
-    from app.models.orm import CharacterCore, CharacterProfile, CharacterVariant
+    from characteros.models.orm import CharacterCore, CharacterProfile, CharacterVariant
     from sqlalchemy import func
     
     # 計算總數
@@ -48,7 +45,7 @@ def get_system_metrics(db: Session = Depends(get_db)):
     total_variants = db.query(func.count(CharacterVariant.id)).scalar() or 0
     
     # 資料庫連線數（從 engine 取得）
-    from app.models.database import engine
+    from characteros.models.database import engine
     pool_status = engine.pool.status()
     
     # 注意：實際的 cache_hit_rate 和 p95 需要整合 Redis 與監控系統

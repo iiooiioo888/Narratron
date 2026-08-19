@@ -1,7 +1,4 @@
-"""
-Narratron CharacterOS - Hash Utility
-計算變體指紋（variant_hash）以確保冪等性
-"""
+"""CharacterOS 變體指紋（variant_hash）計算，確保冪等。"""
 
 import hashlib
 import json

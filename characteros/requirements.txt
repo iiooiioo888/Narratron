@@ -1,0 +1,5 @@
+# CharacterOS 專用依賴（其餘與根目錄 pyproject.toml 共用，禁止在此降級 FastAPI / Pydantic）
+# 建議從 repo 根目錄：pip install -e ".[dev,infra,characteros]"
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+python-dotenv>=1.0.0

@@ -172,8 +172,11 @@ LangGraph 節點名必須等於英文代號（大小寫一致）。
 | 代號 | 中文 | 路徑 |
 | :--- | :--- | :--- |
 | `Character Passport` / `.charpass` | 角色護照 | `narratron/charpass/`；規格 [`docs/charpass.md`](charpass.md) |
+| `CharacterOS` | 角色控制子系統 | `characteros/`（演化／變體後端；目錄名 = 套件名） |
 
-禁止把此格式寫成智能體或第 14 個外掛。用戶層仍只有 Pad / Timeline / Dashboard / Map / Player；角色檢視是 Dashboard 子面板。
+禁止把此格式寫成智能體或第 14 個外掛。用戶層仍只有 Pad / Timeline / Dashboard / Map / Player；角色檢視是 Dashboard 子面板。  
+禁止把 `CharacterOS` 寫成 `narratron-character-os`、`character_os`、`character-os`、`Character OS`；禁止複合名 `Narratron CharacterOS`；禁止與格式層 `narratron/charpass/` 合併目錄。目錄名必須等於套件名 `characteros/`（與 `narratron/`、`gui/` 相同），禁止再包一層 `app/`。  
+模組檔名與 `narratron/` 相同：snake_case；目錄表達職責，檔名不加 `character_` 前綴，也不加 `_service` / `_utils` / `_manager` / `_engine` 後綴；Pydantic 用單數 `schema.py`。凍結路徑見 `narratron/naming.py` 的 `CHARACTEROS_MODULES`。
 
 ---
 
@@ -205,3 +208,4 @@ LangGraph 節點名必須等於英文代號（大小寫一致）。
 | 執行智能體 | `Runner` | 執行器 |
 | 因果壓縮 | `Compressor` | 壓縮器 |
 | 格式 | `Character Passport` / `.charpass` | 角色護照（非智能體） |
+| 角色後端 | `CharacterOS` | 角色控制子系統（`characteros/`） |

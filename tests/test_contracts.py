@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from narratron.agents.state import AgentState
 from narratron.api.app import app
 from narratron.core import CausalLink, Compressor, LogicCore
 from narratron.hardware.pools import HardwarePool
+from narratron.naming import CHARACTEROS, CHARACTEROS_MODULES
 from narratron.plugins.context import PluginContext, TriggerPhase
 from narratron.plugins.router import Router
 from narratron.plugins.tracer import Tracer
@@ -16,6 +19,22 @@ from scripts.check_consistency import main as check_main
 
 def test_consistency_script_passes() -> None:
     assert check_main() == 0
+
+
+def test_characteros_frozen_paths() -> None:
+    code, zh, package, main = CHARACTEROS
+    assert code == "CharacterOS"
+    assert zh == "角色控制子系統"
+    assert package == "characteros/"
+    assert main == "characteros/main.py"
+    root = Path(__file__).resolve().parents[1]
+    for rel in CHARACTEROS_MODULES:
+        assert (root / rel).is_file(), rel
+        assert "character_service" not in rel
+        assert "hash_utils" not in rel
+        assert "_manager" not in rel
+        assert "_engine" not in rel
+        assert "schemas.py" not in rel
 
 
 def test_health() -> None:

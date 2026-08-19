@@ -1,7 +1,4 @@
-"""
-Narratron CharacterOS - Pydantic Schemas
-用於 API 請求/回應的資料驗證與序列化
-"""
+"""CharacterOS API 請求／回應的 Pydantic 驗證模式。"""
 
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict

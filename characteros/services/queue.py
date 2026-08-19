@@ -1,16 +1,12 @@
-"""
-Narratron CharacterOS - Queue Manager
-負責變體佇列的管理：檢查、寫入、冪等性保護
-Sprint 1 僅負責寫入 pending 狀態，不執行實際生成
-"""
+"""CharacterOS 變體佇列：檢查、寫入、冪等；Sprint 1 只寫 pending。"""
 
 from typing import Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import logging
 
-from app.models.orm import CharacterCore, CharacterProfile, CharacterVariant
-from app.utils.hash_utils import compute_variant_hash
+from characteros.models.orm import CharacterCore, CharacterProfile, CharacterVariant
+from characteros.utils.hash import compute_variant_hash
 
 logger = logging.getLogger(__name__)
 

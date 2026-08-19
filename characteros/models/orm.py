@@ -1,19 +1,15 @@
-"""
-Narratron CharacterOS - SQLAlchemy ORM Models
-三層架構：Core (身份錨點) → Profile (專案設定) → Variant (變體快取)
-"""
+"""CharacterOS ORM：Core（身份錨點）→ Profile（專案設定）→ Variant（變體快取）。"""
 
-from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Dict, Any
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, ForeignKey, 
-    Text, ARRAY, TIMESTAMP, UniqueConstraint, Index, text
+    Text, ARRAY, TIMESTAMP, UniqueConstraint, text
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-Base = declarative_base()
+from characteros.models.database import Base
 
 
 class CharacterCore(Base):

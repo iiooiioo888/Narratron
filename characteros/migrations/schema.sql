@@ -1,4 +1,4 @@
-# Narratron CharacterOS - Database Schema
+-- CharacterOS Database Schema
 -- PostgreSQL 16+ with JSONB support
 
 -- Enable UUID extension

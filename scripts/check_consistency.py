@@ -15,6 +15,8 @@ from narratron.hardware.pools import HardwarePool, SceneComplexity, select_pool
 from narratron.naming import (
     AGENTS,
     ARCHITECTURE_PATHS,
+    CHARACTEROS,
+    CHARACTEROS_MODULES,
     CHARPASS,
     DEFERRED_MODULE_STEMS,
     FORBIDDEN_IDENTIFIERS,
@@ -168,6 +170,7 @@ def check_forbidden_and_deferred(errors: list[str]) -> None:
     py_files = list((ROOT / "narratron").rglob("*.py"))
     py_files += list((ROOT / "scripts").rglob("*.py"))
     py_files += list((ROOT / "tests").rglob("*.py"))
+    py_files += list((ROOT / "characteros").rglob("*.py"))
     for path in py_files:
         stem = path.stem.lower()
         if stem in DEFERRED_MODULE_STEMS:
@@ -215,8 +218,10 @@ def check_architecture_mentions(errors: list[str]) -> None:
         "narratron/plugins/bus.py",
         "narratron/hardware/pools.py",
         "narratron/models/farm.py",
+        "characteros/main.py",
         "docker-compose.yml",
         "docker/init-vault.sql",
+        "docker/init-characteros.sh",
     ]
     for rel in required:
         if rel.replace("\\", "/") not in arch.replace("\\", "/"):
@@ -254,6 +259,91 @@ def check_charpass(errors: list[str]) -> None:
         _fail(errors, "Character Passport 不得算進 13 外掛")
 
 
+def check_characteros(errors: list[str]) -> None:
+    _code, _zh, package_rel, main_rel = CHARACTEROS
+    package = ROOT / "characteros"
+    if not package.is_dir():
+        _fail(errors, f"CharacterOS 缺失：{package_rel}")
+        return
+    for leftover in ("narratron-character-os", "character_os", "character-os"):
+        if (ROOT / leftover).exists():
+            _fail(errors, f"禁止舊目錄名 {leftover}/，應為 characteros/")
+    if (package / "app").is_dir():
+        _fail(errors, "characteros/ 不得再包一層 app/；套件名必須等於目錄名")
+    for rel in CHARACTEROS_MODULES:
+        if not (ROOT / rel).is_file():
+            _fail(errors, f"CharacterOS 模組缺失：{rel}")
+    leftover_stems = {
+        "character_service",
+        "hash_utils",
+        "queue_manager",
+        "evolution_engine",
+        "schemas",
+    }
+    for path in package.rglob("*"):
+        if "__pycache__" in path.parts:
+            continue
+        if path.suffix.lower() in {".py", ".sql", ".md", ".txt"} and path.stem in leftover_stems:
+            rel = str(path.relative_to(ROOT)).replace("\\", "/")
+            _fail(errors, f"禁止舊檔名 {rel}，應對齊 CHARACTEROS_MODULES")
+    main = ROOT / main_rel
+    if not main.is_file():
+        _fail(errors, f"CharacterOS 入口缺失：{main_rel}")
+        return
+    text = main.read_text(encoding="utf-8")
+    if "from app." in text or "from characteros." not in text:
+        _fail(errors, "characteros/main.py 必須使用 characteros.* import，禁止 app.*")
+    if "CharacterOS" not in text:
+        _fail(errors, "characteros/main.py 必須使用凍結代號 CharacterOS")
+    if "Narratron CharacterOS" in text:
+        _fail(errors, "禁止複合名 Narratron CharacterOS；凍結代號為 CharacterOS")
+    if 'title="CharacterOS"' not in text:
+        _fail(errors, "characteros/main.py FastAPI title 必須為 CharacterOS")
+
+    for path in package.rglob("*.py"):
+        if "__pycache__" in path.parts:
+            continue
+        body = path.read_text(encoding="utf-8")
+        rel = str(path.relative_to(ROOT)).replace("\\", "/")
+        if "from app." in body or "import app." in body:
+            _fail(errors, f"禁止 app.* import：{rel}")
+        if "Narratron CharacterOS" in body:
+            _fail(errors, f"禁止複合名 Narratron CharacterOS：{rel}")
+
+    skip_leftover = {
+        Path("docs/naming.md"),
+        Path("scripts/check_consistency.py"),
+    }
+    for path in ROOT.rglob("*"):
+        if not path.is_file():
+            continue
+        if any(part.startswith(".") or part == "__pycache__" for part in path.parts):
+            continue
+        if path.suffix.lower() not in {
+            ".py",
+            ".md",
+            ".sql",
+            ".txt",
+            ".yml",
+            ".yaml",
+            ".toml",
+            ".example",
+            ".sh",
+        }:
+            continue
+        if path.relative_to(ROOT) in skip_leftover:
+            continue
+        try:
+            body = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = str(path.relative_to(ROOT)).replace("\\", "/")
+        if "narratron-character-os" in body:
+            _fail(errors, f"殘留舊目錄名 narratron-character-os：{rel}")
+        if "Narratron CharacterOS" in body:
+            _fail(errors, f"殘留複合名 Narratron CharacterOS：{rel}")
+
+
 def main() -> int:
     errors: list[str] = []
     check_paths(errors)
@@ -266,6 +356,7 @@ def main() -> int:
     check_no_invented_plugin_files(errors)
     check_architecture_mentions(errors)
     check_charpass(errors)
+    check_characteros(errors)
     if errors:
         print("一致性檢查失敗：")
         for item in errors:

@@ -1,13 +1,11 @@
-"""
-Narratron CharacterOS - Main FastAPI Application
-"""
+"""CharacterOS FastAPI 入口：角色資產唯讀查詢與變體佇列。"""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
-from app.models.database import engine, Base
-from app.routers import characters, admin, health
+from characteros.models.database import engine, Base
+from characteros.routers import characters, admin, health
 
 # 設定日誌
 logging.basicConfig(
@@ -18,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 # 建立 FastAPI 應用
 app = FastAPI(
-    title="Narratron CharacterOS",
+    title="CharacterOS",
     description="""
-## Narratron 角色控制子系統
+## CharacterOS（角色控制子系統）
 
 **One ID, Infinite Evolutions.**
 
@@ -66,7 +64,7 @@ async def startup_event():
     """
     應用程式啟動時執行
     """
-    logger.info("Starting up Narratron CharacterOS...")
+    logger.info("Starting up CharacterOS...")
     
     # 注意：資料庫表應透過 migration 腳本創建
     # 此處僅做驗證，不自動創建表
@@ -80,7 +78,7 @@ async def shutdown_event():
     """
     應用程式關閉時執行
     """
-    logger.info("Shutting down Narratron CharacterOS...")
+    logger.info("Shutting down CharacterOS...")
 
 
 @app.get("/")
@@ -89,9 +87,9 @@ async def root():
     根路徑：返回 API 基本資訊
     """
     return {
-        "name": "Narratron CharacterOS",
+        "name": "CharacterOS",
         "version": "1.0.0-sprint1",
-        "description": "Character Asset Management Backend",
+        "description": "角色控制子系統",
         "docs": "/docs",
         "health": "/health"
     }
