@@ -4,8 +4,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import logging
 
 from characteros.models.database import engine, Base
@@ -17,6 +19,32 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """應用程式生命週期管理（取代棄用的 on_event）。"""
+    logger.info("Starting up CharacterOS...")
+
+    from characteros.imaging.settings import settings
+    from characteros.models.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        settings.load_from_db(db)
+        logger.info("Imaging config loaded from database (fallback: .env)")
+    except Exception as exc:
+        logger.warning("Could not load imaging config from database: %s", exc)
+    finally:
+        db.close()
+
+    logger.info("Database connection configured (use migrations to create tables)")
+    logger.info("Startup complete!")
+
+    yield
+
+    logger.info("Shutting down CharacterOS...")
+
 
 # 建立 FastAPI 應用
 app = FastAPI(
@@ -46,13 +74,18 @@ app = FastAPI(
     version="1.0.0-sprint1",
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
-# CORS 設定（開發階段允許所有來源）
+# CORS 設定
+import os
+_cors_origins = os.environ.get("CHARACTEROS_CORS_ORIGINS", "").strip()
+_allowed_origins = [o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins else ["http://localhost:3000", "http://localhost:8001"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生產環境應限制為特定網域
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,40 +97,6 @@ app.include_router(imaging.router)
 app.include_router(admin.router)
 app.include_router(health.router)
 app.include_router(panel.router)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """
-    應用程式啟動時執行
-    """
-    logger.info("Starting up CharacterOS...")
-
-    from characteros.imaging.settings import settings
-    from characteros.models.database import SessionLocal
-
-    db = SessionLocal()
-    try:
-        settings.load_from_db(db)
-        logger.info("Imaging config loaded from database (fallback: .env)")
-    except Exception as exc:
-        logger.warning("Could not load imaging config from database: %s", exc)
-    finally:
-        db.close()
-    
-    # 注意：資料庫表應透過 migration 腳本創建
-    # 此處僅做驗證，不自動創建表
-    logger.info("Database connection configured (use migrations to create tables)")
-    
-    logger.info("Startup complete!")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """
-    應用程式關閉時執行
-    """
-    logger.info("Shutting down CharacterOS...")
 
 
 @app.get("/")
@@ -114,15 +113,13 @@ async def root():
     }
 
 
-# 全域例外處理（可選）
+# 全域例外處理
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    """
-    全域例外處理器
-    """
+async def global_exception_handler(request: Request, exc: Exception):
+    """全域例外處理器：回傳 500 而非洩漏內部實作細節。"""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     
-    return {
-        "detail": "Internal server error",
-        "type": type(exc).__name__
-    }
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )

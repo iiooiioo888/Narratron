@@ -16,7 +16,7 @@ class NullImageProvider(ImageGenProvider):
                 filename=f"{prefix}_{index:03d}.png",
                 mime_type="image/png",
                 data=None,
-                url=None,
+                url=f"dry-run://null/{prefix}_{index:03d}.png",
                 metadata={"dry_run": True, "index": index},
             )
             for index in range(1, max(1, request.n) + 1)

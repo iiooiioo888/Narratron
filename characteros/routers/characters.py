@@ -1,7 +1,8 @@
 """CharacterOS 角色路由：查詢與變體請求。"""
 
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from characteros.models.database import get_db
@@ -70,6 +71,7 @@ def get_character(
 @router.get("/{character_id}/variant", response_model=CharacterVariantResponse | VariantQueueResponse)
 def request_variant(
     character_id: int,
+    background_tasks: BackgroundTasks,
     age: Optional[int] = Query(None, ge=0, le=150, description="目標年齡"),
     emotion: Optional[str] = Query(None, description="情緒狀態"),
     scene: Optional[str] = Query(None, description="場景描述"),
@@ -123,11 +125,13 @@ def request_variant(
         # 已生成完成，回傳 200
         return CharacterVariantResponse.model_validate(variant)
     else:
-        # pending 或 failed，回傳 202
-        # （failed 的變體理論上不應被用戶直接請求，此處僅做保護）
-        raise HTTPException(
-            status_code=status.HTTP_202_ACCEPTED,
-            detail={
+        # pending：排入背景任務執行演化
+        if is_new:
+            background_tasks.add_task(_process_variant_background, variant.id)
+        
+        return JSONResponse(
+            status_code=202,
+            content={
                 "message": "Variant generation queued",
                 "queue_id": variant.id,
                 "variant_hash": variant.variant_hash,
@@ -153,6 +157,10 @@ def list_character_variants(
     可用於監控生成進度或查看歷史變體
     """
     from characteros.models.orm import CharacterVariant
+
+    # 先驗證角色存在（不存在則 404），避免浪費查詢
+    service = CharacterService(db)
+    service.get_character_by_id(character_id)
     
     query = db.query(CharacterVariant).filter(
         CharacterVariant.core_id == character_id
@@ -162,10 +170,6 @@ def list_character_variants(
         query = query.filter(CharacterVariant.status == status_filter)
     
     variants = query.order_by(CharacterVariant.created_at.desc()).limit(100).all()
-    
-    # 驗證角色存在（若不存在應 404）
-    service = CharacterService(db)
-    service.get_character_by_id(character_id)  # 僅用於驗證存在性
     
     return [CharacterVariantResponse.model_validate(v) for v in variants]
 
@@ -185,6 +189,9 @@ def generate_character_images(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="生圖僅允許從 GUI 面板操作（/admin/panel）",
         )
+
+    # API key 優先從 header 讀取，避免明文暴露在請求體中
+    api_key = request.headers.get("X-Image-Gen-Api-Key", "") or body.api_key or ""
 
     service = CharacterService(db)
     full = service.get_character_by_id(character_id)
@@ -212,7 +219,7 @@ def generate_character_images(
             n=body.n,
             model=body.model or "",
             base_url=body.base_url or "",
-            api_key=body.api_key or "",
+            api_key=api_key,
             persist_entity_id=persist_id,
         )
     except ValueError as exc:
