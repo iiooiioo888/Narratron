@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "narratron"
+version = "2.0.0"
+description = "Narratron —— AI 影視級因果敘事生成平台（Alpha Q1：State Vault + Parser + Director）"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Narratron" }]
+keywords = ["Narratron", "State Vault", "Causal Link", "Compressor"]
+dependencies = [
+    "fastapi>=0.115.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "langgraph>=0.2.0",
+    "typing-extensions>=4.12.0",
+    "python-multipart>=0.0.9",
+    "cryptography>=43.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "uvicorn[standard]>=0.30.0",
+    "httpx>=0.27.0",
+]
+infra = [
+    "psycopg[binary]>=3.2.0",
+    "redis>=5.0.0",
+    "chromadb>=0.5.0",
+]
+generate = [
+    "diffusers>=0.30.0",
+    "transformers>=4.44.0",
+    "openai>=1.40.0",
+    "elevenlabs>=1.0.0",
+]
+gui = [
+    "streamlit>=1.35.0",
+    "httpx>=0.27.0",
+    "pyvis>=0.3.2",
+]
+
+[project.urls]
+Documentation = "docs/whitepaper-v2.md"
+
+[tool.setuptools.packages.find]
+include = ["narratron*"]
+
+[tool.setuptools.package-data]
+narratron = ["py.typed", "charpass/schema.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# 環境與密鑰
+.env
+.env.local
+*.pem
+credentials.json
+
+# 編輯器
+.idea/
+.vscode/
+*.swp
+*~
+
+# 作業系統
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 基礎設施資料（本機 compose 若改 bind mount）
+data/
+*.log
+
+# 模型與生成產物（本階段不應出現）
+*.safetensors
+*.ckpt
+*.pt
+outputs/
+artifacts/

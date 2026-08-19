@@ -1,0 +1,2437 @@
+{
+  "$defs": {
+    "Accessory": {
+      "additionalProperties": true,
+      "properties": {
+        "slot": {
+          "default": "",
+          "title": "Slot",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "binding": {
+          "default": "",
+          "title": "Binding",
+          "type": "string"
+        }
+      },
+      "title": "Accessory",
+      "type": "object"
+    },
+    "ActionUnit": {
+      "additionalProperties": true,
+      "properties": {
+        "au": {
+          "default": "",
+          "title": "Au",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "intensity": {
+          "default": 0.0,
+          "title": "Intensity",
+          "type": "number"
+        }
+      },
+      "title": "ActionUnit",
+      "type": "object"
+    },
+    "AssetRef": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "default": "",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "default": "reference_image",
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "default": "",
+          "title": "Path",
+          "type": "string"
+        },
+        "uri": {
+          "default": "",
+          "title": "Uri",
+          "type": "string"
+        },
+        "embedded": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Embedded"
+        },
+        "angle": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Angle"
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weight"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        }
+      },
+      "title": "AssetRef",
+      "type": "object"
+    },
+    "AuLibrary": {
+      "additionalProperties": true,
+      "properties": {
+        "default_set": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ActionUnit"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Default Set",
+          "type": "array"
+        },
+        "custom_presets": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ExpressionPreset"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Custom Presets",
+          "type": "array"
+        }
+      },
+      "title": "AuLibrary",
+      "type": "object"
+    },
+    "Blend": {
+      "additionalProperties": true,
+      "properties": {
+        "mode": {
+          "default": "single",
+          "enum": [
+            "single",
+            "multi"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "sources": {
+          "items": {},
+          "title": "Sources",
+          "type": "array"
+        },
+        "ethnicity_bias": {
+          "default": 0.0,
+          "title": "Ethnicity Bias",
+          "type": "number"
+        },
+        "gender_spectrum": {
+          "default": 0.5,
+          "title": "Gender Spectrum",
+          "type": "number"
+        },
+        "age_offset": {
+          "default": 0,
+          "title": "Age Offset",
+          "type": "integer"
+        },
+        "age_visual": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Age Visual"
+        }
+      },
+      "title": "Blend",
+      "type": "object"
+    },
+    "BodyLayer": {
+      "additionalProperties": true,
+      "properties": {
+        "template": {
+          "default": "",
+          "title": "Template",
+          "type": "string"
+        },
+        "skeleton": {
+          "$ref": "#/$defs/Skeleton"
+        },
+        "proportions": {
+          "additionalProperties": true,
+          "title": "Proportions",
+          "type": "object"
+        },
+        "limb_thickness": {
+          "additionalProperties": true,
+          "title": "Limb Thickness",
+          "type": "object"
+        },
+        "posture_defaults": {
+          "$ref": "#/$defs/PostureDefaults"
+        },
+        "mesh": {
+          "$ref": "#/$defs/BodyMesh"
+        },
+        "skin_tone": {
+          "$ref": "#/$defs/SkinTone"
+        },
+        "height_cm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height Cm"
+        },
+        "build": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build"
+        },
+        "skin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skin"
+        }
+      },
+      "title": "BodyLayer",
+      "type": "object"
+    },
+    "BodyMesh": {
+      "additionalProperties": true,
+      "properties": {
+        "path": {
+          "default": "",
+          "title": "Path",
+          "type": "string"
+        },
+        "format": {
+          "default": "glTF_2.0",
+          "title": "Format",
+          "type": "string"
+        },
+        "polycount": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polycount"
+        }
+      },
+      "title": "BodyMesh",
+      "type": "object"
+    },
+    "CausalLayer": {
+      "additionalProperties": true,
+      "properties": {
+        "evolution_log": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/EvolutionLogEntry"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Evolution Log",
+          "type": "array"
+        },
+        "current_state_snapshot": {
+          "additionalProperties": true,
+          "title": "Current State Snapshot",
+          "type": "object"
+        }
+      },
+      "title": "CausalLayer",
+      "type": "object"
+    },
+    "ComfyUIPlaceholder": {
+      "additionalProperties": true,
+      "description": "僅佔位。核心不執行 Comfy；Q1 禁止 `generate()`。",
+      "properties": {
+        "path": {
+          "default": "",
+          "title": "Path",
+          "type": "string"
+        },
+        "version": {
+          "default": "",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "title": "ComfyUIPlaceholder",
+      "type": "object"
+    },
+    "ConditionalConstraint": {
+      "additionalProperties": true,
+      "properties": {
+        "if": {
+          "default": "",
+          "title": "If",
+          "type": "string"
+        },
+        "then": {
+          "default": "",
+          "title": "Then",
+          "type": "string"
+        }
+      },
+      "title": "ConditionalConstraint",
+      "type": "object"
+    },
+    "ConstraintsLayer": {
+      "additionalProperties": true,
+      "properties": {
+        "must_always": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Must Always",
+          "type": "array"
+        },
+        "must_never": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Must Never",
+          "type": "array"
+        },
+        "conditional": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ConditionalConstraint"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Conditional",
+          "type": "array"
+        },
+        "quality_floor": {
+          "$ref": "#/$defs/QualityFloor"
+        },
+        "forbidden": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden",
+          "type": "array"
+        },
+        "required": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required",
+          "type": "array"
+        },
+        "continuity": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Continuity",
+          "type": "array"
+        }
+      },
+      "title": "ConstraintsLayer",
+      "type": "object"
+    },
+    "DamageRegion": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "default": "",
+          "title": "Id",
+          "type": "string"
+        },
+        "token": {
+          "default": "",
+          "title": "Token",
+          "type": "string"
+        },
+        "area": {
+          "default": "",
+          "title": "Area",
+          "type": "string"
+        },
+        "region": {
+          "default": "unspecified",
+          "title": "Region",
+          "type": "string"
+        },
+        "type": {
+          "default": "",
+          "title": "Type",
+          "type": "string"
+        },
+        "intensity": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Intensity"
+        },
+        "since_scene": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Since Scene"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "source": {
+          "default": "manual",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "title": "DamageRegion",
+      "type": "object"
+    },
+    "DefaultPose": {
+      "additionalProperties": true,
+      "properties": {
+        "skeleton_path": {
+          "default": "",
+          "title": "Skeleton Path",
+          "type": "string"
+        },
+        "format": {
+          "default": "openpose_18",
+          "title": "Format",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "title": "DefaultPose",
+      "type": "object"
+    },
+    "EncryptionInfo": {
+      "additionalProperties": true,
+      "properties": {
+        "method": {
+          "default": "AES-256-GCM",
+          "title": "Method",
+          "type": "string"
+        },
+        "key_id": {
+          "default": "",
+          "title": "Key Id",
+          "type": "string"
+        },
+        "iv": {
+          "default": "",
+          "title": "Iv",
+          "type": "string"
+        }
+      },
+      "title": "EncryptionInfo",
+      "type": "object"
+    },
+    "EvolutionChange": {
+      "additionalProperties": true,
+      "properties": {
+        "op": {
+          "default": "+",
+          "enum": [
+            "+",
+            "-",
+            "→",
+            "->"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "path": {
+          "default": "",
+          "title": "Path",
+          "type": "string"
+        },
+        "value": {
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "title": "EvolutionChange",
+      "type": "object"
+    },
+    "EvolutionLogEntry": {
+      "additionalProperties": true,
+      "properties": {
+        "scene": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene"
+        },
+        "scene_index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Index"
+        },
+        "event": {
+          "default": "",
+          "title": "Event",
+          "type": "string"
+        },
+        "changes": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/EvolutionChange"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": true,
+              "type": "object"
+            }
+          ],
+          "title": "Changes"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "permanent": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Permanent"
+        },
+        "heal_scene": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heal Scene"
+        },
+        "revert_scene": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revert Scene"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "shot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shot Id"
+        },
+        "cause": {
+          "default": "",
+          "title": "Cause",
+          "type": "string"
+        },
+        "effect": {
+          "default": "",
+          "title": "Effect",
+          "type": "string"
+        }
+      },
+      "title": "EvolutionLogEntry",
+      "type": "object"
+    },
+    "ExpressionLayer": {
+      "additionalProperties": true,
+      "properties": {
+        "base_emotion": {
+          "default": "neutral",
+          "title": "Base Emotion",
+          "type": "string"
+        },
+        "micro_asymmetry": {
+          "default": 0.0,
+          "title": "Micro Asymmetry",
+          "type": "number"
+        },
+        "resting_face": {
+          "$ref": "#/$defs/RestingFace"
+        },
+        "au_library": {
+          "$ref": "#/$defs/AuLibrary"
+        },
+        "gaze": {
+          "$ref": "#/$defs/Gaze"
+        },
+        "lip_sync": {
+          "$ref": "#/$defs/LipSync"
+        },
+        "default": {
+          "type": "string",
+          "default": "neutral",
+          "title": "Default"
+        },
+        "range": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Range",
+          "type": "array"
+        },
+        "intensity": {
+          "default": 0.5,
+          "title": "Intensity",
+          "type": "number"
+        }
+      },
+      "title": "ExpressionLayer",
+      "type": "object"
+    },
+    "ExpressionPreset": {
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "trigger": {
+          "default": "manual",
+          "title": "Trigger",
+          "type": "string"
+        },
+        "au_set": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ActionUnit"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Au Set",
+          "type": "array"
+        },
+        "duration_hint": {
+          "default": "",
+          "title": "Duration Hint",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "ExpressionPreset",
+      "type": "object"
+    },
+    "ExtensionsLayer": {
+      "additionalProperties": true,
+      "properties": {
+        "comfyui_workflow": {
+          "$ref": "#/$defs/ComfyUIPlaceholder"
+        },
+        "comfyui": {
+          "$ref": "#/$defs/ComfyUIPlaceholder"
+        }
+      },
+      "title": "ExtensionsLayer",
+      "type": "object"
+    },
+    "FaceEmbedding": {
+      "additionalProperties": true,
+      "properties": {
+        "path": {
+          "default": "",
+          "title": "Path",
+          "type": "string"
+        },
+        "model": {
+          "default": "",
+          "title": "Model",
+          "type": "string"
+        },
+        "dimension": {
+          "default": 512,
+          "title": "Dimension",
+          "type": "integer"
+        },
+        "dtype": {
+          "default": "float32",
+          "title": "Dtype",
+          "type": "string"
+        }
+      },
+      "title": "FaceEmbedding",
+      "type": "object"
+    },
+    "FluidBlood": {
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "trigger": {
+          "default": "",
+          "title": "Trigger",
+          "type": "string"
+        },
+        "color_hex": {
+          "default": "#8B0000",
+          "title": "Color Hex",
+          "type": "string"
+        },
+        "viscosity": {
+          "default": 0.5,
+          "title": "Viscosity",
+          "type": "number"
+        }
+      },
+      "title": "FluidBlood",
+      "type": "object"
+    },
+    "FluidSweat": {
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "trigger": {
+          "default": "",
+          "title": "Trigger",
+          "type": "string"
+        },
+        "regions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array"
+        },
+        "flow_speed": {
+          "default": 0.0,
+          "title": "Flow Speed",
+          "type": "number"
+        }
+      },
+      "title": "FluidSweat",
+      "type": "object"
+    },
+    "FluidTears": {
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "trigger": {
+          "default": "",
+          "title": "Trigger",
+          "type": "string"
+        },
+        "flow_path": {
+          "default": "",
+          "title": "Flow Path",
+          "type": "string"
+        },
+        "volume": {
+          "default": "",
+          "title": "Volume",
+          "type": "string"
+        }
+      },
+      "title": "FluidTears",
+      "type": "object"
+    },
+    "Fluids": {
+      "additionalProperties": true,
+      "properties": {
+        "sweat": {
+          "$ref": "#/$defs/FluidSweat"
+        },
+        "tears": {
+          "$ref": "#/$defs/FluidTears"
+        },
+        "blood": {
+          "$ref": "#/$defs/FluidBlood"
+        }
+      },
+      "title": "Fluids",
+      "type": "object"
+    },
+    "Gaze": {
+      "additionalProperties": true,
+      "properties": {
+        "default_target": {
+          "default": "",
+          "title": "Default Target",
+          "type": "string"
+        },
+        "tracking_mode": {
+          "default": "fixed",
+          "title": "Tracking Mode",
+          "type": "string"
+        },
+        "saccade_frequency": {
+          "default": 0.0,
+          "title": "Saccade Frequency",
+          "type": "number"
+        },
+        "blink_rate_per_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blink Rate Per Min"
+        }
+      },
+      "title": "Gaze",
+      "type": "object"
+    },
+    "HairPhysics": {
+      "additionalProperties": true,
+      "properties": {
+        "wind_response": {
+          "default": 0.0,
+          "title": "Wind Response",
+          "type": "number"
+        },
+        "gravity_droop": {
+          "default": 0.0,
+          "title": "Gravity Droop",
+          "type": "number"
+        },
+        "wet_clump": {
+          "default": 0.0,
+          "title": "Wet Clump",
+          "type": "number"
+        }
+      },
+      "title": "HairPhysics",
+      "type": "object"
+    },
+    "HairStyle": {
+      "additionalProperties": true,
+      "properties": {
+        "style": {
+          "default": "",
+          "title": "Style",
+          "type": "string"
+        },
+        "color_hex": {
+          "default": "",
+          "title": "Color Hex",
+          "type": "string"
+        },
+        "length_cm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Length Cm"
+        },
+        "texture": {
+          "default": "",
+          "title": "Texture",
+          "type": "string"
+        },
+        "physics": {
+          "$ref": "#/$defs/HairPhysics"
+        }
+      },
+      "title": "HairStyle",
+      "type": "object"
+    },
+    "IdentityLayer": {
+      "additionalProperties": true,
+      "properties": {
+        "ref_images": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Ref Images",
+          "type": "array"
+        },
+        "face_embedding": {
+          "$ref": "#/$defs/FaceEmbedding"
+        },
+        "ip_adapter": {
+          "$ref": "#/$defs/IpAdapter"
+        },
+        "blend": {
+          "$ref": "#/$defs/Blend"
+        },
+        "lock_rules": {
+          "$ref": "#/$defs/LockRules"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "species": {
+          "default": "human",
+          "title": "Species",
+          "type": "string"
+        },
+        "gender_spectrum": {
+          "default": 0.5,
+          "title": "Gender Spectrum",
+          "type": "number"
+        },
+        "age_appearance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Age Appearance"
+        },
+        "face_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Face Id"
+        },
+        "face_threshold": {
+          "default": 0.7,
+          "title": "Face Threshold",
+          "type": "number"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "entity_id": {
+          "default": "",
+          "title": "Entity Id",
+          "type": "string"
+        }
+      },
+      "title": "IdentityLayer",
+      "type": "object"
+    },
+    "InteractionConstraints": {
+      "additionalProperties": true,
+      "properties": {
+        "personal_space_radius_cm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Personal Space Radius Cm"
+        },
+        "touch_aversion": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Touch Aversion",
+          "type": "array"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "InteractionConstraints",
+      "type": "object"
+    },
+    "IpAdapter": {
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "model": {
+          "default": "ip-adapter-faceid-plusv2",
+          "title": "Model",
+          "type": "string"
+        },
+        "weight": {
+          "default": 0.85,
+          "title": "Weight",
+          "type": "number"
+        },
+        "noise_aug": {
+          "default": 0.02,
+          "title": "Noise Aug",
+          "type": "number"
+        }
+      },
+      "title": "IpAdapter",
+      "type": "object"
+    },
+    "LightingResponse": {
+      "additionalProperties": true,
+      "properties": {
+        "skin_specular": {
+          "default": 0.3,
+          "title": "Skin Specular",
+          "type": "number"
+        },
+        "eye_reflection": {
+          "default": true,
+          "title": "Eye Reflection",
+          "type": "boolean"
+        },
+        "shadow_softness": {
+          "default": 0.5,
+          "title": "Shadow Softness",
+          "type": "number"
+        }
+      },
+      "title": "LightingResponse",
+      "type": "object"
+    },
+    "LipSync": {
+      "additionalProperties": true,
+      "properties": {
+        "neutral_mouth_shape": {
+          "default": "rest_closed",
+          "title": "Neutral Mouth Shape",
+          "type": "string"
+        },
+        "openness_range": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Openness Range",
+          "type": "array"
+        },
+        "dental_visibility": {
+          "default": 0.0,
+          "title": "Dental Visibility",
+          "type": "number"
+        }
+      },
+      "title": "LipSync",
+      "type": "object"
+    },
+    "LockRules": {
+      "additionalProperties": true,
+      "properties": {
+        "face_consistency_threshold": {
+          "default": 0.88,
+          "title": "Face Consistency Threshold",
+          "type": "number"
+        },
+        "allow_expression_change": {
+          "default": true,
+          "title": "Allow Expression Change",
+          "type": "boolean"
+        },
+        "allow_aging_progression": {
+          "default": true,
+          "title": "Allow Aging Progression",
+          "type": "boolean"
+        },
+        "forbidden_regions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Regions",
+          "type": "array"
+        }
+      },
+      "title": "LockRules",
+      "type": "object"
+    },
+    "Makeup": {
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "default": "none",
+          "title": "Type",
+          "type": "string"
+        },
+        "intensity": {
+          "default": 0.0,
+          "title": "Intensity",
+          "type": "number"
+        },
+        "regions": {
+          "items": {},
+          "title": "Regions",
+          "type": "array"
+        }
+      },
+      "title": "Makeup",
+      "type": "object"
+    },
+    "MetaLayer": {
+      "additionalProperties": true,
+      "properties": {
+        "format": {
+          "default": "charpass",
+          "title": "Format",
+          "type": "string"
+        },
+        "format_version": {
+          "default": "1.0.0",
+          "title": "Format Version",
+          "type": "string"
+        },
+        "charpass_id": {
+          "title": "Charpass Id",
+          "type": "string"
+        },
+        "character_name": {
+          "default": "",
+          "title": "Character Name",
+          "type": "string"
+        },
+        "character_alias": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Character Alias",
+          "type": "array"
+        },
+        "created_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Created At"
+        },
+        "updated_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Updated At"
+        },
+        "created_by": {
+          "default": "",
+          "title": "Created By",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "thumbnail": {
+          "default": "thumb/thumb_256.png",
+          "title": "Thumbnail",
+          "type": "string"
+        },
+        "license": {
+          "anyOf": [
+            {
+              "enum": [
+                "project_internal",
+                "team_shared",
+                "public",
+                "encrypted"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "project_internal",
+          "title": "License"
+        },
+        "checksum": {
+          "default": "",
+          "title": "Checksum",
+          "type": "string"
+        },
+        "parent_charpass_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Charpass Id"
+        },
+        "generation_count": {
+          "default": 0,
+          "title": "Generation Count",
+          "type": "integer"
+        },
+        "encryption": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EncryptionInfo"
+            },
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Encryption"
+        },
+        "encryption_level": {
+          "anyOf": [
+            {
+              "enum": [
+                "L0",
+                "L1",
+                "L2",
+                "L3"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "L0",
+          "title": "Encryption Level"
+        },
+        "mode": {
+          "default": "full",
+          "enum": [
+            "full",
+            "lite"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "size_bytes": {
+          "default": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "parser_version": {
+          "default": "1.0.0",
+          "title": "Parser Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "default": "",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "archived": {
+          "default": false,
+          "title": "Archived",
+          "type": "boolean"
+        }
+      },
+      "title": "MetaLayer",
+      "type": "object"
+    },
+    "MovementStyle": {
+      "additionalProperties": true,
+      "properties": {
+        "speed_factor": {
+          "default": 1.0,
+          "title": "Speed Factor",
+          "type": "number"
+        },
+        "fluidity": {
+          "default": 0.5,
+          "title": "Fluidity",
+          "type": "number"
+        },
+        "weight_shift": {
+          "default": "",
+          "title": "Weight Shift",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "MovementStyle",
+      "type": "object"
+    },
+    "Outfit": {
+      "additionalProperties": true,
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "ref_images": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Ref Images",
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/OutfitItem"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "title": "Outfit",
+      "type": "object"
+    },
+    "OutfitItem": {
+      "additionalProperties": true,
+      "properties": {
+        "slot": {
+          "default": "",
+          "title": "Slot",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "material": {
+          "default": "",
+          "title": "Material",
+          "type": "string"
+        },
+        "color_hex": {
+          "default": "",
+          "title": "Color Hex",
+          "type": "string"
+        },
+        "condition": {
+          "default": "worn",
+          "title": "Condition",
+          "type": "string"
+        },
+        "physical_params": {
+          "$ref": "#/$defs/PhysicalParams"
+        }
+      },
+      "title": "OutfitItem",
+      "type": "object"
+    },
+    "PhysicalParams": {
+      "additionalProperties": true,
+      "properties": {
+        "reflectance": {
+          "default": 0.0,
+          "title": "Reflectance",
+          "type": "number"
+        },
+        "roughness": {
+          "default": 0.5,
+          "title": "Roughness",
+          "type": "number"
+        },
+        "wrinkle_intensity": {
+          "default": 0.0,
+          "title": "Wrinkle Intensity",
+          "type": "number"
+        },
+        "translucency": {
+          "default": 0.0,
+          "title": "Translucency",
+          "type": "number"
+        }
+      },
+      "title": "PhysicalParams",
+      "type": "object"
+    },
+    "PhysicsCloth": {
+      "additionalProperties": true,
+      "properties": {
+        "simulation_mode": {
+          "default": "auto_by_material",
+          "title": "Simulation Mode",
+          "type": "string"
+        },
+        "wind_sensitivity": {
+          "default": 0.5,
+          "title": "Wind Sensitivity",
+          "type": "number"
+        },
+        "gravity_response": {
+          "default": 0.5,
+          "title": "Gravity Response",
+          "type": "number"
+        },
+        "collision_with_body": {
+          "default": true,
+          "title": "Collision With Body",
+          "type": "boolean"
+        },
+        "wrinkle_memory": {
+          "default": 0.5,
+          "title": "Wrinkle Memory",
+          "type": "number"
+        }
+      },
+      "title": "PhysicsCloth",
+      "type": "object"
+    },
+    "PhysicsHair": {
+      "additionalProperties": true,
+      "properties": {
+        "simulation_mode": {
+          "default": "strand_based",
+          "title": "Simulation Mode",
+          "type": "string"
+        },
+        "strand_count_hint": {
+          "default": "medium",
+          "title": "Strand Count Hint",
+          "type": "string"
+        },
+        "static_electricity": {
+          "default": 0.0,
+          "title": "Static Electricity",
+          "type": "number"
+        },
+        "wet_behavior": {
+          "$ref": "#/$defs/WetBehavior"
+        }
+      },
+      "title": "PhysicsHair",
+      "type": "object"
+    },
+    "PhysicsLayer": {
+      "additionalProperties": true,
+      "properties": {
+        "skin": {
+          "$ref": "#/$defs/PhysicsSkin"
+        },
+        "cloth": {
+          "$ref": "#/$defs/PhysicsCloth"
+        },
+        "hair": {
+          "$ref": "#/$defs/PhysicsHair"
+        },
+        "fluids": {
+          "$ref": "#/$defs/Fluids"
+        },
+        "lighting_response": {
+          "$ref": "#/$defs/LightingResponse"
+        },
+        "mass_kg": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mass Kg"
+        },
+        "rigidity": {
+          "default": 0.5,
+          "title": "Rigidity",
+          "type": "number"
+        },
+        "cloth_sim": {
+          "default": false,
+          "title": "Cloth Sim",
+          "type": "boolean"
+        }
+      },
+      "title": "PhysicsLayer",
+      "type": "object"
+    },
+    "PhysicsSkin": {
+      "additionalProperties": true,
+      "properties": {
+        "detail_level": {
+          "default": 0.5,
+          "title": "Detail Level",
+          "type": "number"
+        },
+        "pore_visibility": {
+          "default": 0.5,
+          "title": "Pore Visibility",
+          "type": "number"
+        },
+        "subsurface_scattering": {
+          "default": 0.5,
+          "title": "Subsurface Scattering",
+          "type": "number"
+        },
+        "wrinkle_depth": {
+          "default": 0.5,
+          "title": "Wrinkle Depth",
+          "type": "number"
+        },
+        "elasticity": {
+          "default": 0.5,
+          "title": "Elasticity",
+          "type": "number"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "PhysicsSkin",
+      "type": "object"
+    },
+    "PoseEntry": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "default": "",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "skeleton_path": {
+          "default": "",
+          "title": "Skeleton Path",
+          "type": "string"
+        },
+        "loop": {
+          "default": false,
+          "title": "Loop",
+          "type": "boolean"
+        },
+        "fps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fps"
+        },
+        "frames": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frames"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "PoseEntry",
+      "type": "object"
+    },
+    "PoseLayer": {
+      "additionalProperties": true,
+      "properties": {
+        "default_pose": {
+          "$ref": "#/$defs/DefaultPose"
+        },
+        "pose_library": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PoseEntry"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Pose Library",
+          "type": "array"
+        },
+        "movement_style": {
+          "$ref": "#/$defs/MovementStyle"
+        },
+        "interaction_constraints": {
+          "$ref": "#/$defs/InteractionConstraints"
+        },
+        "default": {
+          "type": "string",
+          "default": "standing",
+          "title": "Default"
+        },
+        "head_tilt": {
+          "default": 0.0,
+          "title": "Head Tilt",
+          "type": "number"
+        },
+        "constraints": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Constraints",
+          "type": "array"
+        }
+      },
+      "title": "PoseLayer",
+      "type": "object"
+    },
+    "PostureDefaults": {
+      "additionalProperties": true,
+      "properties": {
+        "spine_curve": {
+          "default": "",
+          "title": "Spine Curve",
+          "type": "string"
+        },
+        "shoulder_state": {
+          "default": "",
+          "title": "Shoulder State",
+          "type": "string"
+        },
+        "head_tilt": {
+          "default": 0.0,
+          "title": "Head Tilt",
+          "type": "number"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "PostureDefaults",
+      "type": "object"
+    },
+    "QualityFloor": {
+      "additionalProperties": true,
+      "properties": {
+        "face_consistency_min": {
+          "default": 0.88,
+          "title": "Face Consistency Min",
+          "type": "number"
+        },
+        "body_proportion_tolerance": {
+          "default": 0.05,
+          "title": "Body Proportion Tolerance",
+          "type": "number"
+        },
+        "outfit_color_delta_e_max": {
+          "default": 4.0,
+          "title": "Outfit Color Delta E Max",
+          "type": "number"
+        }
+      },
+      "title": "QualityFloor",
+      "type": "object"
+    },
+    "RestingFace": {
+      "additionalProperties": true,
+      "properties": {
+        "brow_position": {
+          "default": 0.0,
+          "title": "Brow Position",
+          "type": "number"
+        },
+        "eye_openness": {
+          "default": 1.0,
+          "title": "Eye Openness",
+          "type": "number"
+        },
+        "gaze_direction": {
+          "default": "",
+          "title": "Gaze Direction",
+          "type": "string"
+        },
+        "mouth_state": {
+          "default": "",
+          "title": "Mouth State",
+          "type": "string"
+        },
+        "jaw_tension": {
+          "default": 0.0,
+          "title": "Jaw Tension",
+          "type": "number"
+        }
+      },
+      "title": "RestingFace",
+      "type": "object"
+    },
+    "Skeleton": {
+      "additionalProperties": true,
+      "properties": {
+        "path": {
+          "default": "",
+          "title": "Path",
+          "type": "string"
+        },
+        "format": {
+          "default": "openpose_18",
+          "title": "Format",
+          "type": "string"
+        },
+        "head_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Head Ratio"
+        },
+        "height_cm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height Cm"
+        },
+        "weight_kg": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weight Kg"
+        }
+      },
+      "title": "Skeleton",
+      "type": "object"
+    },
+    "SkinTone": {
+      "additionalProperties": true,
+      "properties": {
+        "base_hex": {
+          "default": "",
+          "title": "Base Hex",
+          "type": "string"
+        },
+        "undertone": {
+          "default": "",
+          "title": "Undertone",
+          "type": "string"
+        },
+        "freckle_density": {
+          "default": 0.0,
+          "title": "Freckle Density",
+          "type": "number"
+        },
+        "tan_lines": {
+          "items": {},
+          "title": "Tan Lines",
+          "type": "array"
+        }
+      },
+      "title": "SkinTone",
+      "type": "object"
+    },
+    "StyleLayer": {
+      "additionalProperties": true,
+      "properties": {
+        "outfit": {
+          "$ref": "#/$defs/Outfit"
+        },
+        "hair": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HairStyle"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hair"
+        },
+        "makeup": {
+          "$ref": "#/$defs/Makeup"
+        },
+        "damage_regions": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DamageRegion"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Damage Regions",
+          "type": "array"
+        },
+        "accessories": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Accessory"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Accessories",
+          "type": "array"
+        },
+        "clothing": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Clothing",
+          "type": "array"
+        },
+        "colors": {
+          "additionalProperties": true,
+          "title": "Colors",
+          "type": "object"
+        },
+        "ip_adapter_weight": {
+          "default": 0.7,
+          "title": "Ip Adapter Weight",
+          "type": "number"
+        },
+        "reference_images": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Reference Images",
+          "type": "array"
+        }
+      },
+      "title": "StyleLayer",
+      "type": "object"
+    },
+    "VoiceCharacteristics": {
+      "additionalProperties": true,
+      "properties": {
+        "pitch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pitch"
+        },
+        "speed_factor": {
+          "default": 1.0,
+          "title": "Speed Factor",
+          "type": "number"
+        },
+        "breathiness": {
+          "default": 0.0,
+          "title": "Breathiness",
+          "type": "number"
+        },
+        "roughness": {
+          "default": 0.0,
+          "title": "Roughness",
+          "type": "number"
+        },
+        "accent": {
+          "default": "",
+          "title": "Accent",
+          "type": "string"
+        },
+        "habitual_pause_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Habitual Pause Ms"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "VoiceCharacteristics",
+      "type": "object"
+    },
+    "VoiceEmbedding": {
+      "additionalProperties": true,
+      "properties": {
+        "path": {
+          "default": "",
+          "title": "Path",
+          "type": "string"
+        },
+        "model": {
+          "default": "",
+          "title": "Model",
+          "type": "string"
+        },
+        "dimension": {
+          "default": 256,
+          "title": "Dimension",
+          "type": "integer"
+        }
+      },
+      "title": "VoiceEmbedding",
+      "type": "object"
+    },
+    "VoiceLayer": {
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "ref_audio": {
+          "$ref": "#/$defs/VoiceRef"
+        },
+        "voice_embedding": {
+          "$ref": "#/$defs/VoiceEmbedding"
+        },
+        "characteristics": {
+          "$ref": "#/$defs/VoiceCharacteristics"
+        },
+        "emotional_range": {
+          "additionalProperties": true,
+          "title": "Emotional Range",
+          "type": "object"
+        },
+        "timbre": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timbre"
+        },
+        "pitch": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0.5,
+          "title": "Pitch"
+        },
+        "sample_uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Uri"
+        },
+        "language": {
+          "default": "zh-Hant",
+          "title": "Language",
+          "type": "string"
+        },
+        "samples": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Samples",
+          "type": "array"
+        }
+      },
+      "title": "VoiceLayer",
+      "type": "object"
+    },
+    "VoiceRef": {
+      "additionalProperties": true,
+      "properties": {
+        "path": {
+          "default": "",
+          "title": "Path",
+          "type": "string"
+        },
+        "duration_sec": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Sec"
+        },
+        "sample_rate": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Rate"
+        },
+        "channels": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channels"
+        }
+      },
+      "title": "VoiceRef",
+      "type": "object"
+    },
+    "WetBehavior": {
+      "additionalProperties": true,
+      "properties": {
+        "clump_factor": {
+          "default": 0.0,
+          "title": "Clump Factor",
+          "type": "number"
+        },
+        "darkening": {
+          "default": 0.0,
+          "title": "Darkening",
+          "type": "number"
+        },
+        "weight_increase": {
+          "default": 0.0,
+          "title": "Weight Increase",
+          "type": "number"
+        }
+      },
+      "title": "WetBehavior",
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "description": "Narratron Character Passport v1.0（.charpass）。未知欄位必須原樣保留。核心不讀不改 _extensions。",
+  "properties": {
+    "schema": {
+      "default": "https://narratron.dev/schemas/charpass/v1.json",
+      "title": "Schema",
+      "type": "string"
+    },
+    "_mode": {
+      "anyOf": [
+        {
+          "enum": [
+            "full",
+            "lite"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mode"
+    },
+    "_asset_base_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Asset Base Url"
+    },
+    "_meta": {
+      "$ref": "#/$defs/MetaLayer"
+    },
+    "_identity": {
+      "$ref": "#/$defs/IdentityLayer"
+    },
+    "_body": {
+      "$ref": "#/$defs/BodyLayer"
+    },
+    "_style": {
+      "$ref": "#/$defs/StyleLayer"
+    },
+    "_expression": {
+      "$ref": "#/$defs/ExpressionLayer"
+    },
+    "_pose": {
+      "$ref": "#/$defs/PoseLayer"
+    },
+    "_physics": {
+      "$ref": "#/$defs/PhysicsLayer"
+    },
+    "_voice": {
+      "$ref": "#/$defs/VoiceLayer"
+    },
+    "_causal": {
+      "$ref": "#/$defs/CausalLayer"
+    },
+    "_constraints": {
+      "$ref": "#/$defs/ConstraintsLayer"
+    },
+    "_extensions": {
+      "$ref": "#/$defs/ExtensionsLayer"
+    }
+  },
+  "title": "Narratron Character Passport",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://narratron.dev/schemas/charpass/v1.json"
+}
