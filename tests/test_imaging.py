@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from characteros.imaging.prompt import assemble_request
@@ -101,6 +102,78 @@ def test_outfit_purpose_writes_style_refs() -> None:
     refs = updated["_style"]["outfit"]["ref_images"]
     assert refs
     assert refs[-1]["path"].startswith("assets/style/")
+
+
+def test_imaging_settings_reads_legacy_env(monkeypatch) -> None:
+    from characteros.imaging.config_store import (
+        ENV_BASE_URL,
+        ENV_MODEL,
+        LEGACY_ENV_BASE_URL,
+        LEGACY_ENV_MODEL,
+    )
+    from characteros.imaging.settings import ImagingSettings
+
+    monkeypatch.delenv(ENV_BASE_URL, raising=False)
+    monkeypatch.delenv(ENV_MODEL, raising=False)
+    monkeypatch.setenv(LEGACY_ENV_BASE_URL, "https://legacy.example/v1")
+    monkeypatch.setenv(LEGACY_ENV_MODEL, "legacy-model")
+
+    settings = ImagingSettings()
+    assert settings.get_base_url() == "https://legacy.example/v1"
+    assert settings.get_model() == "legacy-model"
+
+
+def test_imaging_settings_prefers_new_env_over_legacy(monkeypatch) -> None:
+    from characteros.imaging.config_store import ENV_BASE_URL, LEGACY_ENV_BASE_URL
+    from characteros.imaging.settings import ImagingSettings
+
+    monkeypatch.setenv(ENV_BASE_URL, "https://new.example/v1")
+    monkeypatch.setenv(LEGACY_ENV_BASE_URL, "https://legacy.example/v1")
+
+    settings = ImagingSettings()
+    assert settings.get_base_url() == "https://new.example/v1"
+
+
+def test_imaging_settings_update_falls_back_to_env_when_db_fails(monkeypatch) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    from characteros.imaging.config_store import ENV_BASE_URL
+    from characteros.imaging.settings import ImagingSettings
+
+    class BrokenSession:
+        pass
+
+    settings = ImagingSettings()
+
+    def boom(*_args, **_kwargs):
+        raise OperationalError("stmt", {}, Exception("connection refused"))
+
+    monkeypatch.setattr(
+        "characteros.imaging.settings.save_values",
+        boom,
+    )
+
+    snap = settings.update(
+        BrokenSession(),
+        base_url="https://env-only.example/v1",
+        persist_env=False,
+    )
+    assert snap.base_url == "https://env-only.example/v1"
+    assert settings.get_base_url() == "https://env-only.example/v1"
+    assert os.environ.get(ENV_BASE_URL) == "https://env-only.example/v1"
+
+
+def test_load_from_db_swallows_db_errors() -> None:
+    from sqlalchemy.exc import OperationalError
+
+    from characteros.imaging.settings import ImagingSettings
+
+    class BrokenSession:
+        def get(self, *_args, **_kwargs):
+            raise OperationalError("stmt", {}, Exception("connection refused"))
+
+    settings = ImagingSettings()
+    settings.load_from_db(BrokenSession())  # should not raise
 
 
 def test_wan_url_and_size_helpers() -> None:

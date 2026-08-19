@@ -14,7 +14,7 @@
     "character_name": "卡爾",
     "character_alias": [],
     "created_at": "2026-08-19T05:15:38.177830Z",
-    "updated_at": "2026-08-19T05:15:38.177830Z",
+    "updated_at": "2026-08-19T07:32:48.084900Z",
     "created_by": "",
     "project_id": null,
     "tags": [],
@@ -33,7 +33,25 @@
     "archived": false
   },
   "_identity": {
-    "ref_images": [],
+    "ref_images": [
+      {
+        "id": "",
+        "kind": "reference_image",
+        "path": "assets/identity/ref_face_001.png",
+        "uri": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/15/20260819/d689c36f/9d6437ef-4d60-4dd3-9004-7f31c47e876d_0.png?Expires=1787211023&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=mPakfl3eO4M2TB25%2F%2Fvge%2Fdh4ww%3D",
+        "embedded": null,
+        "angle": null,
+        "weight": null,
+        "note": "generated:wan:identity",
+        "metadata": {}
+      },
+      {
+        "path": "assets/identity/ref_face_001.png",
+        "uri": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/68/20260819/727717a8/119f3ae3-e39a-4505-a023-68ba1a12a709_0.png?Expires=1787211167&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Cj5e%2Fe5SwZPsFEnyNCmWkl9B884%3D",
+        "kind": "reference_image",
+        "note": "generated:wan:identity"
+      }
+    ],
     "face_embedding": {
       "path": "",
       "model": "",
@@ -125,10 +143,18 @@
       "visual": {
         "medium": "cinematic realism",
         "aesthetic": "冷調都市夜色、微粒塵埃、低飽和",
-        "color_palette": ["#1B1F2A", "#C4B7A6", "#6E7F8A"],
+        "color_palette": [
+          "#1B1F2A",
+          "#C4B7A6",
+          "#6E7F8A"
+        ],
         "lighting": "側光硬陰影，眼神微亮",
         "camera": "50mm, shallow depth of field",
-        "keywords": ["weathered", "restrained", "grounded"],
+        "keywords": [
+          "weathered",
+          "restrained",
+          "grounded"
+        ],
         "note": ""
       },
       "art_prompt": {
@@ -143,7 +169,10 @@
         "speech_pattern": "少用形容詞，習慣先停頓再答",
         "diction": "口語但不隨便，偶爾帶點舊時代用詞",
         "register": "casual-restrained",
-        "sample_lines": ["……我知道了。", "先把燈關了。"],
+        "sample_lines": [
+          "……我知道了。",
+          "先把燈關了。"
+        ],
         "note": ""
       },
       "consistency_notes": "臉型與左前臂舊疤必須跨鏡頭一致；參考圖優先於文字描述。"
@@ -315,12 +344,14 @@
       "version": ""
     },
     "image_gen": {
-      "provider": "",
-      "model": "",
+      "provider": "wan",
+      "model": "wan2.7-image-pro",
       "endpoint": "",
       "size": "1024x1024",
-      "last_job_id": "",
-      "last_asset_paths": [],
+      "last_job_id": "0f2ff43d-ed2a-413f-8717-77d38db3370e",
+      "last_asset_paths": [
+        "assets/identity/ref_face_001.png"
+      ],
       "note": ""
     }
   }

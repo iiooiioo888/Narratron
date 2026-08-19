@@ -197,6 +197,31 @@ class QueueStatsResponse(BaseModel):
     oldest_pending_age_seconds: float
 
 
+class QueueTaskItem(BaseModel):
+    """單一佇列任務（面板列表用）"""
+    id: int
+    core_id: int
+    character_name: Optional[str] = None
+    variant_hash: str
+    evolution_params: Dict[str, Any] = Field(default_factory=dict)
+    status: str
+    priority: int = 0
+    error_message: Optional[str] = None
+    retry_count: int = 0
+    max_retries: int = 3
+    result_url: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class QueueTaskListResponse(BaseModel):
+    """佇列任務列表（含統計與儲存模式）"""
+    storage_mode: str
+    stats: QueueStatsResponse
+    tasks: List[QueueTaskItem]
+    total: int
+
+
 class SystemMetricsResponse(BaseModel):
     """系統效能指標"""
     database_connections: int
@@ -223,6 +248,14 @@ class ImageProviderInfo(BaseModel):
     display_name: str
 
 
+class GeneratedImageInfo(BaseModel):
+    filename: str
+    url: Optional[str] = None
+    has_bytes: bool = False
+    mime_type: str = "image/png"
+    angle: Optional[str] = None
+
+
 class ImageGenerateRequest(BaseModel):
     """第三方生圖請求。不傳 provider 時走環境變數 CHARACTEROS_IMAGE_GEN_PROVIDER（預設 null）。"""
 
@@ -238,17 +271,14 @@ class ImageGenerateRequest(BaseModel):
         description="覆蓋本次生圖 API key（僅本次請求，不寫入資料庫）",
     )
     extra: str = Field("", description="額外拼進正向提示詞的描述")
-    n: int = Field(1, ge=1, le=4)
+    n: int = Field(1, ge=1, le=4, description="multi_angle=false 時每次請求張數")
+    multi_angle: bool = Field(
+        True,
+        description="預設 true：依五視圖（正／背／左／右／四分之三）各生一張",
+    )
     persist: bool = Field(False, description="是否寫回本機 data/charpasses/{entity_id}/")
     entity_id: Optional[str] = Field(None, description="本機護照 entity_id；與 manifest 擇一")
     manifest: Optional[Dict[str, Any]] = Field(None, description="完整 .charpass manifest")
-
-
-class GeneratedImageInfo(BaseModel):
-    filename: str
-    url: Optional[str] = None
-    has_bytes: bool = False
-    mime_type: str = "image/png"
 
 
 class ImageGenerateResponse(BaseModel):
@@ -258,6 +288,8 @@ class ImageGenerateResponse(BaseModel):
     prompt: str
     negative_prompt: str = ""
     ref_image_uris: List[str] = Field(default_factory=list)
+    multi_angle: bool = True
+    angles: List[str] = Field(default_factory=list)
     images: List[GeneratedImageInfo] = Field(default_factory=list)
     manifest: Dict[str, Any] = Field(default_factory=dict)
 

@@ -30,6 +30,50 @@ PURPOSE_SLOTS: dict[str, dict[str, str]] = {
     },
 }
 
+# 生圖預設五視圖：正／背／左／右／四分之三，維持同一角色造型。
+FIVE_VIEW_ANGLES: list[dict[str, str]] = [
+    {
+        "key": "front",
+        "label": "front view",
+        "shot": "front view, facing camera directly, full body, neutral standing pose, arms relaxed at sides",
+    },
+    {
+        "key": "back",
+        "label": "back view",
+        "shot": "back view, facing away from camera, full body, neutral standing pose",
+    },
+    {
+        "key": "left",
+        "label": "left side view",
+        "shot": "left side profile, 90-degree angle, full body, neutral standing pose",
+    },
+    {
+        "key": "right",
+        "label": "right side view",
+        "shot": "right side profile, 90-degree angle, full body, neutral standing pose",
+    },
+    {
+        "key": "three_quarter",
+        "label": "three-quarter view",
+        "shot": "three-quarter view, 45-degree angle, full body, neutral standing pose",
+    },
+]
+
+FIVE_VIEW_BASE = (
+    "character turnaround reference sheet, five-view multi-angle, "
+    "consistent identity outfit hair and body proportions across all views, "
+    "clean neutral studio background, even soft lighting, model sheet quality, "
+    "no text labels"
+)
+
+FIVE_VIEW_NEGATIVE = (
+    "inconsistent design, different character, wrong angle, cropped body, "
+    "cut off limbs, duplicate poses, blurry, low quality, watermark, text overlay, "
+    "multiple characters, collage errors"
+)
+
+ANGLE_BY_KEY: dict[str, dict[str, str]] = {item["key"]: item for item in FIVE_VIEW_ANGLES}
+
 
 def _as_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
@@ -73,11 +117,25 @@ def collect_ref_image_uris(manifest: dict[str, Any] | Any) -> list[str]:
     return uris
 
 
+def _merge_negative_prompt(base: str, *extra_parts: str) -> str:
+    chunks: list[str] = []
+    seen: set[str] = set()
+    for part in (base, *extra_parts):
+        for item in str(part or "").split(","):
+            cleaned = item.strip()
+            if cleaned and cleaned.lower() not in seen:
+                seen.add(cleaned.lower())
+                chunks.append(cleaned)
+    return ", ".join(chunks)
+
+
 def build_image_prompt(
     manifest: dict[str, Any] | Any,
     *,
     purpose: str = "identity",
     extra: str = "",
+    angle: str | None = None,
+    multi_angle: bool = True,
 ) -> dict[str, str]:
     """組裝第三方生圖用的正／負向提示詞。
 
@@ -130,13 +188,33 @@ def build_image_prompt(
         parts.append(template.replace("{name}", name).replace("{purpose}", purpose))
     if art.get("positive"):
         parts.append(str(art["positive"]))
-    parts.append(slot["shot"])
+    if multi_angle:
+        angle_def = ANGLE_BY_KEY.get(angle or "")
+        if angle_def:
+            parts.append(angle_def["shot"])
+        else:
+            parts.append(
+                "five views layout: front, back, left side, right side, three-quarter, "
+                "full body each view, same character"
+            )
+        parts.append(FIVE_VIEW_BASE)
+    else:
+        parts.append(slot["shot"])
     if extra:
         parts.append(extra.strip())
 
     positive = ", ".join(part.strip().rstrip(",") for part in parts if str(part).strip())
-    negative = str(art.get("negative") or "").strip()
-    return {"positive": positive, "negative": negative, "purpose": purpose}
+    negative = _merge_negative_prompt(
+        str(art.get("negative") or "").strip(),
+        FIVE_VIEW_NEGATIVE if multi_angle else "",
+    )
+    return {
+        "positive": positive,
+        "negative": negative,
+        "purpose": purpose,
+        "angle": angle or "",
+        "multi_angle": multi_angle,
+    }
 
 
 def build_narrative_prompt(manifest: dict[str, Any] | Any) -> str:

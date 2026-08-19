@@ -1,13 +1,13 @@
 """CharacterOS 健康檢查路由。"""
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from characteros.models.database import get_db
 from characteros.models.schema import HealthCheckResponse
+from characteros.storage.db_availability import mark_database_unavailable
 
 router = APIRouter(tags=["Health"])
 
@@ -32,21 +32,17 @@ def health_check(db: Session = Depends(get_db)):
         # 測試資料庫連線
         db.execute(text("SELECT 1"))
         db_status = "connected"
-        
+
         return HealthCheckResponse(
             status="healthy",
             database=db_status,
             timestamp=datetime.now(timezone.utc)
         )
-        
-    except Exception as e:
-        # 資料庫連線失敗
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                "status": "unhealthy",
-                "database": "disconnected",
-                "error": str(e),
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
+
+    except Exception:
+        mark_database_unavailable()
+        return HealthCheckResponse(
+            status="degraded",
+            database="disconnected",
+            timestamp=datetime.now(timezone.utc),
         )

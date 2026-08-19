@@ -159,6 +159,148 @@ def load_values(db: Session) -> ImagingConfigValues | None:
 
 
 
+def _merge_updates(
+
+    current: ImagingConfigValues,
+
+    *,
+
+    provider: str | None = None,
+
+    base_url: str | None = None,
+
+    model: str | None = None,
+
+    api_key: str | None = None,
+
+    clear_api_key: bool = False,
+
+) -> tuple[ImagingConfigValues, dict[str, str | None]]:
+
+    """合併局部更新，回傳新值與需寫入 .env 的鍵。"""
+
+    env_updates: dict[str, str | None] = {}
+
+    next_provider = current.provider
+
+    next_base_url = current.base_url
+
+    next_model = current.model
+
+    next_api_key = current.api_key
+
+
+
+    if provider is not None:
+
+        next_provider = provider.strip().lower() or DEFAULT_PROVIDER
+
+        env_updates[ENV_PROVIDER] = next_provider
+
+    if base_url is not None:
+
+        next_base_url = base_url.strip().rstrip("/") or DEFAULT_BASE_URL
+
+        env_updates[ENV_BASE_URL] = next_base_url
+
+        env_updates[LEGACY_ENV_BASE_URL] = next_base_url
+
+    if model is not None:
+
+        next_model = model.strip() or DEFAULT_MODEL
+
+        env_updates[ENV_MODEL] = next_model
+
+        env_updates[LEGACY_ENV_MODEL] = next_model
+
+    if clear_api_key:
+
+        next_api_key = ""
+
+        env_updates[ENV_API_KEY] = None
+
+    elif api_key is not None:
+
+        next_api_key = api_key.strip()
+
+        env_updates[ENV_API_KEY] = next_api_key or None
+
+
+
+    return (
+
+        ImagingConfigValues(
+
+            provider=next_provider,
+
+            base_url=next_base_url,
+
+            model=next_model,
+
+            api_key=next_api_key,
+
+        ),
+
+        env_updates,
+
+    )
+
+
+
+
+
+def save_values_env_only(
+
+    *,
+
+    provider: str | None = None,
+
+    base_url: str | None = None,
+
+    model: str | None = None,
+
+    api_key: str | None = None,
+
+    clear_api_key: bool = False,
+
+    persist_env: bool = True,
+
+    env_path: Path | None = None,
+
+    base: ImagingConfigValues | None = None,
+
+) -> ImagingConfigValues:
+
+    """DB 不可用時：僅更新記憶體／.env（含舊版 LEGACY 鍵）。"""
+
+    values, env_updates = _merge_updates(
+
+        base or _defaults_from_env(),
+
+        provider=provider,
+
+        base_url=base_url,
+
+        model=model,
+
+        api_key=api_key,
+
+        clear_api_key=clear_api_key,
+
+    )
+
+    if persist_env and env_updates:
+
+        upsert_env_vars(env_updates, env_path=env_path)
+
+    apply_to_environ(values, keys=set(env_updates.keys()) if env_updates else None)
+
+    return values
+
+
+
+
+
 def save_values(
 
     db: Session,
@@ -185,59 +327,7 @@ def save_values(
 
     row = _get_or_create_row(db)
 
-    env_updates: dict[str, str | None] = {}
-
-
-
-    if provider is not None:
-
-        cleaned = provider.strip().lower() or DEFAULT_PROVIDER
-
-        row.provider = cleaned
-
-        env_updates[ENV_PROVIDER] = cleaned
-
-    if base_url is not None:
-
-        cleaned = base_url.strip().rstrip("/") or DEFAULT_BASE_URL
-
-        row.base_url = cleaned
-
-        env_updates[ENV_BASE_URL] = cleaned
-        env_updates[LEGACY_ENV_BASE_URL] = cleaned
-
-    if model is not None:
-
-        cleaned = model.strip() or DEFAULT_MODEL
-
-        row.model = cleaned
-
-        env_updates[ENV_MODEL] = cleaned
-        env_updates[LEGACY_ENV_MODEL] = cleaned
-
-    if clear_api_key:
-
-        row.api_key = None
-
-        env_updates[ENV_API_KEY] = None
-
-    elif api_key is not None:
-
-        cleaned = api_key.strip()
-
-        row.api_key = cleaned or None
-
-        env_updates[ENV_API_KEY] = cleaned or None
-
-
-
-    db.commit()
-
-    db.refresh(row)
-
-
-
-    values = ImagingConfigValues(
+    current = ImagingConfigValues(
 
         provider=(row.provider or DEFAULT_PROVIDER).strip().lower(),
 
@@ -248,6 +338,36 @@ def save_values(
         api_key=(row.api_key or "").strip(),
 
     )
+
+    values, env_updates = _merge_updates(
+
+        current,
+
+        provider=provider,
+
+        base_url=base_url,
+
+        model=model,
+
+        api_key=api_key,
+
+        clear_api_key=clear_api_key,
+
+    )
+
+    row.provider = values.provider
+
+    row.base_url = values.base_url
+
+    row.model = values.model
+
+    row.api_key = values.api_key or None
+
+
+
+    db.commit()
+
+    db.refresh(row)
 
 
 

@@ -195,3 +195,34 @@ class QueueManager:
             "average_wait_time_ms": float(avg_wait),
             "oldest_pending_age_seconds": oldest_age_seconds
         }
+
+    def list_tasks(
+        self,
+        *,
+        status: str | None = None,
+        core_id: int | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """列出佇列任務（含角色名稱），供管理面板使用。"""
+        query = (
+            self.db.query(CharacterVariant, CharacterCore.name)
+            .join(CharacterCore, CharacterCore.id == CharacterVariant.core_id)
+        )
+        if status:
+            query = query.filter(CharacterVariant.status == status)
+        if core_id is not None:
+            query = query.filter(CharacterVariant.core_id == core_id)
+        rows = (
+            query.order_by(
+                CharacterVariant.priority.desc(),
+                CharacterVariant.created_at.asc(),
+            )
+            .limit(max(1, min(limit, 200)))
+            .all()
+        )
+        tasks: list[dict] = []
+        for variant, character_name in rows:
+            item = variant.to_dict()
+            item["character_name"] = character_name
+            tasks.append(item)
+        return tasks

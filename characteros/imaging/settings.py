@@ -6,30 +6,25 @@ from __future__ import annotations
 
 
 
-import os
-
 from dataclasses import dataclass
 
 from threading import Lock
 
 
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from sqlalchemy.orm import Session
 
 
 
 from characteros.imaging.config_store import (
-    DEFAULT_BASE_URL,
-    DEFAULT_MODEL,
-    DEFAULT_PROVIDER,
-    ENV_API_KEY,
-    ENV_BASE_URL,
-    ENV_MODEL,
-    ENV_PROVIDER,
     ImagingConfigValues,
+    _defaults_from_env,
     apply_to_environ,
     load_values,
     save_values,
+    save_values_env_only,
 )
 
 
@@ -68,9 +63,15 @@ class ImagingSettings:
 
     def load_from_db(self, db: Session) -> None:
 
-        """啟動時從 DB 載入；無列時保留 .env 現值。"""
+        """啟動時從 DB 載入；無列或連線失敗時保留 .env 現值。"""
 
-        values = load_values(db)
+        try:
+
+            values = load_values(db)
+
+        except SQLAlchemyError:
+
+            return
 
         if values is None:
 
@@ -92,25 +93,8 @@ class ImagingSettings:
 
                 return self._cached
 
-        return ImagingConfigValues(
-
-            provider=(os.environ.get(ENV_PROVIDER) or DEFAULT_PROVIDER).strip().lower(),
-
-            base_url=(os.environ.get(ENV_BASE_URL) or DEFAULT_BASE_URL).rstrip("/"),
-
-            model=(os.environ.get(ENV_MODEL) or DEFAULT_MODEL).strip(),
-
-            api_key=(
-
-                os.environ.get(ENV_API_KEY)
-
-                or os.environ.get("OPENAI_API_KEY")
-
-                or ""
-
-            ).strip(),
-
-        )
+        # 與 config_store._defaults_from_env 一致，含舊版 CHARACTEROS_OPENAI_IMAGES_* 回退。
+        return _defaults_from_env()
 
 
 
@@ -156,6 +140,30 @@ class ImagingSettings:
 
 
 
+    def update_env_only(
+        self,
+        *,
+        provider: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        clear_api_key: bool = False,
+        persist_env: bool = True,
+    ) -> ImagingConfigSnapshot:
+        """PostgreSQL 不可用時：僅更新記憶體與 .env。"""
+        values = save_values_env_only(
+            provider=provider,
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            clear_api_key=clear_api_key,
+            persist_env=persist_env,
+            base=self._resolve(),
+        )
+        with self._lock:
+            self._cached = values
+        return self.snapshot()
+
     def update(
 
         self,
@@ -178,23 +186,45 @@ class ImagingSettings:
 
     ) -> ImagingConfigSnapshot:
 
-        values = save_values(
+        try:
 
-            db,
+            values = save_values(
 
-            provider=provider,
+                db,
 
-            base_url=base_url,
+                provider=provider,
 
-            model=model,
+                base_url=base_url,
 
-            api_key=api_key,
+                model=model,
 
-            clear_api_key=clear_api_key,
+                api_key=api_key,
 
-            persist_env=persist_env,
+                clear_api_key=clear_api_key,
 
-        )
+                persist_env=persist_env,
+
+            )
+
+        except SQLAlchemyError:
+
+            values = save_values_env_only(
+
+                provider=provider,
+
+                base_url=base_url,
+
+                model=model,
+
+                api_key=api_key,
+
+                clear_api_key=clear_api_key,
+
+                persist_env=persist_env,
+
+                base=self._resolve(),
+
+            )
 
         with self._lock:
 

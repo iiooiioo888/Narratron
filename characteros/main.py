@@ -6,7 +6,10 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import logging
+
+from sqlalchemy.exc import OperationalError
 
 from characteros.models.database import engine, Base
 from characteros.routers import characters, admin, health, imaging, panel
@@ -75,15 +78,23 @@ async def startup_event():
 
     from characteros.imaging.settings import settings
     from characteros.models.database import SessionLocal
+    from characteros.storage.db_availability import check_database_available, storage_mode_label
 
     db = SessionLocal()
     try:
-        settings.load_from_db(db)
-        logger.info("Imaging config loaded from database (fallback: .env)")
+        if check_database_available():
+            settings.load_from_db(db)
+            logger.info("Imaging config loaded from database (fallback: .env)")
+        else:
+            logger.warning(
+                "PostgreSQL unavailable — using local charpass storage and .env for imaging config"
+            )
     except Exception as exc:
         logger.warning("Could not load imaging config from database: %s", exc)
     finally:
         db.close()
+
+    logger.info("Storage mode: %s", storage_mode_label())
     
     # 注意：資料庫表應透過 migration 腳本創建
     # 此處僅做驗證，不自動創建表
@@ -115,14 +126,33 @@ async def root():
 
 
 # 全域例外處理（可選）
+@app.exception_handler(OperationalError)
+async def database_unavailable_handler(request, exc):
+    """PostgreSQL 未啟動或連線字串錯誤時回傳可解析 JSON。"""
+    logger.error("Database unavailable: %s", exc)
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": (
+                "資料庫連線失敗，請確認 PostgreSQL 已啟動，"
+                "且 CHARACTEROS_DATABASE_URL 設定正確"
+            ),
+            "type": type(exc).__name__,
+        },
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     """
-    全域例外處理器
+    全域例外處理器（必須回傳 JSONResponse，否則 Starlette 會再拋 500 純文字）
     """
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    
-    return {
-        "detail": "Internal server error",
-        "type": type(exc).__name__
-    }
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "type": type(exc).__name__,
+        },
+    )
