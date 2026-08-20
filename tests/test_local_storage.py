@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -93,7 +94,7 @@ def test_local_queue_processes_pending_task_into_variant_artifact(local_root: Pa
     assert output.is_file()
 
 
-def test_local_queue_image_task_requires_acceptance_before_manifest_update(local_root: Path) -> None:
+def test_local_queue_image_task_auto_publishes_manifest(local_root: Path) -> None:
     service = LocalCharacterService(local_root)
     core_id = service.list_characters()["items"][0].id
     queue = LocalQueueManager(local_root)
@@ -115,22 +116,15 @@ def test_local_queue_image_task_requires_acceptance_before_manifest_update(local
     processed = queue.process_task(int(task["id"]), character_service=service)
     review = processed["result_metadata"]["image_generation"]["review"]
     assert processed["status"] == "ready"
-    assert review["status"] == "pending"
-    assert processed["result_metadata"]["image_generation"]["review_status"] == "pending"
-    assert processed["result_url"].startswith(f"/api/v1/characters/{core_id}/assets/causal/review/")
-    assert processed["result_metadata"]["thumbnail_asset_path"].startswith("causal/review/identity/")
-    assert processed["result_metadata"]["image_generation"]["thumbnail_asset_path"].startswith("causal/review/identity/")
+    assert review["status"] == "accepted"
+    assert processed["result_metadata"]["image_generation"]["review_status"] == "accepted"
+    assert processed["result_url"].startswith(f"/api/v1/characters/{core_id}/assets/assets/")
+    assert processed["result_metadata"]["thumbnail_asset_path"].startswith("assets/identity/")
+    assert processed["result_metadata"]["image_generation"]["thumbnail_asset_path"].startswith("assets/identity/")
+    assets_dir = local_root / "character-test" / "assets"
+    assert assets_dir.exists()
+    assert any(assets_dir.rglob("*"))
 
-    manifest_before = service.get_character_by_id(core_id).profile.manifest
-    identity_before = manifest_before.get("_identity", {})
-    assert not identity_before.get("ref_images")
-
-    accepted = queue.review_task(int(task["id"]), accepted=True, character_service=service)
-    assert accepted["result_metadata"]["image_generation"]["review"]["status"] == "accepted"
-    assert accepted["result_metadata"]["review_status"] == "accepted"
-    assert accepted["result_metadata"]["image_generation"]["review_status"] == "accepted"
-    assert accepted["result_metadata"]["thumbnail_asset_path"].startswith("assets/identity/")
-    assert accepted["result_metadata"]["image_generation"]["thumbnail_asset_path"].startswith("assets/identity/")
     record = json.loads(
         (local_root / "character-test" / "causal" / "variants" / str(task["id"]) / "record.json").read_text(encoding="utf-8")
     )
@@ -141,7 +135,7 @@ def test_local_queue_image_task_requires_acceptance_before_manifest_update(local
     assert manifest_after["_identity"]["ref_images"]
 
 
-def test_local_queue_reject_keeps_manifest_unpublished(local_root: Path) -> None:
+def test_local_queue_process_publishes_without_manual_review(local_root: Path) -> None:
     service = LocalCharacterService(local_root)
     core_id = service.list_characters()["items"][0].id
     queue = LocalQueueManager(local_root)
@@ -149,7 +143,7 @@ def test_local_queue_reject_keeps_manifest_unpublished(local_root: Path) -> None
     task, _is_new = queue.request_variant_generation(
         core_id=core_id,
         evolution_params={
-            "_queue_nonce": "img-reject",
+            "_queue_nonce": "img-auto-accept",
             "_image_request": {
                 "purpose": "identity",
                 "provider": "null",
@@ -161,25 +155,12 @@ def test_local_queue_reject_keeps_manifest_unpublished(local_root: Path) -> None
     )
 
     processed = queue.process_task(int(task["id"]), character_service=service)
-    staged_asset = processed["result_metadata"]["image_generation"]["images"][0]["asset_path"]
-    rejected = queue.review_task(int(task["id"]), accepted=False, character_service=service)
-    assert rejected["result_metadata"]["review_status"] == "rejected"
-    assert rejected["result_metadata"]["image_generation"]["review"]["status"] == "rejected"
-    assert rejected["result_metadata"]["image_generation"]["review_status"] == "rejected"
-    assert rejected["result_url"] == processed["result_url"]
-
+    published_asset = processed["result_metadata"]["image_generation"]["images"][0]["asset_path"]
+    assert processed["result_metadata"]["review_status"] == "accepted"
+    assert processed["result_metadata"]["image_generation"]["review"]["status"] == "accepted"
+    assert published_asset.startswith("assets/identity/")
     manifest_after = service.get_character_by_id(core_id).profile.manifest
-    assert not manifest_after.get("_identity", {}).get("ref_images")
-    assert staged_asset.startswith("causal/review/identity/")
-    assert not any(
-        str(item.get("asset_path") or "").startswith("assets/identity/")
-        for item in rejected["result_metadata"]["image_generation"]["images"]
-    )
-    record = json.loads(
-        (local_root / "character-test" / "causal" / "variants" / str(task["id"]) / "record.json").read_text(encoding="utf-8")
-    )
-    assert record["review_status"] == "rejected"
-    assert record["thumbnail_asset_path"].startswith("causal/review/identity/")
+    assert manifest_after.get("_identity", {}).get("ref_images")
 
 
 def test_local_queue_prefers_face_detail_as_result_url_when_available(local_root: Path) -> None:
@@ -202,8 +183,8 @@ def test_local_queue_prefers_face_detail_as_result_url_when_available(local_root
     )
 
     processed = queue.process_task(int(task["id"]), character_service=service)
-    assert processed["result_metadata"]["face_detail_asset_path"].startswith("causal/review/identity/")
-    assert processed["result_metadata"]["thumbnail_asset_path"].startswith("causal/review/identity/")
+    assert processed["result_metadata"]["face_detail_asset_path"].startswith("assets/")
+    assert processed["result_metadata"]["thumbnail_asset_path"].startswith("assets/")
     assert processed["result_metadata"]["representative_asset_path"] == processed["result_metadata"]["face_detail_asset_path"]
     assert processed["result_metadata"]["representative_angle"] == "face_detail"
     assert processed["result_metadata"]["has_face_detail"] is True
@@ -233,8 +214,8 @@ def test_queue_task_payload_promotes_preview_summary_fields(local_root: Path) ->
     processed = queue.process_task(int(task["id"]), character_service=service)
     task_item = _task_item_from_dict(processed, "local")
 
-    assert task_item.review_status == "pending"
-    assert task_item.effective_status == "pending"
+    assert task_item.review_status == "accepted"
+    assert task_item.effective_status == "accepted"
     assert task_item.purpose == "identity"
     assert task_item.has_face_detail is True
     assert task_item.face_detail_count >= 1
@@ -269,19 +250,23 @@ def test_version_summary_includes_pending_image_review_branch(local_root: Path) 
 
     assert image_branches
     assert image_branches[0]["purpose"] == "identity"
-    assert image_branches[0]["status"] == "pending"
-    assert image_branches[0]["review_status"] == "pending"
-    assert image_branches[0]["effective_status"] == "pending"
+    assert image_branches[0]["status"] == "accepted"
+    assert image_branches[0]["review_status"] == "accepted"
+    assert image_branches[0]["effective_status"] == "accepted"
     assert image_branches[0]["has_face_detail"] is False
     assert image_branches[0]["purpose_summary"] == "identity"
     assert image_branches[0]["angles_summary"] == "front"
     assert image_branches[0]["summary_fields"]["purpose"] == "identity"
     assert image_branches[0]["summary_fields"]["angles"] == ["front"]
-    assert "pending" in image_branches[0]["summary"]
-    assert image_branches[0]["thumbnail_asset_path"].startswith("causal/review/identity/")
-    assert image_branches[0]["sort_key"].startswith("0:")
-    assert image_branches[0]["sort_order"] == 0
-    assert image_branches[0]["result_url"].startswith(f"/api/v1/characters/{core_id}/assets/causal/review/")
+    assert image_branches[0]["thumbnail_asset_path"].startswith("assets/identity/")
+    assert image_branches[0]["result_url"].startswith(f"/api/v1/characters/{core_id}/assets/assets/")
+    images_by_angle = image_branches[0].get("images_by_angle") or {}
+    for entries in images_by_angle.values():
+        if not isinstance(entries, list):
+            continue
+        for item in entries:
+            if isinstance(item, dict):
+                assert "final_asset_path" not in item
 
 
 def test_version_summary_includes_queue_variant_branch_metadata(local_root: Path) -> None:
@@ -308,8 +293,8 @@ def test_version_summary_includes_queue_variant_branch_metadata(local_root: Path
     branch = next(item for item in summary["branches"] if item["kind"] == "variant")
 
     assert branch["branch_id"] == str(processed["id"])
-    assert branch["review_status"] == "pending"
-    assert branch["effective_status"] == "pending"
+    assert branch["review_status"] == "accepted"
+    assert branch["effective_status"] == "accepted"
     assert branch["has_face_detail"] is True
     assert branch["summary_fields"]["has_face_detail"] is True
     assert branch["summary_fields"]["purpose"] == "identity"
@@ -318,8 +303,8 @@ def test_version_summary_includes_queue_variant_branch_metadata(local_root: Path
     assert branch["representative_angle"] == "face_detail"
     assert branch["provider"] == "null"
     assert branch["model"]
-    assert branch["review"]["status"] == "pending"
-    assert branch["response"]["review"]["status"] == "pending"
+    assert branch["review"]["status"] == "accepted"
+    assert branch["response"]["review"]["status"] == "accepted"
     assert branch["prompt"]
     assert branch["sort_priority"] == 1
     assert branch["result_url"].endswith(branch["face_detail_asset_path"])
@@ -633,3 +618,61 @@ def test_local_store_save_charpass_and_version_summary(local_root: Path) -> None
     assert branch["review_status"] == "accepted"
     assert branch["thumbnail_asset_path"] == "assets/identity/ref_face_front_001.png"
     assert branch["sort_order"] == 0
+
+
+def test_task_item_from_dict_parity_local_and_database() -> None:
+    """同一 raw metadata 在 local / database storage_mode 下應產出相同頂層欄位。"""
+    now = datetime.now(timezone.utc).isoformat()
+    raw = {
+        "id": 99,
+        "core_id": 1,
+        "character_name": "parity",
+        "variant_hash": "vh-parity",
+        "evolution_params": {"k": "v"},
+        "status": "ready",
+        "priority": 1,
+        "retry_count": 0,
+        "max_retries": 3,
+        "created_at": now,
+        "updated_at": now,
+        "result_url": "/api/x",
+        "result_metadata": {
+            "review_status": "pending",
+            "effective_status": "pending",
+            "purpose": "identity",
+            "angles": ["face_detail", "front"],
+            "image_count": 2,
+            "thumbnail_asset_path": "causal/review/identity/job/thumb.png",
+            "face_detail_asset_path": "causal/review/identity/job/face.png",
+            "face_detail_count": 1,
+            "has_face_detail": True,
+            "representative_asset_path": "causal/review/identity/job/face.png",
+            "representative_angle": "face_detail",
+            "image_generation": {
+                "review_status": "pending",
+                "purpose": "identity",
+                "angles": ["front"],
+                "face_detail_count": 0,
+                "images": [
+                    {
+                        "angle": "face_detail",
+                        "asset_path": "causal/review/identity/job/face.png",
+                        "final_asset_path": "assets/identity/face.png",
+                    }
+                ],
+            },
+        },
+    }
+
+    local_item = _task_item_from_dict(raw, "local")
+    database_item = _task_item_from_dict(raw, "database")
+
+    assert local_item.model_dump() == database_item.model_dump()
+    assert local_item.review_status == "accepted"
+    assert local_item.effective_status == "accepted"
+    assert local_item.purpose == "identity"
+    assert local_item.face_detail_count == 1
+    assert local_item.representative_angle == "face_detail"
+    assert local_item.has_face_detail is True
+    assert local_item.angles == ["face_detail", "front"]
+    assert raw["result_metadata"]["image_generation"]["images"][0]["final_asset_path"] == "assets/identity/face.png"

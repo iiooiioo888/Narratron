@@ -1,0 +1,14 @@
+{
+  "images": [
+    {
+      "filename": "ref_face_front_001.png",
+      "angle": "front",
+      "asset_path": "causal/review/identity/job-face-detail/ref_face_front_001.png"
+    },
+    {
+      "filename": "ref_face_face_detail_001.png",
+      "angle": "face_detail",
+      "asset_path": "causal/review/identity/job-face-detail/ref_face_face_detail_001.png"
+    }
+  ]
+}

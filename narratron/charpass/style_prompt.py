@@ -9,12 +9,12 @@ from narratron.charpass.schema import parse_manifest
 
 PURPOSE_SLOTS: dict[str, dict[str, str]] = {
     "identity": {
-        "shot": "single character turnaround reference, one person only, face clearly visible, neutral expression, model sheet consistency",
+        "shot": "single character turnaround reference, one person only, one subject per image, face clearly visible, neutral expression, model sheet consistency, same character identity across all turnaround angles",
         "asset_dir": "assets/identity",
         "filename_prefix": "ref_face",
     },
     "face_detail": {
-        "shot": "single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference",
+        "shot": "single character extreme facial close-up, one face only, one subject per image, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference",
         "asset_dir": "assets/face_detail",
         "filename_prefix": "ref_face_face_detail",
     },
@@ -32,6 +32,11 @@ PURPOSE_SLOTS: dict[str, dict[str, str]] = {
         "shot": "character thumbnail, centered, clean background",
         "asset_dir": "thumb",
         "filename_prefix": "thumb",
+    },
+    "tpose": {
+        "shot": "single character full-body T-pose standing reference, one person only, T-pose, arms stretched straight out horizontally at shoulder height, palms facing down, legs straight, facing camera, 3D character model sheet, T型體, same identity as the face-detail reference",
+        "asset_dir": "assets/tpose",
+        "filename_prefix": "ref_tpose",
     },
 }
 
@@ -82,6 +87,14 @@ IDENTITY_SUPPLEMENTAL_ANGLES: list[dict[str, str]] = [
     }
 ]
 
+TPOSE_ANGLES: list[dict[str, str]] = [
+    {
+        "key": "tpose",
+        "label": "T-pose front view",
+        "shot": "full-body T-pose standing reference, T-pose, arms stretched straight out horizontally at shoulder height, palms facing down, legs straight together, facing camera, 3D character model sheet, T型體",
+    }
+]
+
 # prompt 用的 layout 描述文字（給第三方生圖模型參考）
 MULTI_VIEW_BASE = (
     "single character only, one person only, full body isolated subject, "
@@ -111,9 +124,14 @@ FACE_DETAIL_LOCK_GUARD = (
     "no hands covering face, no accessories blocking facial features"
 )
 
+TPOSE_LOCK_GUARD = (
+    "same character identity as the face-detail references, preserve exact face, hair silhouette, skin tone, "
+    "body proportions and outfit language, full body visible, T-pose only, no action pose, no sitting, no cropped limbs"
+)
+
 IDENTITY_ANGLE_LOCK_GUARD = (
     "render this angle as the same single subject from the identity turnaround set, preserve the exact same face, "
-    "hair silhouette, skin tone, outfit design cues and body proportions"
+    "hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame"
 )
 
 DEFAULT_SINGLE_ANGLE_BY_PURPOSE: dict[str, str] = {
@@ -122,6 +140,7 @@ DEFAULT_SINGLE_ANGLE_BY_PURPOSE: dict[str, str] = {
     "outfit": "front",
     "expression": "front",
     "thumb": "front",
+    "tpose": "tpose",
 }
 
 # ============================================
@@ -193,6 +212,7 @@ def apply_default_character_style(manifest: dict[str, Any]) -> dict[str, Any]:
 
 ANGLE_BY_KEY: dict[str, dict[str, str]] = {item["key"]: item for item in MULTI_VIEW_ANGLES}
 ANGLE_BY_KEY.update({item["key"]: item for item in IDENTITY_SUPPLEMENTAL_ANGLES})
+ANGLE_BY_KEY.update({item["key"]: item for item in TPOSE_ANGLES})
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -304,6 +324,8 @@ def resolve_prompt_angle(*, purpose: str, angle: str | None = None, multi_angle:
         return explicit
     if str(purpose or "").strip() == "face_detail":
         return "face_detail"
+    if str(purpose or "").strip() == "tpose":
+        return "tpose"
     if not multi_angle:
         return default_single_angle_for_purpose(purpose)
     return ""
@@ -381,8 +403,14 @@ def _append_angle_prompt_parts(
 ) -> None:
     angle_def = ANGLE_BY_KEY.get(effective_angle)
     is_face_detail = purpose == "face_detail" or effective_angle == "face_detail"
-    prompt_slot = PURPOSE_SLOTS["face_detail"] if is_face_detail else slot
+    is_tpose = purpose == "tpose" or effective_angle == "tpose"
+    prompt_slot = PURPOSE_SLOTS["face_detail"] if is_face_detail else PURPOSE_SLOTS["tpose"] if is_tpose else slot
     if angle_def:
+        # 保留可前向相容的「角度 label」字串（例如 `left side view`），
+        # 以避免只有 `shot` 而導致測試/上游解析依賴字串時失配。
+        label = str(angle_def.get("label") or "").strip()
+        if label:
+            _extend_unique(parts, label)
         _extend_unique(parts, prompt_slot["shot"], angle_def["shot"])
     else:
         _extend_unique(parts, prompt_slot["shot"])
@@ -399,6 +427,19 @@ def _append_angle_prompt_parts(
             IDENTITY_LOCK_GUARD,
             FACE_DETAIL_LOCK_GUARD,
             IDENTITY_ANGLE_LOCK_GUARD,
+        )
+        return
+
+    if is_tpose:
+        _extend_unique(
+            parts,
+            SINGLE_CHARACTER_GUARD,
+            "exactly one character, one T-pose, one camera angle, no crowd, no partner, no background character",
+            "keep the same named character, same rendering style, same visual medium, same aesthetic treatment and same design language",
+            IDENTITY_LOCK_GUARD,
+            TPOSE_LOCK_GUARD,
+            IDENTITY_ANGLE_LOCK_GUARD,
+            MULTI_VIEW_BASE,
         )
         return
 
@@ -445,14 +486,20 @@ def build_image_prompt(
 
     slot = PURPOSE_SLOTS.get(purpose, PURPOSE_SLOTS["identity"])
     name = str(identity.get("name") or meta.get("character_name") or "character")
-    age = identity.get("age_appearance")
+    age_visual = identity.get("age_visual")
+    blend = identity.get("blend") if isinstance(identity.get("blend"), dict) else {}
+    if age_visual in (None, ""):
+        age_visual = blend.get("age_visual")
+    age_appearance = identity.get("age_appearance")
     species = identity.get("species") or "human"
     effective_angle = resolve_prompt_angle(purpose=purpose, angle=angle, multi_angle=multi_angle)
     prompt_purpose = _effective_prompt_purpose(purpose=purpose, effective_angle=effective_angle)
 
     parts: list[str] = [f"{name}, {species}"]
-    if age:
-        _extend_unique(parts, str(age))
+    if age_visual not in (None, ""):
+        _extend_unique(parts, f"exactly {age_visual} years old", f"age {age_visual}")
+    elif age_appearance:
+        _extend_unique(parts, str(age_appearance))
     _append_style_prompt_parts(
         parts,
         visual=visual,

@@ -1,0 +1,13 @@
+{
+  "multi_angle": true,
+  "angles": [
+    "front",
+    "back",
+    "left",
+    "right",
+    "three_quarter",
+    "top",
+    "bottom",
+    "face_detail"
+  ]
+}

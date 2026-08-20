@@ -5,11 +5,14 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from characteros.imaging.prompt import assemble_request
 from characteros.imaging.registry import get_provider, list_providers
 from characteros.services.imaging import (
     ImagingService,
     apply_result_to_manifest,
+    ensure_unaccepted_generation_is_staged,
     finalize_reviewed_generation,
 )
 from narratron.charpass.schema import empty_manifest_dict, manifest_to_dict
@@ -81,6 +84,7 @@ def test_identity_angle_prompt_carries_style_and_single_character_rules() -> Non
     assert "front view" in prompt["positive"]
     assert "face clearly visible" in prompt["positive"]
     assert "neutral expression" in prompt["positive"]
+    assert "one subject per image" in prompt["positive"]
     assert "卡爾 reference sheet for identity" in prompt["positive"]
     assert "muted contrast" in prompt["positive"]
     assert "avoid stylized exaggeration" in prompt["positive"]
@@ -88,6 +92,7 @@ def test_identity_angle_prompt_carries_style_and_single_character_rules() -> Non
     assert "single character only" in prompt["positive"]
     assert "preserve the same character identity" in prompt["positive"]
     assert "exactly one character, one pose, one camera angle" in prompt["positive"]
+    assert "keep exactly one character in frame" in prompt["positive"]
 
 
 def test_face_detail_prompt_locks_same_identity_and_face_details() -> None:
@@ -113,6 +118,7 @@ def test_face_detail_purpose_defaults_to_face_detail_rules() -> None:
     assert prompt["angle"] == "face_detail"
     assert "extreme facial close-up" in prompt["positive"]
     assert "one face only" in prompt["positive"]
+    assert "one subject per image" in prompt["positive"]
     assert "same character identity as the turnaround references" in prompt["positive"]
     assert "single character only" in prompt["positive"]
     assert "one face only, one head only" in prompt["positive"]
@@ -316,6 +322,7 @@ def test_persist_downloads_remote_images_and_writes_generation_records(
     assert stored is not None
     image_gen = stored["_extensions"]["image_gen"]
     assert image_gen["last_api_response_path"].startswith("causal/image_gen/identity/")
+    assert "last_api_response" not in image_gen
     assert image_gen["last_request_path"].startswith("causal/image_gen/identity/")
     assert image_gen["history"]
 
@@ -393,6 +400,8 @@ def test_persist_pending_review_stages_assets_until_accept(
     entity_dir = service.store.entity_dir("character-卡爾")
     assert (entity_dir / image["asset_path"]).is_file()
     assert not (entity_dir / image["final_asset_path"]).exists()
+    assert not (entity_dir / "current.charpass").exists()
+    assert not (entity_dir / "assets").exists()
 
     promoted = finalize_reviewed_generation("character-卡爾", payload, store=service.store)
     assert promoted["payload"]["review"]["status"] == "accepted"
@@ -568,8 +577,11 @@ def test_wan_provider_parses_response(monkeypatch) -> None:
         assert kwargs["headers"]["Authorization"] == "Bearer test-key"
         body = kwargs["json"]
         assert body["model"] == "wan2.7-image-pro"
-        assert body["input"]["messages"][0]["content"][-1]["text"]
+        content = body["input"]["messages"][0]["content"]
+        assert "Avoid: blurry watermark" in content[-1]["text"]
+        assert [item["image"] for item in content if "image" in item] == ["https://example.com/ref.png"]
         assert body["parameters"]["size"] == "1K"
+        assert "negative_prompt" not in body["parameters"]
         return FakeResponse()
 
     monkeypatch.setattr("httpx.post", fake_post)
@@ -579,12 +591,61 @@ def test_wan_provider_parses_response(monkeypatch) -> None:
         ImageGenRequest(
             purpose="identity",
             prompt="卡爾, human, cinematic realism",
+            negative_prompt="blurry watermark",
             size="1024x1024",
             model="wan2.7-image-pro",
             extra={"filename_prefix": "ref_face"},
+            ref_image_uris=[
+                "https://example.com/ref.png",
+                "data:image/png;base64,AAAA",
+                "assets/identity/front.png",
+            ],
         )
     )
     assert result.provider == "wan"
     assert result.images[0].url == "https://example.com/out.png"
     assert result.images[0].filename == "ref_face_001.png"
+
+
+def test_ensure_unaccepted_generation_rejects_assets_preview_path() -> None:
+    with pytest.raises(RuntimeError, match="must not publish assets"):
+        ensure_unaccepted_generation_is_staged(
+            {
+                "review_status": "pending",
+                "images": [{"asset_path": "assets/identity/front.png"}],
+            }
+        )
+
+
+def test_ensure_unaccepted_generation_allows_staging_preview_path() -> None:
+    ensure_unaccepted_generation_is_staged(
+        {
+            "review_status": "pending",
+            "images": [{"asset_path": "causal/review/identity/job/front.png"}],
+        }
+    )
+
+
+def test_ensure_unaccepted_generation_rejects_assets_thumbnail_path() -> None:
+    with pytest.raises(RuntimeError, match="must not publish assets"):
+        ensure_unaccepted_generation_is_staged(
+            {
+                "review_status": "pending",
+                "thumbnail_asset_path": "assets/identity/thumb.png",
+                "images": [{"asset_path": "causal/review/identity/job/front.png"}],
+            }
+        )
+
+
+def test_ensure_unaccepted_generation_rejects_nested_images_by_angle_assets_path() -> None:
+    with pytest.raises(RuntimeError, match="must not publish assets"):
+        ensure_unaccepted_generation_is_staged(
+            {
+                "review_status": "pending",
+                "images": [],
+                "images_by_angle": {
+                    "front": [{"asset_path": "assets/identity/front.png"}],
+                },
+            }
+        )
 

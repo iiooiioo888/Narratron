@@ -1,0 +1,15 @@
+{
+  "task_id": 1,
+  "core_id": 1,
+  "character_name": "測試角色",
+  "variant_hash": "a521b7ca59204471b600528bb8524bcefd65c8a41577b0de5c3fe24243b47324",
+  "status": "ready",
+  "processed_at": "2026-08-20T04:19:06.405350Z",
+  "evolution_params": {
+    "age_override": 1
+  },
+  "review_status": "accepted",
+  "thumbnail_asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+  "face_detail_asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+  "face_detail_count": 1
+}

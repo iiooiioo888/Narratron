@@ -10,14 +10,23 @@ from typing import Any, Optional
 
 from fastapi import HTTPException, status
 
-from characteros.imaging.settings import settings as imaging_settings
-from characteros.services.imaging import (
-    ImagingService,
-    finalize_reviewed_generation,
-    sync_review_artifacts,
-)
-from characteros.services.variant_processor import evolve_manifest, sanitize_evolution_params, utcnow_iso
+from characteros.services.imaging import finalize_reviewed_generation, sync_review_artifacts
 from characteros.services.variant_processor import extract_image_request
+from characteros.services.age_span import find_next_runnable_task
+from characteros.services.pipeline_coordinator import (
+    after_image_task_succeeded,
+    sync_age_span_task_states,
+)
+from characteros.services.image_task_runner import (
+    ImageQueueExecution,
+    execute_image_queue_task,
+)
+from characteros.services.queue_task_utils import (
+    apply_review_metadata,
+    build_image_result_metadata,
+    effective_task_status,
+    review_status_from_metadata,
+)
 from characteros.storage.local_characters import LocalCharacterService
 from characteros.utils.hash import compute_variant_hash
 from narratron.charpass.store import CharpassStore
@@ -25,61 +34,6 @@ from narratron.charpass.store import CharpassStore
 logger = logging.getLogger(__name__)
 
 QUEUE_FILENAME = ".characteros-queue.json"
-PREFERRED_RESULT_ANGLES = (
-    "face_detail",
-    "front",
-    "three_quarter",
-    "left",
-    "right",
-    "back",
-    "top",
-    "bottom",
-)
-
-
-def _review_status_from_metadata(result_metadata: dict[str, Any]) -> str | None:
-    image_generation = result_metadata.get("image_generation")
-    if isinstance(image_generation, dict):
-        review = image_generation.get("review")
-        if isinstance(review, dict):
-            status = str(review.get("status") or "").strip().lower()
-            if status:
-                return status
-        status = str(image_generation.get("review_status") or "").strip().lower()
-        if status:
-            return status
-    status = str(result_metadata.get("review_status") or "").strip().lower()
-    return status or None
-
-
-def _effective_task_status(status: Any, result_metadata: dict[str, Any]) -> str:
-    review_status = _review_status_from_metadata(result_metadata)
-    if review_status in {"pending", "accepted", "rejected"}:
-        return review_status
-    normalized_status = str(status or "").strip().lower()
-    return normalized_status or "pending"
-
-
-def _ordered_angles(values: list[Any], *, has_face_detail: bool = False) -> list[str]:
-    seen: set[str] = set()
-    ordered: list[str] = []
-    if has_face_detail:
-        ordered.append("face_detail")
-        seen.add("face_detail")
-    for preferred in PREFERRED_RESULT_ANGLES:
-        if preferred == "face_detail" and not has_face_detail:
-            continue
-        if any(str(value or "").strip() == preferred for value in values):
-            ordered.append(preferred)
-            seen.add(preferred)
-    for value in values:
-        normalized = str(value or "").strip()
-        if normalized and normalized not in seen:
-            ordered.append(normalized)
-            seen.add(normalized)
-    if has_face_detail and "face_detail" not in seen:
-        ordered.insert(0, "face_detail")
-    return ordered
 
 
 def _utcnow() -> datetime:
@@ -96,92 +50,6 @@ def _parse_dt(value: Any) -> datetime:
         except ValueError:
             pass
     return _utcnow()
-
-
-def _prepare_result_urls(core_id: int, payload: dict[str, Any]) -> tuple[str, list[str]]:
-    images = payload.get("images") if isinstance(payload.get("images"), list) else []
-    image_urls: list[str] = []
-    representative_url: str | None = None
-    for image in images:
-        if not isinstance(image, dict):
-            continue
-        asset_path = str(image.get("asset_path") or "").strip()
-        if asset_path:
-            image_url = f"/api/v1/characters/{core_id}/assets/{asset_path}"
-            image_urls.append(image_url)
-            if representative_url is None:
-                representative_url = image_url
-    thumbnail_image = payload.get("thumbnail_image") if isinstance(payload.get("thumbnail_image"), dict) else {}
-    thumbnail_asset_path = str(
-        payload.get("thumbnail_asset_path")
-        or thumbnail_image.get("asset_path")
-        or ""
-    ).strip()
-    face_detail_asset_path = str(payload.get("face_detail_asset_path") or "").strip()
-    representative_asset_path = face_detail_asset_path or thumbnail_asset_path
-    if representative_asset_path:
-        representative_url = f"/api/v1/characters/{core_id}/assets/{representative_asset_path}"
-    else:
-        for angle in PREFERRED_RESULT_ANGLES:
-            for image in images:
-                if not isinstance(image, dict):
-                    continue
-                if str(image.get("angle") or "").strip() != angle:
-                    continue
-                asset_path = str(image.get("asset_path") or "").strip()
-                if asset_path:
-                    representative_url = f"/api/v1/characters/{core_id}/assets/{asset_path}"
-                    break
-            if representative_url:
-                break
-    result_url = representative_url or (image_urls[0] if image_urls else f"/api/v1/characters/{core_id}/variants")
-    return result_url, image_urls
-
-
-def _apply_review_metadata(
-    result_metadata: dict[str, Any],
-    image_generation: dict[str, Any],
-) -> None:
-    review = image_generation.get("review") if isinstance(image_generation.get("review"), dict) else {}
-    review_status = str(review.get("status") or "").strip() or None
-    thumbnail_asset_path = str(image_generation.get("thumbnail_asset_path") or "").strip() or None
-    face_detail_asset_path = str(image_generation.get("face_detail_asset_path") or "").strip() or None
-    representative_asset_path = face_detail_asset_path or thumbnail_asset_path
-    representative_angle = None
-    if face_detail_asset_path:
-        representative_angle = "face_detail"
-    elif thumbnail_asset_path:
-        representative_angle = next(
-            (
-                str(image.get("angle") or "").strip()
-                for image in (image_generation.get("images") or [])
-                if isinstance(image, dict)
-                and str(image.get("asset_path") or "").strip() == thumbnail_asset_path
-                and str(image.get("angle") or "").strip()
-            ),
-            "front",
-        )
-    angles = _ordered_angles(
-        list(image_generation.get("angles") or []),
-        has_face_detail=bool(face_detail_asset_path),
-    )
-    image_generation["review_status"] = review_status
-    image_generation["has_face_detail"] = bool(image_generation.get("face_detail_count") or face_detail_asset_path)
-    image_generation["representative_asset_path"] = representative_asset_path
-    image_generation["representative_angle"] = representative_angle
-    image_generation["image_count"] = len(image_generation.get("image_urls") or [])
-    result_metadata["image_generation"] = image_generation
-    result_metadata["thumbnail_asset_path"] = thumbnail_asset_path
-    result_metadata["face_detail_asset_path"] = face_detail_asset_path
-    result_metadata["face_detail_count"] = image_generation.get("face_detail_count") or 0
-    result_metadata["has_face_detail"] = bool(image_generation.get("face_detail_count") or face_detail_asset_path)
-    result_metadata["representative_asset_path"] = representative_asset_path
-    result_metadata["representative_angle"] = representative_angle
-    result_metadata["review_status"] = review_status
-    result_metadata["effective_status"] = _effective_task_status("ready", result_metadata)
-    result_metadata["purpose"] = image_generation.get("purpose")
-    result_metadata["angles"] = angles
-    result_metadata["image_count"] = len(image_generation.get("image_urls") or [])
 
 
 class LocalQueueManager:
@@ -203,9 +71,25 @@ class LocalQueueManager:
             return {"next_id": 1, "tasks": []}
         data.setdefault("next_id", 1)
         data.setdefault("tasks", [])
+        data.setdefault("worker", {"paused": False})
         if not isinstance(data["tasks"], list):
             data["tasks"] = []
+        if not isinstance(data.get("worker"), dict):
+            data["worker"] = {"paused": False}
+        data["worker"].setdefault("paused", False)
         return data
+
+    def get_worker_control(self) -> dict[str, Any]:
+        worker = self._load().get("worker")
+        if not isinstance(worker, dict):
+            return {"paused": False}
+        return {"paused": bool(worker.get("paused"))}
+
+    def set_worker_paused(self, paused: bool) -> dict[str, Any]:
+        data = self._load()
+        data["worker"] = {"paused": bool(paused)}
+        self._save(data)
+        return {"paused": bool(paused)}
 
     def _save(self, data: dict[str, Any]) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -243,6 +127,7 @@ class LocalQueueManager:
         priority: int = 0,
         profile_version: int = 1,
         character_name: str | None = None,
+        status: str | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """排入或回傳既有任務；回傳 (task_dict, is_new)。"""
         variant_hash = compute_variant_hash(core_id, profile_version, evolution_params)
@@ -269,7 +154,7 @@ class LocalQueueManager:
             "profile_version": profile_version,
             "variant_hash": variant_hash,
             "evolution_params": evolution_params,
-            "status": "pending",
+            "status": str(status or "pending").strip() or "pending",
             "priority": priority,
             "result_url": None,
             "result_metadata": {},
@@ -311,163 +196,67 @@ class LocalQueueManager:
         if str(task.get("status") or "") == "ready":
             return task
 
-        started_at = _utcnow()
         service = character_service or LocalCharacterService(self.root)
         entity_id = self._entity_id_for_core_id(int(task["core_id"]))
         output_dir = f"causal/variants/{task['id']}"
+        full = service.get_character_by_id(int(task["core_id"]))
+        base_manifest = full.profile.manifest if full.profile else {}
+        character_name = task.get("character_name") or full.core.name
+        sibling_tasks = [
+            item for item in tasks if int(item.get("core_id", 0)) == int(task["core_id"])
+        ]
+        store = CharpassStore(self.root)
 
-        try:
-            full = service.get_character_by_id(int(task["core_id"]))
-            base_manifest = full.profile.manifest if full.profile else {}
-            raw_params = task.get("evolution_params") or {}
-            params = sanitize_evolution_params(raw_params)
-            image_request = extract_image_request(raw_params)
-            evolved_manifest = evolve_manifest(base_manifest, params)
-
-            store = CharpassStore(self.root)
-            record = {
-                "task_id": int(task["id"]),
-                "core_id": int(task["core_id"]),
-                "character_name": task.get("character_name") or full.core.name,
-                "variant_hash": task.get("variant_hash"),
-                "status": "ready",
-                "processed_at": utcnow_iso(),
-                "evolution_params": params,
-            }
-            store.write_json(entity_id, f"{output_dir}/evolved-manifest.json", evolved_manifest)
-            store.write_json(entity_id, f"{output_dir}/record.json", record)
-
-            finished_at = _utcnow()
-            task["status"] = "ready"
-            task["character_name"] = task.get("character_name") or full.core.name
-            task["result_url"] = f"/api/v1/characters/{task['core_id']}/assets/{output_dir}/evolved-manifest.json"
-            result_metadata = {
-                "entity_id": entity_id,
-                "output_dir": output_dir,
-                "record_path": f"{output_dir}/record.json",
-                "evolved_manifest_path": f"{output_dir}/evolved-manifest.json",
-                "evolved_manifest": evolved_manifest,
-                "processed_at": finished_at.isoformat(),
-                "evolution_params": params,
-            }
-            if image_request:
-                persist_enabled = bool(image_request.get("persist", True))
-                provider_name = str(image_request.get("provider") or imaging_settings.get_provider() or "null")
-                explicit_model = str(image_request.get("model") or "").strip()
-                explicit_base_url = str(image_request.get("base_url") or "").strip()
-                explicit_api_key = str(image_request.get("api_key") or "").strip()
-                payload = ImagingService(store=store).generate_for_manifest(
-                    evolved_manifest,
-                    purpose=str(image_request.get("purpose") or "identity"),
-                    provider_name=provider_name,
-                    extra=str(image_request.get("extra") or ""),
-                    n=int(image_request.get("n") or 1),
-                    model=explicit_model or ("" if provider_name == "null" else str(imaging_settings.get_model() or "")),
-                    base_url=explicit_base_url or ("" if provider_name == "null" else str(imaging_settings.get_base_url() or "")),
-                    api_key=explicit_api_key or ("" if provider_name == "null" else str(imaging_settings.get_api_key() or "")),
-                    persist_entity_id=entity_id if persist_enabled else None,
-                    multi_angle=bool(image_request.get("multi_angle", True)),
-                    auto_accept=False,
-                )
-                task["result_url"], image_urls = _prepare_result_urls(int(task["core_id"]), payload)
-                review = payload.get("review") if isinstance(payload.get("review"), dict) else {}
-                review_status = str(review.get("status") or "").strip() or None
-                thumbnail_asset_path = str(payload.get("thumbnail_asset_path") or "").strip() or None
-                face_detail_asset_path = str(payload.get("face_detail_asset_path") or "").strip() or None
-                normalized_angles = _ordered_angles(
-                    list(payload.get("angles") or []),
-                    has_face_detail=bool(face_detail_asset_path),
-                )
-                stored_provider = str(payload.get("provider") or provider_name or "").strip() or None
-                stored_model = str(payload.get("model") or "").strip()
-                if provider_name == "null" and not explicit_model:
-                    stored_model = "null"
-                elif not stored_model:
-                    stored_model = explicit_model or None
-                representative_asset_path = face_detail_asset_path or thumbnail_asset_path
-                representative_angle = None
-                if face_detail_asset_path:
-                    representative_angle = "face_detail"
-                elif thumbnail_asset_path:
-                    representative_angle = next(
-                        (
-                            str(image.get("angle") or "").strip()
-                            for image in (payload.get("images") or [])
-                            if isinstance(image, dict)
-                            and str(image.get("asset_path") or "").strip() == thumbnail_asset_path
-                            and str(image.get("angle") or "").strip()
-                        ),
-                        "front",
-                    )
-                result_metadata["persist_entity_id"] = entity_id if persist_enabled else None
-                result_metadata["thumbnail_asset_path"] = thumbnail_asset_path
-                result_metadata["face_detail_asset_path"] = face_detail_asset_path
-                result_metadata["face_detail_count"] = payload.get("face_detail_count") or 0
-                result_metadata["has_face_detail"] = bool(payload.get("face_detail_count") or face_detail_asset_path)
-                result_metadata["representative_asset_path"] = representative_asset_path
-                result_metadata["representative_angle"] = representative_angle
-                result_metadata["provider"] = stored_provider
-                result_metadata["model"] = stored_model
-                result_metadata["purpose"] = payload.get("purpose")
-                result_metadata["angles"] = normalized_angles
-                result_metadata["image_count"] = len(image_urls)
-                result_metadata["image_request"] = image_request
-                result_metadata["image_generation"] = {
-                    "provider": stored_provider,
-                    "model": stored_model,
-                    "purpose": payload.get("purpose"),
-                    "prompt": payload.get("prompt"),
-                    "negative_prompt": payload.get("negative_prompt"),
-                    "multi_angle": payload.get("multi_angle"),
-                    "angles": normalized_angles,
-                    "images": payload.get("images") or [],
-                    "image_urls": image_urls,
-                    "images_by_angle": payload.get("images_by_angle") or {},
-                    "face_detail_images": payload.get("face_detail_images") or [],
-                    "face_detail_asset_path": payload.get("face_detail_asset_path"),
-                    "face_detail_count": payload.get("face_detail_count") or 0,
-                    "thumbnail_image": payload.get("thumbnail_image"),
-                    "thumbnail_asset_path": thumbnail_asset_path,
-                    "review": review,
-                    "review_status": review_status,
-                    "has_face_detail": bool(payload.get("face_detail_count") or face_detail_asset_path),
-                    "representative_asset_path": representative_asset_path,
-                    "representative_angle": representative_angle,
-                    "image_count": len(image_urls),
-                }
-                result_metadata["review_status"] = review_status
-                result_metadata["effective_status"] = _effective_task_status(task["status"], result_metadata)
-                task["review_status"] = result_metadata["review_status"]
-                task["effective_status"] = result_metadata["effective_status"]
-                task["provider"] = stored_provider
-                task["model"] = stored_model
-                record.update(
-                    {
-                        "review_status": result_metadata["review_status"],
-                        "thumbnail_asset_path": result_metadata.get("thumbnail_asset_path"),
-                        "face_detail_asset_path": result_metadata.get("face_detail_asset_path"),
-                        "face_detail_count": result_metadata.get("face_detail_count") or 0,
-                    }
-                )
-                store.write_json(entity_id, f"{output_dir}/record.json", record)
-            task["result_metadata"] = result_metadata
-            task["error_message"] = None
-            task["queue_wait_ms"] = max(
-                0,
-                int((started_at - _parse_dt(task.get("created_at"))).total_seconds() * 1000),
+        outcome = execute_image_queue_task(
+            ImageQueueExecution(
+                core_id=int(task["core_id"]),
+                task_id=int(task["id"]),
+                character_name=str(character_name),
+                raw_evolution_params=task.get("evolution_params") or {},
+                sibling_tasks=sibling_tasks,
+                base_manifest=base_manifest,
+                entity_id=entity_id,
+                store=store,
+                output_dir=output_dir,
+                variant_hash=str(task.get("variant_hash") or ""),
+                save_manifest=lambda manifest: service.save_charpass(
+                    int(task["core_id"]),
+                    manifest,
+                    snapshot_history=False,
+                ),
+                created_at=task.get("created_at"),
             )
-            task["generation_duration_ms"] = max(
-                0,
-                int((finished_at - started_at).total_seconds() * 1000),
-            )
-            task["updated_at"] = finished_at.isoformat()
-        except Exception as exc:
-            task["status"] = "failed"
+        )
+
+        task["character_name"] = character_name
+        task["status"] = outcome.status
+        task["result_metadata"] = outcome.result_metadata
+        task["error_message"] = outcome.error_message
+        task["review_status"] = outcome.review_status
+        task["effective_status"] = outcome.effective_status
+        task["provider"] = outcome.provider
+        task["model"] = outcome.model
+        task["queue_wait_ms"] = outcome.queue_wait_ms
+        task["generation_duration_ms"] = outcome.generation_duration_ms
+        if outcome.result_url:
+            task["result_url"] = outcome.result_url
+        if outcome.status == "failed":
             task["retry_count"] = int(task.get("retry_count") or 0) + 1
-            task["error_message"] = str(exc)
-            task["updated_at"] = _utcnow().isoformat()
+        task["updated_at"] = _utcnow().isoformat()
+
+        if outcome.status == "ready":
+            sync_age_span_task_states(tasks)
 
         self._save(data)
+        if outcome.status == "ready":
+            data = self._load()
+            after_image_task_succeeded(
+                data["tasks"],
+                enqueue=self.request_variant_generation,
+                core_id=int(task.get("core_id") or 0) or None,
+                reload_tasks=lambda: self._load()["tasks"],
+            )
+            self._save(data)
         return task
 
     def review_task(
@@ -532,7 +321,15 @@ class LocalQueueManager:
             service.save_charpass(int(task["core_id"]), promoted["manifest"])
             promoted_payload = promoted["payload"]
             image_generation.update(promoted_payload)
-            task["result_url"], _image_urls = _prepare_result_urls(int(task["core_id"]), image_generation)
+            task["result_url"], _, _image_urls = build_image_result_metadata(
+                core_id=int(task["core_id"]),
+                payload=image_generation,
+                image_request={},
+                provider_name=str(image_generation.get("provider") or ""),
+                explicit_model=str(image_generation.get("model") or ""),
+                persist_entity_id=entity_id or None,
+                processed_at=_utcnow().isoformat(),
+            )
         else:
             review["status"] = "rejected"
             review["rejected_at"] = utcnow_iso()
@@ -545,8 +342,8 @@ class LocalQueueManager:
         if entity_id:
             sync_review_artifacts(entity_id, image_generation, store=CharpassStore(self.root))
 
-        _apply_review_metadata(task["result_metadata"], image_generation)
-        task["result_metadata"]["effective_status"] = _effective_task_status(
+        apply_review_metadata(task["result_metadata"], image_generation)
+        task["result_metadata"]["effective_status"] = effective_task_status(
             task.get("status"),
             task["result_metadata"],
         )
@@ -575,17 +372,113 @@ class LocalQueueManager:
         self._save(data)
         return task
 
+    def reset_failed_tasks(
+        self,
+        *,
+        core_id: int | None = None,
+        from_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """將 failed 任務重設為 pending，以便逐筆重試。"""
+        data = self._load()
+        tasks: list[dict[str, Any]] = data["tasks"]
+        reset: list[dict[str, Any]] = []
+        now = _utcnow().isoformat()
+        for task in tasks:
+            if str(task.get("status") or "").strip().lower() != "failed":
+                continue
+            if core_id is not None and int(task.get("core_id", 0)) != int(core_id):
+                continue
+            if from_id is not None and int(task.get("id", 0)) < int(from_id):
+                continue
+            task["status"] = "waiting"
+            task["error_message"] = None
+            task["updated_at"] = now
+            reset.append(task)
+        if reset:
+            data = self._load()
+            sync_age_span_task_states(data["tasks"])
+            self._save(data)
+        return reset
+
+    def clear_tasks(self, *, core_id: int | None = None) -> int:
+        """清空佇列任務；可選只清除指定角色的任務。"""
+        data = self._load()
+        tasks: list[dict[str, Any]] = data["tasks"]
+        if core_id is None:
+            removed = len(tasks)
+            data["tasks"] = []
+        else:
+            kept = [task for task in tasks if int(task.get("core_id", 0)) != int(core_id)]
+            removed = len(tasks) - len(kept)
+            data["tasks"] = kept
+        if removed:
+            self._save(data)
+        return removed
+
+    def reset_task_to_pending(self, task_id: int) -> dict[str, Any]:
+        """將單一 failed 任務重設為 pending。"""
+        data = self._load()
+        tasks: list[dict[str, Any]] = data["tasks"]
+        task = next((item for item in tasks if int(item.get("id", 0)) == int(task_id)), None)
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Queue task {task_id} not found",
+            )
+        if str(task.get("status") or "").strip().lower() != "failed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only failed tasks can be reset to pending",
+            )
+        task["status"] = "waiting"
+        task["error_message"] = None
+        task["updated_at"] = _utcnow().isoformat()
+        sync_age_span_task_states(data["tasks"])
+        self._save(data)
+        return task
+
+    def normalize_age_span_statuses(self) -> None:
+        data = self._load()
+        sync_age_span_task_states(data["tasks"])
+        self._save(data)
+
+    def ensure_following_age_span_tasks(self, *, core_id: int | None = None) -> list[dict[str, Any]]:
+        """年齡軸完成一步後，只再排入下一步，避免一次塞滿 1–80 歲任務。"""
+        data = self._load()
+        created = after_image_task_succeeded(
+            data["tasks"],
+            enqueue=self.request_variant_generation,
+            core_id=core_id,
+            wake_worker=False,
+            reload_tasks=lambda: self._load()["tasks"],
+        )
+        self._save(data)
+        return created
+
     def process_next(
         self,
         *,
         character_service: LocalCharacterService | None = None,
+        core_id: int | None = None,
     ) -> Optional[dict[str, Any]]:
-        """處理優先級最高且最早建立的 pending 任務。"""
-        tasks = self.list_tasks(status="pending", limit=1)
-        if not tasks:
+        """處理下一筆可執行的 pending 任務（年齡軸依依賴逐步執行）。"""
+        data = self._load()
+        from characteros.services.pipeline_coordinator import prepare_for_processing
+
+        prepare_for_processing(
+            data["tasks"],
+            enqueue=self.request_variant_generation,
+            core_id=core_id,
+        )
+        self._save(data)
+        scoped = data["tasks"] if core_id is None else [
+            item for item in data["tasks"] if int(item.get("core_id", 0)) == int(core_id)
+        ]
+        runnable = find_next_runnable_task(scoped)
+        if not runnable:
             return None
         return self.process_task(
-            int(tasks[0]["id"]),
+            int(runnable["id"]),
             character_service=character_service,
         )
 
@@ -595,16 +488,14 @@ class LocalQueueManager:
         limit: int = 20,
         character_service: LocalCharacterService | None = None,
     ) -> list[dict[str, Any]]:
-        """批次處理多筆 pending 任務。"""
-        pending = self.list_tasks(status="pending", limit=max(1, min(limit, 200)))
+        """批次處理多筆 pending 任務（每次只處理當下可執行者）。"""
         processed: list[dict[str, Any]] = []
-        for task in pending:
-            processed.append(
-                self.process_task(
-                    int(task["id"]),
-                    character_service=character_service,
-                )
-            )
+        max_count = max(1, min(limit, 200))
+        for _ in range(max_count):
+            task = self.process_next(character_service=character_service)
+            if task is None:
+                break
+            processed.append(task)
         return processed
 
     def list_tasks(
@@ -621,19 +512,20 @@ class LocalQueueManager:
             tasks = [t for t in tasks if int(t.get("core_id", 0)) == core_id]
         for task in tasks:
             result_metadata = task.get("result_metadata") if isinstance(task.get("result_metadata"), dict) else {}
-            task["review_status"] = _review_status_from_metadata(result_metadata)
-            task["effective_status"] = _effective_task_status(task.get("status"), result_metadata)
+            task["review_status"] = review_status_from_metadata(result_metadata)
+            task["effective_status"] = effective_task_status(task.get("status"), result_metadata)
         tasks.sort(
             key=lambda t: (
                 -int(t.get("priority") or 0),
                 t.get("created_at") or "",
             ),
         )
-        return tasks[: max(1, min(limit, 200))]
+        return tasks[: max(1, min(limit, 400))]
 
     def get_queue_stats(self) -> dict[str, Any]:
         tasks = self._load()["tasks"]
         pending = [t for t in tasks if t.get("status") == "pending"]
+        waiting = [t for t in tasks if t.get("status") == "waiting"]
         ready = [t for t in tasks if t.get("status") == "ready"]
         failed = [t for t in tasks if t.get("status") == "failed"]
 
@@ -651,6 +543,7 @@ class LocalQueueManager:
 
         return {
             "total_pending": len(pending),
+            "total_waiting": len(waiting),
             "total_ready": len(ready),
             "total_failed": len(failed),
             "average_wait_time_ms": avg_wait,

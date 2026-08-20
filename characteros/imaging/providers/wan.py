@@ -7,9 +7,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 from characteros.imaging.base import GeneratedImage, ImageGenProvider, ImageGenRequest, ImageGenResult
+from characteros.imaging.ref_uris import WAN_MAX_REF_IMAGES
 from characteros.imaging.settings import settings
 
 WAN_GENERATION_PATH = "/api/v1/services/aigc/multimodal-generation/generation"
+WAN_MAX_PROMPT_CHARS = 1800
 
 _SIZE_TO_WAN = {
     "1024x1024": "1K",
@@ -52,13 +54,38 @@ def normalize_wan_size(size: str) -> str:
     return mapped or "2K"
 
 
+def trim_wan_prompt(prompt: str, *, limit: int = WAN_MAX_PROMPT_CHARS) -> str:
+    text = str(prompt or "").strip()
+    if len(text) <= limit:
+        return text
+    head = max(200, limit // 2)
+    tail = max(200, limit - head - 5)
+    return f"{text[:head].rstrip()} … {text[-tail:].lstrip()}"
+
+
+def _wan_ready_ref_uris(ref_image_uris: list[str]) -> list[str]:
+    """WAN 只接受可公開抓取的 http(s) 圖；本機路徑與 data URI 會觸發 400。"""
+    prepared: list[str] = []
+    seen: set[str] = set()
+    for uri in ref_image_uris:
+        cleaned = str(uri or "").strip()
+        lowered = cleaned.lower()
+        if not lowered.startswith(("http://", "https://")):
+            continue
+        if cleaned in seen:
+            continue
+        seen.add(cleaned)
+        prepared.append(cleaned)
+        if len(prepared) >= WAN_MAX_REF_IMAGES:
+            break
+    return prepared
+
+
 def _build_content(prompt: str, ref_image_uris: list[str]) -> list[dict[str, str]]:
     content: list[dict[str, str]] = []
-    for uri in ref_image_uris:
-        cleaned = str(uri).strip()
-        if cleaned:
-            content.append({"image": cleaned})
-    content.append({"text": prompt})
+    for uri in _wan_ready_ref_uris(ref_image_uris):
+        content.append({"image": uri})
+    content.append({"text": trim_wan_prompt(prompt)})
     return content
 
 
@@ -136,13 +163,18 @@ class WanImageProvider(ImageGenProvider):
 
         model = request.model or self.default_model
         endpoint = resolve_wan_generation_url(self.base_url)
+        from characteros.imaging.ref_uris import flatten_ref_uris_for_wan
+
+        ref_uris = _wan_ready_ref_uris(flatten_ref_uris_for_wan(list(request.ref_image_uris)))
         parameters: dict[str, Any] = {
             "size": normalize_wan_size(request.size),
-            "n": request.n,
+            "n": max(1, min(int(request.n or 1), 4)),
             "watermark": False,
         }
+        prompt = trim_wan_prompt(request.prompt)
         if request.negative_prompt:
-            parameters["negative_prompt"] = request.negative_prompt
+            avoid = trim_wan_prompt(str(request.negative_prompt), limit=240)
+            prompt = trim_wan_prompt(f"{prompt}\nAvoid: {avoid}")
 
         payload = {
             "model": model,
@@ -150,7 +182,7 @@ class WanImageProvider(ImageGenProvider):
                 "messages": [
                     {
                         "role": "user",
-                        "content": _build_content(request.prompt, request.ref_image_uris),
+                        "content": _build_content(prompt, ref_uris),
                     }
                 ]
             },
@@ -166,7 +198,17 @@ class WanImageProvider(ImageGenProvider):
             json=payload,
             timeout=self.timeout_s,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except Exception as exc:
+            detail = ""
+            if hasattr(exc, "response") and exc.response is not None:
+                detail = str(getattr(exc.response, "text", "") or "").strip()
+            elif response is not None:
+                detail = str(response.text or "").strip()
+            raise RuntimeError(
+                f"WAN 生圖 API 錯誤: {detail[:800] if detail else exc}"
+            ) from exc
         body = response.json()
         prefix = str(request.extra.get("filename_prefix") or request.purpose)
         images = _parse_wan_images(body, filename_prefix=prefix)

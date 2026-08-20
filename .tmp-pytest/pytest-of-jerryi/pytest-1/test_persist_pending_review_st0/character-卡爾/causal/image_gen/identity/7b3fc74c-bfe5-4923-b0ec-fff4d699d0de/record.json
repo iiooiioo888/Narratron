@@ -1,0 +1,70 @@
+{
+  "job_id": "7b3fc74c-bfe5-4923-b0ec-fff4d699d0de",
+  "created_at": "2026-08-20T04:25:14.508384Z",
+  "provider": "wan",
+  "model": "wan2.7-image-pro",
+  "purpose": "identity",
+  "size": "1024x1024",
+  "multi_angle": false,
+  "angles": [
+    "front"
+  ],
+  "request": {
+    "purpose": "identity",
+    "prompt": "卡爾, human, cinematic realism, 冷調都市, 側光, 50mm, muted contrast, weathered, color palette: #1B1F2A, outfit: 舊白色亞麻襯衫, hair: 後梳黑髮, lean build, scar under left eye, 卡爾 reference sheet for identity, highly detailed face, avoid stylized exaggeration, consistency notes: 臉必須一致, front view, single character turnaround reference, one person only, one subject per image, face clearly visible, neutral expression, model sheet consistency, same character identity across all turnaround angles, front view, facing camera directly, full body, neutral standing pose, arms relaxed at sides, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, keep the same named character, same rendering style, same visual medium, same aesthetic treatment and same design language, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, single character only, one person only, full body isolated subject, each image contains exactly one character, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage",
+    "negative_prompt": "cartoon, watermark, multiple characters, extra person, duplicate figure, identity drift, different face, face swap, split face, double head, extra limbs, two people, group shot, lineup, contact sheet, diptych, triptych, mirrored subject, identity mismatch, alternate hairstyle, alternate costume, inconsistent facial structure",
+    "size": "1024x1024",
+    "n": 1,
+    "model": "",
+    "ref_image_uris": [],
+    "extra": {
+      "asset_dir": "assets/identity",
+      "filename_prefix": "ref_face",
+      "angle": "front",
+      "multi_angle": false
+    }
+  },
+  "response": {
+    "provider": "wan",
+    "model": "wan2.7-image-pro",
+    "images": [
+      {
+        "filename": "ref_face_front_001.png",
+        "url": "https://example.com/front.png",
+        "has_bytes": false,
+        "mime_type": "image/png",
+        "angle": "front",
+        "requested_angle": "front",
+        "requested_purpose": "identity",
+        "prompt": "卡爾, human, cinematic realism, 冷調都市, 側光, 50mm, muted contrast, weathered, color palette: #1B1F2A, outfit: 舊白色亞麻襯衫, hair: 後梳黑髮, lean build, scar under left eye, 卡爾 reference sheet for identity, highly detailed face, avoid stylized exaggeration, consistency notes: 臉必須一致, front view, single character turnaround reference, one person only, one subject per image, face clearly visible, neutral expression, model sheet consistency, same character identity across all turnaround angles, front view, facing camera directly, full body, neutral standing pose, arms relaxed at sides, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, keep the same named character, same rendering style, same visual medium, same aesthetic treatment and same design language, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, single character only, one person only, full body isolated subject, each image contains exactly one character, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage",
+        "asset_path": "assets/identity/ref_face_front_001.png"
+      }
+    ],
+    "images_by_angle": {
+      "front": [
+        {
+          "filename": "ref_face_front_001.png",
+          "url": "https://example.com/front.png",
+          "has_bytes": false,
+          "mime_type": "image/png",
+          "angle": "front",
+          "requested_angle": "front",
+          "requested_purpose": "identity",
+          "prompt": "卡爾, human, cinematic realism, 冷調都市, 側光, 50mm, muted contrast, weathered, color palette: #1B1F2A, outfit: 舊白色亞麻襯衫, hair: 後梳黑髮, lean build, scar under left eye, 卡爾 reference sheet for identity, highly detailed face, avoid stylized exaggeration, consistency notes: 臉必須一致, front view, single character turnaround reference, one person only, one subject per image, face clearly visible, neutral expression, model sheet consistency, same character identity across all turnaround angles, front view, facing camera directly, full body, neutral standing pose, arms relaxed at sides, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, keep the same named character, same rendering style, same visual medium, same aesthetic treatment and same design language, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, single character only, one person only, full body isolated subject, each image contains exactly one character, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage",
+          "asset_path": "assets/identity/ref_face_front_001.png"
+        }
+      ]
+    },
+    "raw": {}
+  },
+  "status": "accepted",
+  "review_status": "accepted",
+  "accepted_at": "2026-08-20T04:25:14.538381Z",
+  "rejected_at": null,
+  "thumbnail_asset_path": "assets/identity/ref_face_front_001.png",
+  "face_detail_asset_path": null,
+  "face_detail_count": 0,
+  "asset_paths": [
+    "assets/identity/ref_face_front_001.png"
+  ]
+}

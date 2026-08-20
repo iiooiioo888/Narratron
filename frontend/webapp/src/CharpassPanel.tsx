@@ -60,8 +60,19 @@ interface QueueTask {
   status: string
   review_status?: string | null
   effective_status?: string | null
+  purpose?: string | null
+  angles?: string[]
+  image_count?: number
+  thumbnail_asset_path?: string | null
+  face_detail_asset_path?: string | null
+  representative_asset_path?: string | null
+  representative_angle?: string | null
+  has_face_detail?: boolean
+  face_detail_count?: number
   priority: number
   error_message?: string | null
+  retry_count?: number
+  max_retries?: number
   result_url?: string | null
   result_metadata?: Record<string, unknown>
   created_at?: string
@@ -87,9 +98,26 @@ function firstNonEmptyString(...values: unknown[]): string {
   return ''
 }
 
-function imageAssetPath(source: unknown): string {
+function previewAssetPath(source: unknown, reviewStatus?: string): string {
   const item = asRecord(source)
-  return firstNonEmptyString(item.final_asset_path, item.asset_path, item.path)
+  const status = normalizeStatus(reviewStatus ?? '')
+  if (status === 'accepted' || status === 'ready') {
+    return firstNonEmptyString(item.final_asset_path, item.asset_path, item.path)
+  }
+  if (status === 'rejected') {
+    return ''
+  }
+  return firstNonEmptyString(item.asset_path, item.final_asset_path, item.path)
+}
+
+function taskTopLevelString(task: QueueTask, field: keyof QueueTask): string {
+  const top = task[field]
+  if (typeof top === 'string' && top.trim()) {
+    return top.trim()
+  }
+  const metadata = asRecord(task.result_metadata)
+  const imageGeneration = asRecord(metadata.image_generation)
+  return firstNonEmptyString(metadata[field as string], imageGeneration[field as string])
 }
 
 function imageRemoteUrl(source: unknown): string {
@@ -107,18 +135,28 @@ function imageSummary(source: unknown, maxLength = 96): string | undefined {
 function taskImagePayload(task: QueueTask): Record<string, unknown> {
   const resultMetadata = asRecord(task.result_metadata)
   const imageGeneration = asRecord(resultMetadata.image_generation)
-  if (Object.keys(imageGeneration).length) {
-    return imageGeneration
+  const merged: Record<string, unknown> = { ...imageGeneration }
+  if (task.purpose) merged.purpose = task.purpose
+  if (task.angles?.length) merged.angles = task.angles
+  if (task.thumbnail_asset_path) merged.thumbnail_asset_path = task.thumbnail_asset_path
+  if (task.face_detail_asset_path) merged.face_detail_asset_path = task.face_detail_asset_path
+  if (task.representative_asset_path) merged.representative_asset_path = task.representative_asset_path
+  if (task.representative_angle) merged.representative_angle = task.representative_angle
+  if (task.has_face_detail != null) merged.has_face_detail = task.has_face_detail
+  if (task.face_detail_count != null) merged.face_detail_count = task.face_detail_count
+  if (task.image_count != null) merged.image_count = task.image_count
+  if (Object.keys(merged).length) {
+    return merged
   }
   return resultMetadata
 }
 
-function mergedQueueImages(payload: Record<string, unknown>): unknown[] {
+function mergedQueueImages(payload: Record<string, unknown>, reviewStatus?: string): unknown[] {
   const bucket = new Map<string, unknown>()
 
   const register = (source: unknown, forcedAngle?: string) => {
     const item = asRecord(source)
-    const assetPath = imageAssetPath(item)
+    const assetPath = previewAssetPath(item, reviewStatus)
     const rawUrl = imageRemoteUrl(item)
     if (!assetPath && !rawUrl) {
       return
@@ -146,29 +184,28 @@ function mergedQueueImages(payload: Record<string, unknown>): unknown[] {
   return [...bucket.values()]
 }
 
-function queueImageCollections(payload: Record<string, unknown>): unknown[] {
-  return mergedQueueImages(payload)
+function queueImageCollections(payload: Record<string, unknown>, reviewStatus?: string): unknown[] {
+  return mergedQueueImages(payload, reviewStatus)
 }
 
 function taskPreviewMetadata(task: QueueTask): Record<string, string> {
+  const reviewStatus = taskReviewStatus(task)
   const imageGen = taskImagePayload(task)
   const detailImages = taskDetailImages('', task)
   const detailPaths = detailImages.map((item) => item.path).filter(Boolean)
   const faceDetailByAngle = asArray(asRecord(imageGen.images_by_angle).face_detail)
   const faceDetailAssetPath = firstNonEmptyString(
-    imageGen.face_detail_asset_path,
-    asRecord(faceDetailByAngle[0]).final_asset_path,
-    asRecord(faceDetailByAngle[0]).asset_path,
-    asRecord(asArray(imageGen.face_detail_images)[0]).final_asset_path,
-    asRecord(asArray(imageGen.face_detail_images)[0]).asset_path,
+    taskTopLevelString(task, 'face_detail_asset_path'),
+    previewAssetPath(faceDetailByAngle[0], reviewStatus),
+    previewAssetPath(asArray(imageGen.face_detail_images)[0], reviewStatus),
     detailImages.find((item) => item.angle === 'face_detail')?.path,
     detailPaths.find((path) => path.includes('face_detail')),
   )
   const thumbnailAssetPath = firstNonEmptyString(
     faceDetailAssetPath,
-    imageGen.thumbnail_asset_path,
-    asRecord(imageGen.thumbnail_image).final_asset_path,
-    asRecord(imageGen.thumbnail_image).asset_path,
+    taskTopLevelString(task, 'thumbnail_asset_path'),
+    taskTopLevelString(task, 'representative_asset_path'),
+    previewAssetPath(imageGen.thumbnail_image, reviewStatus),
     detailImages.find((item) => item.angle !== 'face_detail')?.path,
     detailPaths[0],
   )
@@ -185,9 +222,8 @@ function taskPreviewMetadata(task: QueueTask): Record<string, string> {
 function mergeTaskPreviewSummaries(tasks: QueueTask[]): Record<string, CharacterSummary> {
   const previewRank = (task: QueueTask) => {
     const reviewStatus = taskReviewStatus(task)
-    if (reviewStatus === 'accepted') return 0
+    if (reviewStatus === 'accepted' || normalizeStatus(task.status) === 'ready') return 0
     if (reviewStatus === 'pending') return 1
-    if (effectiveTaskStatus(task) === 'ready') return 2
     return 3
   }
   const ordered = [...tasks].sort((left, right) => {
@@ -199,9 +235,7 @@ function mergeTaskPreviewSummaries(tasks: QueueTask[]): Record<string, Character
   })
   const next: Record<string, CharacterSummary> = {}
   for (const task of ordered) {
-    if (taskReviewStatus(task) === 'rejected') {
-      continue
-    }
+    if (taskReviewStatus(task) !== 'accepted' && normalizeStatus(task.status) !== 'ready') continue
     const characterId = String(task.core_id)
     if (next[characterId]) {
       continue
@@ -219,28 +253,37 @@ function mergeTaskPreviewSummaries(tasks: QueueTask[]): Record<string, Character
   return next
 }
 
-function hasPendingAccept(task: QueueTask): boolean {
-  return normalizeStatus(task.status) === 'ready' && taskReviewStatus(task) === 'pending'
-}
-
 function stopSummaryToggle(event: React.MouseEvent<HTMLElement>) {
   event.preventDefault()
   event.stopPropagation()
 }
 
-function reviewStatusLabel(task: QueueTask): string | null {
-  const status = taskReviewStatus(task)
-  if (!status) {
+function reviewStatusLabelFromStatus(status?: string): string | null {
+  const normalized = normalizeStatus(status)
+  if (!normalized) {
     return null
   }
-  if (status === 'pending') return '待接受'
-  if (status === 'accepted') return '已接受'
-  if (status === 'rejected') return '已拒絕'
-  return status
+  if (normalized === 'pending') return '等待生成'
+  if (normalized === 'accepted' || normalized === 'ready') return '已入庫'
+  if (normalized === 'rejected') return '已拒絕'
+  return normalized
+}
+
+function branchReviewStatusLabel(branch: VersionBranchItem): string | null {
+  const summaryFields = asRecord(branch.summary_fields)
+  return reviewStatusLabelFromStatus(
+    firstNonEmptyString(
+      branch.review_status,
+      branch.review_label,
+      String(summaryFields.review_label ?? ''),
+      String(summaryFields.review_status ?? ''),
+    ),
+  )
 }
 
 interface QueueStats {
   total_pending: number
+  total_waiting?: number
   total_ready: number
   total_failed: number
   average_wait_time_ms: number
@@ -252,6 +295,300 @@ interface QueueTaskListResponse {
   stats: QueueStats
   tasks: QueueTask[]
   total: number
+}
+
+interface AgeSpanStep {
+  task_id?: number | null
+  step_index: number
+  phase: string
+  age?: number | null
+  status: string
+  error_message?: string | null
+}
+
+interface QueueWorkerStatus {
+  paused: boolean
+  busy: boolean
+  auto_run: boolean
+  last_task_id?: number | null
+  last_status?: string | null
+  last_error?: string | null
+}
+
+interface AgeSpanPipelineStatus {
+  pipeline_id?: string | null
+  core_id?: number | null
+  character_name?: string | null
+  total_steps: number
+  accepted_count: number
+  ready_pending_review_count: number
+  pending_count: number
+  waiting_count?: number
+  failed_count: number
+  blocking_task_id?: number | null
+  blocking_reason?: string | null
+  next_runnable_task_id?: number | null
+  next_phase?: string | null
+  next_age?: number | null
+  has_open_pipeline: boolean
+  steps?: AgeSpanStep[]
+}
+
+type PipelineStepResult = 'blocked' | 'processed' | 'await_review' | 'idle' | 'failed'
+
+type AgeSpanPhaseTab = 'face_detail' | 'tpose'
+
+function ageSpanStepsForPhase(steps: AgeSpanStep[], phase: AgeSpanPhaseTab): AgeSpanStep[] {
+  return steps.filter((step) => normalizeStatus(step.phase) === phase)
+}
+
+function ageSpanStepStatusLabel(status: string): string {
+  const normalized = normalizeStatus(status)
+  if (normalized === 'accepted') return '已入庫'
+  if (normalized === 'ready') return '已入庫'
+  if (normalized === 'pending') return '等待生成'
+  if (normalized === 'waiting') return '排隊中'
+  if (normalized === 'rejected') return '拒絕'
+  if (normalized === 'missing') return '—'
+  return normalized || '—'
+}
+
+function countStepsByStatus(steps: AgeSpanStep[], status: string): number {
+  const target = normalizeStatus(status)
+  return steps.filter((step) => normalizeStatus(step.status) === target).length
+}
+
+type WorkflowPhase = 'setup' | 'generate' | 'complete'
+
+interface WorkflowSnapshot {
+  phase: WorkflowPhase
+  title: string
+  hint: string
+  canAutoRun: boolean
+  hasFailed: boolean
+  isEmpty: boolean
+  isComplete: boolean
+}
+
+const WORKFLOW_STEPS: Array<{ key: WorkflowPhase; label: string }> = [
+  { key: 'setup', label: '建立任務' },
+  { key: 'generate', label: '自動生圖入庫' },
+  { key: 'complete', label: '完成' },
+]
+
+const WORKFLOW_PHASE_ORDER: WorkflowPhase[] = ['setup', 'generate', 'complete']
+
+const AUTO_CONTINUE_STORAGE_KEY = 'characteros-queue-auto-continue'
+
+function deriveWorkflowSnapshot(
+  queueData: QueueTaskListResponse | null,
+  ageSpanStatus: AgeSpanPipelineStatus | null,
+  queueAutoRun: boolean,
+): WorkflowSnapshot {
+  const stats = queueData?.stats
+  const taskCount = queueData?.tasks?.length ?? 0
+  const failedCount = stats?.total_failed ?? ageSpanStatus?.failed_count ?? 0
+  const pendingCount = stats?.total_pending ?? ageSpanStatus?.pending_count ?? 0
+  const waitingCount = stats?.total_waiting ?? ageSpanStatus?.waiting_count ?? 0
+
+  if (taskCount === 0) {
+    return {
+      phase: 'setup',
+      title: '準備建立生圖任務',
+      hint: '選擇角色後，一鍵建立 1–80 歲年齡軸；系統會自動逐步生圖並直接入庫。',
+      canAutoRun: false,
+      hasFailed: false,
+      isEmpty: true,
+      isComplete: false,
+    }
+  }
+
+  const totalSteps = ageSpanStatus?.total_steps ?? 0
+  const acceptedCount = ageSpanStatus?.accepted_count ?? 0
+  if (totalSteps > 0 && acceptedCount >= totalSteps && pendingCount === 0 && waitingCount === 0) {
+    return {
+      phase: 'complete',
+      title: '年齡軸已全部完成',
+      hint: `${totalSteps} 步生圖流程已完成，可清空佇列或建立新任務。`,
+      canAutoRun: false,
+      hasFailed: failedCount > 0,
+      isEmpty: false,
+      isComplete: true,
+    }
+  }
+
+  if (queueAutoRun || pendingCount > 0 || waitingCount > 0 || ageSpanStatus?.next_runnable_task_id) {
+    return {
+      phase: 'generate',
+      title: queueAutoRun ? '自動生圖進行中' : '有待處理任務',
+      hint: queueAutoRun
+        ? '後端正在向 AI 請求生圖；完成後自動入庫並接下一筆。'
+        : '後端 worker 已暫停。按「繼續後端生圖」即可從下一步接著跑。',
+      canAutoRun: !queueAutoRun && (pendingCount > 0 || waitingCount > 0),
+      hasFailed: failedCount > 0,
+      isEmpty: false,
+      isComplete: false,
+    }
+  }
+
+  return {
+    phase: 'complete',
+    title: '佇列閒置',
+    hint: '目前沒有待處理任務。',
+    canAutoRun: false,
+    hasFailed: failedCount > 0,
+    isEmpty: false,
+    isComplete: false,
+  }
+}
+
+function WorkflowStepper({ phase }: { phase: WorkflowPhase }) {
+  const currentIndex = WORKFLOW_PHASE_ORDER.indexOf(phase)
+  return (
+    <div className="workflow-stepper" aria-label="生圖工作流步驟">
+      {WORKFLOW_STEPS.map((step, index) => {
+        const isComplete = index < currentIndex
+        const isCurrent = index === currentIndex
+        return (
+          <div
+            key={step.key}
+            className={`workflow-step${isComplete ? ' is-complete' : ''}${isCurrent ? ' is-current' : ''}`}
+          >
+            <span className="workflow-step-index">{isComplete ? '✓' : index + 1}</span>
+            <span className="workflow-step-label">{step.label}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function QueueStatGrid({
+  stats,
+  ageSpanStatus,
+  queueAutoRun,
+}: {
+  stats?: QueueStats | null
+  ageSpanStatus: AgeSpanPipelineStatus | null
+  queueAutoRun: boolean
+}) {
+  const accepted = ageSpanStatus?.accepted_count ?? 0
+  const total = ageSpanStatus?.total_steps ?? 0
+  return (
+    <div className="queue-stat-grid" aria-label="佇列統計">
+      <div className={`queue-stat-card${queueAutoRun ? ' is-active' : ''}`}>
+        <span className="queue-stat-label">自動流程</span>
+        <strong className="queue-stat-value">{queueAutoRun ? '執行中' : '閒置'}</strong>
+      </div>
+      <div className="queue-stat-card">
+        <span className="queue-stat-label">本步待生</span>
+        <strong className="queue-stat-value">{stats?.total_pending ?? ageSpanStatus?.pending_count ?? 0}</strong>
+      </div>
+      <div className="queue-stat-card">
+        <span className="queue-stat-label">後續排隊</span>
+        <strong className="queue-stat-value">{stats?.total_waiting ?? ageSpanStatus?.waiting_count ?? 0}</strong>
+      </div>
+      <div className="queue-stat-card">
+        <span className="queue-stat-label">已完成</span>
+        <strong className="queue-stat-value">
+          {stats?.total_ready ?? ageSpanStatus?.accepted_count ?? 0}
+        </strong>
+      </div>
+      <div className={`queue-stat-card${(stats?.total_failed ?? ageSpanStatus?.failed_count ?? 0) > 0 ? ' queue-stat-card--warn' : ''}`}>
+        <span className="queue-stat-label">失敗</span>
+        <strong className="queue-stat-value">{stats?.total_failed ?? ageSpanStatus?.failed_count ?? 0}</strong>
+      </div>
+      {total > 0 ? (
+        <div className="queue-stat-card queue-stat-card--progress">
+          <span className="queue-stat-label">已入庫</span>
+          <strong className="queue-stat-value">
+            {accepted}/{total}
+          </strong>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function QueuePhaseProgress({
+  ageSpanSteps,
+}: {
+  ageSpanSteps: AgeSpanStep[]
+}) {
+  const phases: Array<{ key: AgeSpanPhaseTab; label: string; className: string }> = [
+    { key: 'face_detail', label: '面部細緻 1–80 歲', className: 'purpose-face-detail' },
+    { key: 'tpose', label: 'T 型外觀 1–80 歲', className: 'purpose-tpose' },
+  ]
+  return (
+    <div className="queue-phase-progress">
+      {phases.map((phase) => {
+        const steps = ageSpanStepsForPhase(ageSpanSteps, phase.key)
+        const accepted = countStepsByStatus(steps, 'accepted') + countStepsByStatus(steps, 'ready')
+        const pending = countStepsByStatus(steps, 'pending')
+        const waiting = countStepsByStatus(steps, 'waiting')
+        const failed = countStepsByStatus(steps, 'failed')
+        const total = steps.length || 80
+        const percent = Math.round((accepted / total) * 100)
+        return (
+          <div key={phase.key} className="queue-phase-progress-row">
+            <div className="queue-phase-progress-header">
+              <span className={`pill ${phase.className}`}>{phase.label}</span>
+              <span className="queue-phase-progress-count">
+                {accepted}/{total} 已入庫
+                {pending > 0 ? ` · ${pending} 進行中` : ''}
+                {waiting > 0 ? ` · ${waiting} 排隊` : ''}
+                {failed > 0 ? ` · ${failed} 失敗` : ''}
+              </span>
+            </div>
+            <div className="pipeline-progress-bar" aria-hidden="true">
+              <div className="pipeline-progress-fill" style={{ width: `${Math.min(100, percent)}%` }} />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function QueueKeyboardHints({ visible }: { visible: boolean }) {
+  if (!visible) {
+    return null
+  }
+  return (
+    <div className="queue-kbd-hints" aria-label="流程提示">
+      <span>系統自動逐筆生圖並入庫，無需手動確認</span>
+    </div>
+  )
+}
+
+function QueueEmptyHero({
+  characterName,
+  disabled,
+  onStart,
+}: {
+  characterName: string
+  disabled: boolean
+  onStart: () => void
+}) {
+  return (
+    <div className="queue-empty-hero">
+      <div className="queue-empty-hero-copy">
+        <strong>為 {characterName} 建立年齡軸</strong>
+        <p>
+          一鍵排入年齡軸。後端會先連貫生成 1–80 歲面部細緻圖，再生成對應歲數的 T 型外觀；
+          <strong>一次只向 AI 請求一張</strong>，完成後自動入庫並接下一筆。
+        </p>
+        <ul className="queue-empty-hero-list">
+          <li>不必逐個按執行或確認入庫</li>
+          <li>每一步都以前一步參考圖鎖定身份，避免批次跑壞連貫性</li>
+          <li>關掉頁面後，後端 worker 仍會繼續逐步生圖</li>
+        </ul>
+      </div>
+      <button className="primary workflow-cta queue-empty-hero-cta" onClick={onStart} disabled={disabled}>
+        建立 1–80 歲年齡軸並自動開始
+      </button>
+    </div>
+  )
 }
 
 interface VersionHistoryItem {
@@ -285,6 +622,8 @@ interface VersionBranchItem {
   face_detail_count?: number
   image_count?: number
   purpose_summary?: string
+  face_detail_summary?: string
+  review_label?: string
   summary?: string
   angles_summary?: string
   prompt?: string
@@ -316,6 +655,7 @@ interface GeneratedImageItem extends ImageRefItem {
 const PREFERRED_ANGLE_ORDER = ['face_detail', 'front', 'three_quarter', 'left', 'right', 'back', 'top', 'bottom']
 const STATUS_BADGE_CLASS: Record<string, string> = {
   pending: 'status-badge pending',
+  waiting: 'status-badge waiting',
   accepted: 'status-badge accepted',
   rejected: 'status-badge rejected',
   failed: 'status-badge failed',
@@ -329,6 +669,8 @@ function normalizeStatus(value?: string): string {
 function purposeBadgeClass(value?: string): string {
   const purpose = normalizeStatus(value)
   if (purpose === 'face_detail') return 'pill purpose-face-detail'
+  if (purpose === 'tpose') return 'pill purpose-tpose'
+  if (purpose === 'age_span') return 'pill purpose-age-span'
   if (purpose === 'identity') return 'pill purpose-identity'
   if (purpose === 'outfit') return 'pill purpose-outfit'
   if (purpose === 'expression') return 'pill purpose-expression'
@@ -363,10 +705,10 @@ function taskReviewStatus(task: QueueTask): string {
   const review = asRecord(imageGen.review)
   return normalizeStatus(
     String(
-      review.status ??
+      task.review_status ??
+        review.status ??
         imageGen.review_status ??
         asRecord(task.result_metadata).review_status ??
-        task.review_status ??
         '',
     ),
   )
@@ -374,14 +716,33 @@ function taskReviewStatus(task: QueueTask): string {
 
 function effectiveTaskStatus(task: QueueTask): string {
   const explicit = normalizeStatus(firstNonEmptyString(task.effective_status))
-  if (explicit) {
+  if (explicit === 'accepted' || explicit === 'rejected' || explicit === 'failed') {
     return explicit
   }
   const reviewStatus = taskReviewStatus(task)
   if (reviewStatus === 'accepted' || reviewStatus === 'rejected') {
     return reviewStatus
   }
-  return normalizeStatus(task.status) || reviewStatus || 'pending'
+  const queueStatus = normalizeStatus(task.status)
+  if (queueStatus === 'ready') {
+    return 'accepted'
+  }
+  return queueStatus || reviewStatus || 'pending'
+}
+
+function branchReviewStatus(branch: VersionBranchItem): string {
+  const review = asRecord(branch.review)
+  const response = asRecord(branch.response)
+  const nestedReview = asRecord(response.review)
+  return normalizeStatus(
+    String(
+      branch.review_status ??
+        review.status ??
+        response.review_status ??
+        nestedReview.status ??
+        '',
+    ),
+  )
 }
 
 function branchEffectiveStatus(branch: VersionBranchItem): string {
@@ -389,7 +750,7 @@ function branchEffectiveStatus(branch: VersionBranchItem): string {
   if (explicit) {
     return explicit
   }
-  const reviewStatus = normalizeStatus(branch.review_status)
+  const reviewStatus = branchReviewStatus(branch)
   if (reviewStatus === 'accepted' || reviewStatus === 'rejected') {
     return reviewStatus
   }
@@ -430,6 +791,8 @@ function purposeLabel(value?: string): string {
     return 'unknown'
   }
   if (purpose === 'face_detail') return '面部細節'
+  if (purpose === 'tpose') return 'T型體'
+  if (purpose === 'age_span') return '年齡軸 1–80'
   if (purpose === 'identity') return '身份'
   if (purpose === 'outfit') return '服裝'
   if (purpose === 'expression') return '表情'
@@ -452,13 +815,14 @@ function branchKindBadgeClass(kind?: string): string {
   return 'pill pill-ghost'
 }
 
-function statusLabel(value?: string): string {
+function statusLabel(value?: string, reviewStatus?: string): string {
   const status = normalizeStatus(value)
-  if (status === 'pending') return '待處理'
-  if (status === 'accepted') return '已接受'
-  if (status === 'rejected') return '已拒絕'
-  if (status === 'failed') return '失敗'
-  if (status === 'ready') return '待審核'
+  const review = normalizeStatus(reviewStatus)
+  if (status === 'accepted' || review === 'accepted' || status === 'ready') return '已入庫'
+  if (status === 'rejected' || review === 'rejected') return '已拒絕'
+  if (status === 'failed' || review === 'failed') return '失敗'
+  if (status === 'pending') return '等待生成'
+  if (status === 'waiting') return '排隊中'
   return status || '未知'
 }
 
@@ -537,31 +901,64 @@ function reviewSortValue(status?: string): number {
   return 5
 }
 
+function taskImageRequest(task: QueueTask): Record<string, unknown> {
+  return asRecord(asRecord(task.evolution_params)._image_request)
+}
+
+function taskPurpose(task: QueueTask): string {
+  const imageGen = taskImageGeneration(task)
+  const imageRequest = taskImageRequest(task)
+  return firstNonEmptyString(
+    task.purpose,
+    asRecord(task.result_metadata).purpose,
+    imageGen.purpose,
+    imageRequest.purpose,
+  )
+}
+
+function taskAge(task: QueueTask): string {
+  const params = asRecord(task.evolution_params)
+  const imageRequest = taskImageRequest(task)
+  const age = params.age_override ?? imageRequest.age
+  return age == null || String(age).trim() === '' ? '' : String(age)
+}
+
 function branchSummary(branch: VersionBranchItem): string {
-  if (branch.summary) {
-    return summarizeText(branch.summary, '尚無額外摘要', 180)
-  }
   const summaryFields = branchSummaryFields(branch)
-  const inlineSummary = firstNonEmptyString(summaryFields.summary, summaryFields.status_summary, summaryFields.purpose)
-  if (inlineSummary) {
-    return summarizeText(inlineSummary, '尚無額外摘要', 180)
-  }
   const parts: string[] = []
   const purpose = branchPurpose(branch)
   if (purpose) {
     parts.push(`${purposeLabel(purpose)} 分支`)
   }
+  const faceDetailSummary = firstNonEmptyString(
+    branch.face_detail_summary,
+    String(summaryFields.face_detail_summary ?? ''),
+  )
+  if (faceDetailSummary) {
+    parts.push(faceDetailSummary)
+  }
   const sortedAngles = sortAngles((branch.angles ?? []).map((item) => String(item)))
   if (sortedAngles.length) {
     parts.push(sortedAngles.join(', '))
   }
-  if (branch.asset_paths?.length) {
+  if (branch.image_count != null) {
+    parts.push(`${branch.image_count} 張圖`)
+  } else if (branch.asset_paths?.length) {
     parts.push(`${branch.asset_paths.length} 張圖`)
   }
-  if (branch.job_id) {
-    parts.push(`job ${String(branch.job_id).slice(0, 8)}`)
+  const reviewLabel = firstNonEmptyString(
+    branch.review_label,
+    String(summaryFields.review_label ?? ''),
+    branch.review_status,
+  )
+  if (reviewLabel) {
+    parts.push(reviewStatusLabelFromStatus(reviewLabel) ?? reviewLabel)
   }
-  return parts.join(' · ') || '尚無額外摘要'
+  if (parts.length) {
+    return parts.join(' · ')
+  }
+  const fallback = firstNonEmptyString(branch.summary, summaryFields.summary, summaryFields.status_summary)
+  return summarizeText(fallback, '尚無額外摘要', 180)
 }
 
 function branchMetaSummary(branch: VersionBranchItem): string {
@@ -599,18 +996,23 @@ function branchOverviewLines(branch: VersionBranchItem, branchStatus: string, br
       : branch.asset_paths?.length
         ? `${branch.asset_paths.length} 張圖片`
         : '',
-    `狀態 ${statusLabel(branchStatus)}`,
+    `狀態 ${statusLabel(branchStatus, branchReviewStatus(branch))}`,
   ].filter(Boolean)
 }
 
 function responseSummary(task: QueueTask): string {
   const imageGen = taskImageGeneration(task)
+  const reviewStatus = taskReviewStatus(task)
   const provider = firstNonEmptyString(imageGen.provider)
   const model = firstNonEmptyString(imageGen.model)
-  const purpose = firstNonEmptyString(imageGen.purpose)
-  const imageCount = queueImageCollections(imageGen).length
+  const purpose = firstNonEmptyString(taskTopLevelString(task, 'purpose'), imageGen.purpose)
+  const imageCount =
+    task.image_count ??
+    (taskDetailImages('', task).length || queueImageCollections(imageGen, reviewStatus).length)
+  const faceDetailCount = task.face_detail_count ?? 0
   const parts = [
     purpose ? `用途 ${purpose}` : '',
+    faceDetailCount > 0 || task.has_face_detail ? `face_detail 優先 · ${faceDetailCount || 1} 張` : '',
     provider ? `provider ${provider}` : '',
     model ? `model ${model}` : '',
     imageCount ? `${imageCount} 張輸出` : '',
@@ -618,80 +1020,11 @@ function responseSummary(task: QueueTask): string {
   return parts.join(' · ') || '目前沒有回應摘要'
 }
 
-function responseDetailSummary(task: QueueTask): string {
-  const imageGen = taskImageGeneration(task)
-  const review = asRecord(imageGen.review)
-  const revisedPrompt = summarizeText(imageGen.revised_prompt, '', 120)
-  const detailSummary = summarizeText(imageGen.summary, '', 120)
-  const parts = [
-    responseSummary(task),
-    review.status ? `review ${String(review.status).trim()}` : '',
-    revisedPrompt ? `revised ${revisedPrompt}` : '',
-    detailSummary || '',
-  ].filter(Boolean)
-  return parts.join(' · ') || '目前沒有更詳細的回應摘要'
-}
-
-function responseSummaryRows(task: QueueTask): Array<{ label: string; value: string }> {
-  const imageGen = taskImageGeneration(task)
-  const review = asRecord(imageGen.review)
-  return [
-    { label: '摘要', value: responseDetailSummary(task) },
-    { label: 'Provider', value: firstNonEmptyString(imageGen.provider) || '-' },
-    { label: 'Model', value: firstNonEmptyString(imageGen.model) || '-' },
-    { label: '用途', value: firstNonEmptyString(imageGen.purpose) || '-' },
-    { label: 'Review', value: firstNonEmptyString(review.status, imageGen.review_status) || '-' },
-    {
-      label: '輸出數',
-      value: String(taskDetailImages('', task).length || queueImageCollections(imageGen).length || 0),
-    },
-  ]
-}
-
-function taskParamSummary(task: QueueTask): string {
-  const params = asRecord(task.evolution_params)
-  const parts = [
-    params.seed != null ? `seed ${String(params.seed)}` : '',
-    params.steps != null ? `${String(params.steps)} steps` : '',
-    params.guidance_scale != null ? `cfg ${String(params.guidance_scale)}` : '',
-    params.width != null && params.height != null ? `${String(params.width)}x${String(params.height)}` : '',
-  ].filter(Boolean)
-  return parts.join(' · ') || '使用預設參數'
-}
-
-function taskDetailSections(task: QueueTask): string[] {
-  const sections: string[] = []
-  const detailImages = taskDetailImages('', task)
-  if (taskHeroImage('', task, detailImages)) sections.push('面部細節圖')
-  if (detailImages.some((item) => item.angle !== 'face_detail')) sections.push('其他角度圖')
-  if (promptText(task)) sections.push('Prompt')
-  if (negativePromptText(task)) sections.push('Negative')
-  if (Object.keys(asRecord(task.evolution_params)).length) sections.push('參數')
-  if (task.error_message) sections.push('錯誤')
-  sections.push('回應摘要')
-  return sections
-}
-
 function parseAnglesSummary(value?: string): string[] {
   return String(value ?? '')
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)
-}
-
-function promptText(task: QueueTask): string {
-  const imageGen = taskImageGeneration(task)
-  return firstNonEmptyString(
-    imageGen.prompt,
-    imageGen.final_prompt,
-    imageGen.revised_prompt,
-    asRecord(task.result_metadata).prompt,
-  )
-}
-
-function negativePromptText(task: QueueTask): string {
-  const imageGen = taskImageGeneration(task)
-  return firstNonEmptyString(imageGen.negative_prompt, asRecord(task.result_metadata).negative_prompt)
 }
 
 function detailImageGroups(images: TaskImageDetail[]): { faceDetail: TaskImageDetail[]; otherAngles: TaskImageDetail[] } {
@@ -702,12 +1035,13 @@ function detailImageGroups(images: TaskImageDetail[]): { faceDetail: TaskImageDe
 }
 
 function taskDetailImages(apiBase: string, task: QueueTask): TaskImageDetail[] {
-  const imageGen = taskImageGeneration(task)
+  const imageGen = taskImagePayload(task)
+  const reviewStatus = taskReviewStatus(task)
   const bucket = new Map<string, TaskImageDetail>()
 
   const registerImage = (source: unknown, forcedAngle?: string) => {
     const item = asRecord(source)
-    const assetPath = imageAssetPath(item)
+    const assetPath = previewAssetPath(item, reviewStatus)
     const rawUrl = imageRemoteUrl(item)
     if (!assetPath && !rawUrl) {
       return
@@ -727,7 +1061,7 @@ function taskDetailImages(apiBase: string, task: QueueTask): TaskImageDetail[] {
     })
   }
 
-  for (const image of mergedQueueImages(imageGen)) {
+  for (const image of mergedQueueImages(imageGen, reviewStatus)) {
     registerImage(image)
   }
 
@@ -745,9 +1079,10 @@ function taskHeroImage(apiBase: string, task: QueueTask, detailImages: TaskImage
   if (firstFaceDetail) {
     return firstFaceDetail
   }
-  const imageGen = taskImageGeneration(task)
+  const imageGen = taskImagePayload(task)
   const faceDetailAssetPath = String(
     firstNonEmptyString(
+      task.face_detail_asset_path,
       imageGen.face_detail_asset_path,
       asRecord(task.result_metadata).face_detail_asset_path,
     ),
@@ -769,15 +1104,18 @@ function taskThumbnailSrc(
   detailImages: TaskImageDetail[],
   fallbackSummary?: CharacterSummary,
 ): string {
-  const imageGen = taskImageGeneration(task)
+  const imageGen = taskImagePayload(task)
   const taskPreview = taskPreviewMetadata(task)
+  const reviewStatus = taskReviewStatus(task)
   const thumbnailAssetPath = firstNonEmptyString(
     taskPreview.face_detail_asset_path,
     taskPreview.thumbnail_asset_path,
+    task.face_detail_asset_path,
+    task.thumbnail_asset_path,
+    task.representative_asset_path,
     imageGen.face_detail_asset_path,
     imageGen.thumbnail_asset_path,
-    asRecord(imageGen.thumbnail_image).final_asset_path,
-    asRecord(imageGen.thumbnail_image).asset_path,
+    previewAssetPath(asRecord(imageGen.thumbnail_image), reviewStatus),
     detailImages[0]?.path,
     asRecord(fallbackSummary?.metadata).face_detail_asset_path,
     asRecord(fallbackSummary?.metadata).thumbnail_asset_path,
@@ -804,11 +1142,12 @@ function branchHeroImage(apiBase: string, characterId: string, branch: VersionBr
 
 function branchDetailImages(apiBase: string, characterId: string, branch: VersionBranchItem): TaskImageDetail[] {
   const imagesByAngle = asRecord(branch.images_by_angle)
+  const reviewStatus = branchReviewStatus(branch)
   const bucket = new Map<string, TaskImageDetail>()
 
   const registerImage = (source: unknown, forcedAngle?: string) => {
     const item = asRecord(source)
-    const assetPath = imageAssetPath(item)
+    const assetPath = previewAssetPath(item, reviewStatus)
     if (!assetPath) {
       return
     }
@@ -937,20 +1276,6 @@ function deriveAngles(candidates: Array<string | undefined | null>): string[] {
   return sortAngles([...unique])
 }
 
-function taskAngleList(task: QueueTask, detailImages: TaskImageDetail[]): string[] {
-  const imageGen = taskImageGeneration(task)
-  const imagesByAngle = asRecord(imageGen.images_by_angle)
-  const nestedAngles = Object.keys(imagesByAngle)
-  const faceDetailImages = asArray(imageGen.face_detail_images)
-  const directAngles = asArray(imageGen.angles).map((item) => String(item))
-  return deriveAngles([
-    ...directAngles,
-    ...nestedAngles,
-    ...(faceDetailImages.length ? ['face_detail'] : []),
-    ...detailImages.map((item) => item.angle),
-  ])
-}
-
 function branchAngleList(branch: VersionBranchItem, detailImages: TaskImageDetail[]): string[] {
   const summaryFields = branchSummaryFields(branch)
   return deriveAngles([
@@ -996,6 +1321,31 @@ function asImageRefList(value: unknown): ImageRefItem[] {
     .filter((item) => item.path || item.uri)
 }
 
+function ageSpanBucketItems(draft: Record<string, unknown>, bucket: 'faces' | 'tposes'): ImageRefItem[] {
+  const imageGen = asRecord(asRecord(draft._extensions).image_gen)
+  const ageSpan = asRecord(imageGen.age_span)
+  const bucketData = asRecord(ageSpan[bucket])
+  const ages = Object.keys(bucketData).sort((left, right) => Number(left) - Number(right))
+  const items: ImageRefItem[] = []
+  for (const age of ages) {
+    for (const raw of asArray(bucketData[age])) {
+      const item = asRecord(raw)
+      const path = String(item.path ?? '').trim()
+      const uri = String(item.uri ?? '').trim()
+      if (!path && !uri) {
+        continue
+      }
+      items.push({
+        path,
+        uri: uri || undefined,
+        angle: String(item.angle ?? bucket).trim() || bucket,
+        note: `${age} 歲`,
+      })
+    }
+  }
+  return items
+}
+
 function assetUrl(apiBase: string, characterId: string, item: ImageRefItem): string {
   if (item.uri && /^https?:\/\//i.test(item.uri)) {
     return item.uri
@@ -1011,97 +1361,81 @@ function assetUrlFromPath(apiBase: string, characterId: string | number, assetPa
 }
 
 function taskWorkflowLabel(task: QueueTask): string {
+  const queueStatus = normalizeStatus(task.status)
   const effectiveStatus = effectiveTaskStatus(task)
   const reviewStatus = taskReviewStatus(task)
-  if (effectiveStatus === 'pending') {
-    return '等待生成'
-  }
-  if (effectiveStatus === 'failed') {
+  if (queueStatus === 'failed' || effectiveStatus === 'failed') {
     return '生成失敗'
   }
-  if (effectiveStatus === 'accepted') {
-    return '已接受並入庫'
+  if (reviewStatus === 'accepted' || effectiveStatus === 'accepted' || queueStatus === 'ready') {
+    return reviewStatusLabelFromStatus('accepted') ?? '已入庫'
   }
-  if (effectiveStatus === 'rejected') {
-    return '已拒絕，不入庫'
+  if (reviewStatus === 'rejected' || effectiveStatus === 'rejected') {
+    return reviewStatusLabelFromStatus('rejected') ?? '已拒絕'
   }
-  if (effectiveStatus === 'ready' && reviewStatus === 'pending') {
-    return '待審核決定是否入庫'
+  if (queueStatus === 'waiting' || effectiveStatus === 'waiting') {
+    return '排隊中'
   }
-  if (effectiveStatus === 'ready') {
-    return '候選圖已就緒'
+  if (queueStatus === 'pending' || effectiveStatus === 'pending') {
+    return '等待生成'
   }
   return statusLabel(effectiveStatus)
 }
 
 function taskWorkflowHint(task: QueueTask): string {
+  const queueStatus = normalizeStatus(task.status)
   const effectiveStatus = effectiveTaskStatus(task)
   const reviewStatus = taskReviewStatus(task)
-  if (effectiveStatus === 'pending') {
-    return '任務仍在佇列中，尚未產出候選圖片。'
-  }
-  if (effectiveStatus === 'failed') {
+  if (queueStatus === 'failed' || effectiveStatus === 'failed') {
     return '後端處理失敗，可先檢查錯誤訊息與參數。'
   }
-  if (effectiveStatus === 'accepted') {
-    return '這批圖片已確認採用，角色護照應已同步更新。'
+  if (reviewStatus === 'accepted' || effectiveStatus === 'accepted' || queueStatus === 'ready') {
+    return '生圖已完成並自動寫入角色護照。'
   }
-  if (effectiveStatus === 'rejected') {
+  if (reviewStatus === 'rejected' || effectiveStatus === 'rejected') {
     return '這批圖片被標記為拒絕，不會寫回角色護照。'
   }
-  if (effectiveStatus === 'ready' && reviewStatus === 'pending') {
-    return '圖片已生成完成，但還需要人工接受或拒絕。'
+  if (queueStatus === 'waiting' || effectiveStatus === 'waiting') {
+    return '前置步驟完成並入庫後，系統會自動開放這一步。'
   }
-  if (effectiveStatus === 'ready') {
-    return '圖片可供檢視，目前無需額外操作。'
+  if (queueStatus === 'pending' || effectiveStatus === 'pending') {
+    return '這是目前唯一開放的步驟；完成後會自動接下一筆。'
   }
   return '目前無需額外操作。'
 }
 
 function branchWorkflowLabel(branch: VersionBranchItem): string {
   const effectiveStatus = branchEffectiveStatus(branch)
-  const reviewStatus = normalizeStatus(branch.review_status)
-  if (effectiveStatus === 'pending') {
-    return '等待生成'
-  }
+  const reviewStatus = branchReviewStatus(branch) || normalizeStatus(branch.review_status)
   if (effectiveStatus === 'failed') {
     return '分支生成失敗'
   }
-  if (effectiveStatus === 'accepted') {
-    return '分支已接受'
+  if (reviewStatus === 'accepted' || effectiveStatus === 'accepted' || effectiveStatus === 'ready') {
+    return reviewStatusLabelFromStatus('accepted') ?? '已入庫'
   }
-  if (effectiveStatus === 'rejected') {
-    return '分支已拒絕'
+  if (reviewStatus === 'rejected' || effectiveStatus === 'rejected') {
+    return reviewStatusLabelFromStatus('rejected') ?? '已拒絕'
   }
-  if (effectiveStatus === 'ready' && reviewStatus === 'pending') {
-    return '待審核決定是否採用'
-  }
-  if (effectiveStatus === 'ready') {
-    return '候選分支已就緒'
+  if (effectiveStatus === 'pending') {
+    return '等待生成'
   }
   return statusLabel(effectiveStatus)
 }
 
 function branchWorkflowHint(branch: VersionBranchItem): string {
   const effectiveStatus = branchEffectiveStatus(branch)
-  const reviewStatus = normalizeStatus(branch.review_status)
-  if (effectiveStatus === 'pending') {
-    return '分支仍在等待後端生成，尚未產出可檢視圖片。'
-  }
+  const reviewStatus = branchReviewStatus(branch) || normalizeStatus(branch.review_status)
   if (effectiveStatus === 'failed') {
     return '分支生成失敗，可回頭檢查輸出與後端記錄。'
   }
-  if (effectiveStatus === 'accepted') {
-    return '這個分支已被採用，可視為目前有效候選結果。'
+  if (reviewStatus === 'accepted' || effectiveStatus === 'accepted' || effectiveStatus === 'ready') {
+    return '這個分支已自動寫入，可視為目前有效結果。'
   }
-  if (effectiveStatus === 'rejected') {
+  if (reviewStatus === 'rejected' || effectiveStatus === 'rejected') {
     return '這個分支已被標記拒絕，保留作記錄但不建議採用。'
   }
-  if (effectiveStatus === 'ready' && reviewStatus === 'pending') {
-    return '圖片已生成完成，但仍待人工審核是否接受。'
-  }
-  if (effectiveStatus === 'ready') {
-    return '候選分支可直接檢視，目前沒有額外待辦。'
+  if (effectiveStatus === 'pending') {
+    return '分支仍在等待後端生成，尚未產出可檢視圖片。'
   }
   return '目前無需額外操作。'
 }
@@ -1242,18 +1576,57 @@ export function CharpassPanel(props: CharpassPanelProps) {
   const [queueBusy, setQueueBusy] = useState(false)
   const [imageBusy, setImageBusy] = useState(false)
   const [lastGeneratedPrompt, setLastGeneratedPrompt] = useState('')
-  const [purpose, setPurpose] = useState('identity')
+  const [purpose, setPurpose] = useState('age_span')
   const [provider, setProvider] = useState('wan')
   const [model, setModel] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [extraPrompt, setExtraPrompt] = useState('')
   const [queueStatusFilter, setQueueStatusFilter] = useState('')
   const [queueOnlySelected, setQueueOnlySelected] = useState(true)
+  const [queueAutoRun, setQueueAutoRun] = useState(false)
+  const [workerStatus, setWorkerStatus] = useState<QueueWorkerStatus | null>(null)
+  const [ageSpanStatus, setAgeSpanStatus] = useState<AgeSpanPipelineStatus | null>(null)
+  const [pipelineMessage, setPipelineMessage] = useState<string | null>(null)
+  const [showFullTaskList, setShowFullTaskList] = useState(false)
+  const [showQueueForm, setShowQueueForm] = useState(false)
+  const [ageSpanPhaseTab, setAgeSpanPhaseTab] = useState<AgeSpanPhaseTab>('face_detail')
+  const [pinnedTaskId, setPinnedTaskId] = useState<number | null>(null)
+  const [autoContinue, setAutoContinue] = useState(() => {
+    try {
+      const stored = localStorage.getItem(AUTO_CONTINUE_STORAGE_KEY)
+      return stored == null ? true : stored === '1'
+    } catch {
+      return true
+    }
+  })
+  const queueAutoRunRef = useRef(false)
+  const autoResumeAttemptedRef = useRef(false)
+  const focusTaskRef = useRef<QueueTask | null>(null)
   const [layer, setLayer] = useState<CharpassLayer>('_identity')
   const [conflictStrategy, setConflictStrategy] = useState<ConflictStrategy>('merge')
   const [focused, setFocused] = useState(false)
   const [busy, setBusy] = useState(false)
   const importInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    queueAutoRunRef.current = queueAutoRun
+  }, [queueAutoRun])
+
+  function setAutoContinueEnabled(enabled: boolean) {
+    setAutoContinue(enabled)
+    try {
+      localStorage.setItem(AUTO_CONTINUE_STORAGE_KEY, enabled ? '1' : '0')
+    } catch {
+      // ignore storage failures
+    }
+  }
+
+  function queueCoreIdParam(): string | null {
+    if (!queueOnlySelected || !selectedCharacter?.id) {
+      return null
+    }
+    return selectedCharacter.id
+  }
 
   const loadCharacterSummaries = useCallback(async () => {
     const response = await fetch(`${apiBase}/api/v1/characters?limit=100`)
@@ -1389,7 +1762,7 @@ export function CharpassPanel(props: CharpassPanelProps) {
     }
     try {
       const params = new URLSearchParams()
-      params.set('limit', '100')
+      params.set('limit', '400')
       if (queueStatusFilter) {
         params.set('status', serverQueueStatus(normalizeStatus(queueStatusFilter)))
       }
@@ -1410,6 +1783,8 @@ export function CharpassPanel(props: CharpassPanelProps) {
       if (latestWithPrompt) {
         setLastGeneratedPrompt(String(asRecord(asRecord(latestWithPrompt.result_metadata).image_generation).prompt))
       }
+      await loadAgeSpanStatus()
+      await loadWorkerStatus()
     } catch (queueError) {
       onError(queueError instanceof Error ? queueError.message : '載入佇列失敗')
     } finally {
@@ -1417,9 +1792,135 @@ export function CharpassPanel(props: CharpassPanelProps) {
     }
   }
 
+  async function loadAgeSpanStatus(): Promise<AgeSpanPipelineStatus | null> {
+    const coreId = queueCoreIdParam()
+    const params = new URLSearchParams()
+    if (coreId) {
+      params.set('core_id', coreId)
+    }
+    try {
+      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks/age-span-status?${params.toString()}`)
+      if (response.status === 404) {
+        setAgeSpanStatus(null)
+        return null
+      }
+      if (!response.ok) {
+        return null
+      }
+      const body = (await response.json()) as AgeSpanPipelineStatus
+      setAgeSpanStatus(body)
+      return body
+    } catch {
+      setAgeSpanStatus(null)
+      return null
+    }
+  }
+
+  async function loadWorkerStatus(): Promise<QueueWorkerStatus | null> {
+    try {
+      const response = await fetch(`${apiBase}/api/v1/admin/queue-worker`)
+      if (!response.ok) {
+        return null
+      }
+      const body = (await response.json()) as QueueWorkerStatus
+      setWorkerStatus(body)
+      setQueueAutoRun(Boolean(body.auto_run || body.busy))
+      queueAutoRunRef.current = Boolean(body.auto_run || body.busy)
+      return body
+    } catch {
+      return null
+    }
+  }
+
+  async function resetFailedTasks(fromId?: number): Promise<number> {
+    onError(null)
+    try {
+      const params = new URLSearchParams()
+      const coreId = queueCoreIdParam()
+      if (coreId) {
+        params.set('core_id', coreId)
+      }
+      if (fromId && fromId > 0) {
+        params.set('from_id', String(fromId))
+      }
+      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks/reset-failed?${params.toString()}`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        throw new Error((await response.text()) || `HTTP ${response.status}`)
+      }
+      const body = (await response.json()) as { reset?: number }
+      await loadQueueTasks({ keepError: true })
+      return Number(body.reset ?? 0)
+    } catch (taskError) {
+      onError(taskError instanceof Error ? taskError.message : '重設 failed 任務失敗')
+      return 0
+    }
+  }
+
+  async function startAutoPipeline(options?: { resetFailed?: boolean; fromId?: number }) {
+    onError(null)
+    try {
+      if (options?.resetFailed) {
+        const resetCount = await resetFailedTasks(options.fromId)
+        if (resetCount > 0) {
+          setPipelineMessage(`已重設 ${resetCount} 筆失敗任務，後端繼續逐步生圖…`)
+        }
+      }
+      const response = await fetch(`${apiBase}/api/v1/admin/queue-worker/start`, { method: 'POST' })
+      if (!response.ok) {
+        throw new Error((await response.text()) || `HTTP ${response.status}`)
+      }
+      const body = (await response.json()) as QueueWorkerStatus
+      setWorkerStatus(body)
+      setQueueAutoRun(true)
+      queueAutoRunRef.current = true
+      setPipelineMessage('後端正在逐步生圖：一次一張，完成後自動入庫並接下一筆。')
+      await loadQueueTasks({ keepError: true })
+    } catch (taskError) {
+      onError(taskError instanceof Error ? taskError.message : '啟動自動生圖失敗')
+    }
+  }
+
+  async function stopAutoPipeline() {
+    try {
+      const response = await fetch(`${apiBase}/api/v1/admin/queue-worker/pause`, { method: 'POST' })
+      if (response.ok) {
+        const body = (await response.json()) as QueueWorkerStatus
+        setWorkerStatus(body)
+      }
+    } catch {
+      // ignore
+    }
+    setQueueAutoRun(false)
+    queueAutoRunRef.current = false
+    setPipelineMessage('已暫停後端 worker。目前正在生成的那一張仍會跑完。')
+  }
+
   useEffect(() => {
     void loadQueueTasks({ keepError: true })
   }, [apiBase, selectedCharacter?.id, queueStatusFilter, queueOnlySelected])
+
+  useEffect(() => {
+    const shouldPoll = queueAutoRun || Boolean(ageSpanStatus?.has_open_pipeline)
+    if (!shouldPoll) {
+      return
+    }
+    const timer = window.setInterval(() => {
+      void loadQueueTasks({ keepError: true })
+    }, 4000)
+    return () => window.clearInterval(timer)
+  }, [queueAutoRun, ageSpanStatus?.has_open_pipeline, apiBase, selectedCharacter?.id, queueStatusFilter, queueOnlySelected])
+
+  useEffect(() => {
+    if (!selectedCharacter?.id || !workerStatus?.last_task_id) {
+      return
+    }
+    if (workerStatus.last_status === 'ready' || workerStatus.last_status === 'failed') {
+      void reloadCharacterCharpass(selectedCharacter.id)
+      void loadCharacterSummaries()
+    }
+  }, [selectedCharacter?.id, workerStatus?.last_task_id, workerStatus?.last_status])
 
   const sliderValues = useMemo(
     () => ({
@@ -1453,6 +1954,16 @@ export function CharpassPanel(props: CharpassPanelProps) {
         key: 'face-detail',
         title: '面部細節圖',
         items: faceDetails,
+      },
+      {
+        key: 'age-faces',
+        title: '年齡軸面部 1–80',
+        items: ageSpanBucketItems(draft, 'faces'),
+      },
+      {
+        key: 'age-tposes',
+        title: '年齡軸 T 型 1–80',
+        items: ageSpanBucketItems(draft, 'tposes'),
       },
       {
         key: 'outfit',
@@ -1489,6 +2000,92 @@ export function CharpassPanel(props: CharpassPanelProps) {
     const status = normalizeStatus(queueStatusFilter)
     return tasks.filter((task) => effectiveTaskStatus(task) === status)
   }, [queueData, queueStatusFilter])
+
+  const focusTask = useMemo(() => {
+    const tasks = queueData?.tasks ?? []
+    if (!tasks.length) {
+      return null
+    }
+    if (pinnedTaskId != null) {
+      const pinned = tasks.find((task) => task.id === pinnedTaskId)
+      if (pinned) {
+        return pinned
+      }
+    }
+    if (ageSpanStatus?.next_runnable_task_id) {
+      const next = tasks.find((task) => task.id === ageSpanStatus.next_runnable_task_id)
+      if (next) {
+        return next
+      }
+    }
+    const failed = tasks.find((task) => normalizeStatus(task.status) === 'failed')
+    if (failed) {
+      return failed
+    }
+    const pending = tasks.find((task) => normalizeStatus(task.status) === 'pending')
+    if (pending) {
+      return pending
+    }
+    return tasks[0] ?? null
+  }, [queueData, ageSpanStatus, pinnedTaskId])
+
+  useEffect(() => {
+    focusTaskRef.current = focusTask
+  }, [focusTask])
+
+  const workflowSnapshot = useMemo(
+    () => deriveWorkflowSnapshot(queueData, ageSpanStatus, queueAutoRun),
+    [queueData, ageSpanStatus, queueAutoRun],
+  )
+
+  useEffect(() => {
+    autoResumeAttemptedRef.current = false
+  }, [selectedCharacter?.id, queueData?.tasks?.length])
+
+  useEffect(() => {
+    if (!autoContinue || queueAutoRun || autoResumeAttemptedRef.current) {
+      return
+    }
+    if (!queueData?.tasks?.length) {
+      return
+    }
+    const pendingCount = queueData.stats.total_pending ?? 0
+    const waitingCount = queueData.stats.total_waiting ?? 0
+    if (pendingCount > 0 || waitingCount > 0) {
+      autoResumeAttemptedRef.current = true
+      void startAutoPipeline({ resetFailed: false })
+    }
+  }, [autoContinue, queueAutoRun, queueData])
+
+  const ageSpanSteps = ageSpanStatus?.steps ?? []
+
+  const ageSpanPhaseSteps = useMemo(
+    () => ageSpanStepsForPhase(ageSpanSteps, ageSpanPhaseTab),
+    [ageSpanSteps, ageSpanPhaseTab],
+  )
+
+  const recentCompactTasks = useMemo(() => {
+    const tasks = filteredQueueTasks
+    return [...tasks]
+      .sort((left, right) => {
+        const leftTime = Date.parse(String(left.updated_at || left.created_at || '')) || 0
+        const rightTime = Date.parse(String(right.updated_at || right.created_at || '')) || 0
+        return rightTime - leftTime
+      })
+      .slice(0, 8)
+  }, [filteredQueueTasks])
+
+  const pipelineProgress = useMemo(() => {
+    if (!ageSpanStatus?.has_open_pipeline || !ageSpanStatus.total_steps) {
+      return null
+    }
+    const percent = Math.round((ageSpanStatus.accepted_count / ageSpanStatus.total_steps) * 100)
+    return {
+      percent: Math.min(100, Math.max(0, percent)),
+      label: `${ageSpanStatus.accepted_count} / ${ageSpanStatus.total_steps}`,
+    }
+  }, [ageSpanStatus])
+
 
   const queuePreviewItems = useMemo(() => {
     if (!queueData) {
@@ -1532,10 +2129,11 @@ export function CharpassPanel(props: CharpassPanelProps) {
     })
   }, [versionSummary])
 
-  async function queueImageGeneration() {
+  async function queueImageGeneration(purposeOverride?: string) {
     if (!selectedCharacter) {
       return
     }
+    const queuedPurpose = purposeOverride || purpose
     setImageBusy(true)
     onError(null)
     try {
@@ -1546,14 +2144,16 @@ export function CharpassPanel(props: CharpassPanelProps) {
           'X-CharacterOS-Panel': 'enabled',
         },
         body: JSON.stringify({
-          purpose,
+          purpose: queuedPurpose,
           provider: provider || null,
           model: model || null,
           base_url: baseUrl || null,
           extra: extraPrompt,
-          multi_angle: true,
+          multi_angle: queuedPurpose !== 'age_span' && queuedPurpose !== 'tpose' && queuedPurpose !== 'face_detail',
           persist: true,
           priority: 0,
+          age_start: 1,
+          age_end: 80,
         }),
       })
       if (!response.ok) {
@@ -1561,6 +2161,14 @@ export function CharpassPanel(props: CharpassPanelProps) {
       }
       await loadQueueTasks()
       await loadCharacterSummaries()
+      setPinnedTaskId(null)
+      if (queuedPurpose === 'age_span') {
+        setAgeSpanPhaseTab('face_detail')
+        setPipelineMessage('已排入年齡軸，自動開始逐步生圖並直接入庫…')
+      } else {
+        setPipelineMessage('已排入生圖任務，自動開始執行並直接入庫…')
+      }
+      void startAutoPipeline({ resetFailed: false })
     } catch (queueError) {
       onError(queueError instanceof Error ? queueError.message : '建立生圖佇列任務失敗')
     } finally {
@@ -1568,101 +2176,33 @@ export function CharpassPanel(props: CharpassPanelProps) {
     }
   }
 
-  async function processTask(taskId: number) {
-    setQueueBusy(true)
-    onError(null)
-    try {
-      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks/${taskId}/process`, {
-        method: 'POST',
-      })
-      if (!response.ok) {
-        throw new Error((await response.text()) || `HTTP ${response.status}`)
-      }
-      const body = (await response.json()) as { task?: QueueTask }
-      const task = body.task
-      if (task && selectedCharacter && String(task.core_id) === selectedCharacter.id) {
-        await reloadCharacterCharpass(selectedCharacter.id)
-      }
-      await loadQueueTasks({ keepError: true })
-      await loadCharacterSummaries()
-    } catch (taskError) {
-      onError(taskError instanceof Error ? taskError.message : '處理任務失敗')
-    } finally {
-      setQueueBusy(false)
+  async function clearQueueTasks(onlySelected: boolean) {
+    const scopeLabel = onlySelected && selectedCharacter ? `角色 ${selectedCharacter.id}` : '全部'
+    if (!window.confirm(`確定要清空${scopeLabel}的佇列任務？此操作無法復原。`)) {
+      return
     }
-  }
-
-  async function reviewTask(taskId: number, accepted: boolean) {
     setQueueBusy(true)
     onError(null)
+    stopAutoPipeline()
     try {
-      const action = accepted ? 'accept' : 'reject'
-      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks/${taskId}/${action}`, {
+      const params = new URLSearchParams()
+      if (onlySelected && selectedCharacter?.id) {
+        params.set('core_id', selectedCharacter.id)
+      }
+      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks/clear?${params.toString()}`, {
         method: 'POST',
       })
       if (!response.ok) {
         throw new Error((await response.text()) || `HTTP ${response.status}`)
       }
-      const body = (await response.json()) as { task?: QueueTask }
-      const task = body.task
-      if (task && selectedCharacter && String(task.core_id) === selectedCharacter.id) {
-        await reloadCharacterCharpass(selectedCharacter.id)
-      }
+      const body = (await response.json()) as { cleared?: number }
+      setPipelineMessage(`已清空 ${body.cleared ?? 0} 筆任務。`)
+      setAgeSpanStatus(null)
+      setPinnedTaskId(null)
+      autoResumeAttemptedRef.current = false
       await loadQueueTasks({ keepError: true })
-      await loadCharacterSummaries()
     } catch (taskError) {
-      onError(taskError instanceof Error ? taskError.message : '審核任務失敗')
-    } finally {
-      setQueueBusy(false)
-    }
-  }
-
-  async function processNextTask() {
-    setQueueBusy(true)
-    onError(null)
-    try {
-      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks/process-next`, {
-        method: 'POST',
-      })
-      if (!response.ok) {
-        throw new Error((await response.text()) || `HTTP ${response.status}`)
-      }
-      const body = (await response.json()) as { task?: QueueTask | null }
-      const task = body.task
-      if (task && selectedCharacter && String(task.core_id) === selectedCharacter.id) {
-        await reloadCharacterCharpass(selectedCharacter.id)
-      }
-      await loadQueueTasks({ keepError: true })
-      await loadCharacterSummaries()
-    } catch (taskError) {
-      onError(taskError instanceof Error ? taskError.message : '處理下一筆任務失敗')
-    } finally {
-      setQueueBusy(false)
-    }
-  }
-
-  async function processAllTasks() {
-    setQueueBusy(true)
-    onError(null)
-    try {
-      const response = await fetch(`${apiBase}/api/v1/admin/queue-tasks/process-all?limit=100`, {
-        method: 'POST',
-      })
-      if (!response.ok) {
-        throw new Error((await response.text()) || `HTTP ${response.status}`)
-      }
-      const body = (await response.json()) as { tasks?: QueueTask[] }
-      const touchedCurrent = Boolean(
-        selectedCharacter &&
-          (body.tasks || []).some((task) => String(task.core_id) === selectedCharacter.id),
-      )
-      if (touchedCurrent && selectedCharacter) {
-        await reloadCharacterCharpass(selectedCharacter.id)
-      }
-      await loadQueueTasks({ keepError: true })
-      await loadCharacterSummaries()
-    } catch (taskError) {
-      onError(taskError instanceof Error ? taskError.message : '批次處理任務失敗')
+      onError(taskError instanceof Error ? taskError.message : '清空佇列失敗')
     } finally {
       setQueueBusy(false)
     }
@@ -1847,52 +2387,458 @@ export function CharpassPanel(props: CharpassPanelProps) {
             })}
           </div>
 
-          <div className="inset-panel image-queue-panel">
-            <div className="section-header compact">
-              <h4>AI 生圖佇列</h4>
-              <span className="pill">{selectedCharacter ? `角色 #${selectedCharacter.id}` : '未選角色'}</span>
+          <section className="queue-panel queue-console">
+            <div className="queue-dashboard">
+              <div className="section-header compact">
+                <div>
+                  <h4>AI 生圖控制台</h4>
+                  <p className="queue-console-subtitle">
+                    {selectedCharacter
+                      ? `${selectedCharacter.name || selectedCharacter.id} · 自動逐步生圖並直接入庫`
+                      : '請先選擇角色'}
+                  </p>
+                </div>
+                <div className="status-strip">
+                  <span className="pill">
+                    {queueData?.storage_mode === 'database' ? 'PostgreSQL' : queueData?.storage_mode === 'local' ? '本機 JSON' : '未載入'}
+                  </span>
+                </div>
+              </div>
+
+              <QueueStatGrid stats={queueData?.stats} ageSpanStatus={ageSpanStatus} queueAutoRun={queueAutoRun} />
+
+              {workflowSnapshot.isEmpty && selectedCharacter ? (
+                <>
+                  <QueueEmptyHero
+                    characterName={selectedCharacter.name || selectedCharacter.id}
+                    disabled={imageBusy || queueBusy}
+                    onStart={() => {
+                      setPurpose('age_span')
+                      void queueImageGeneration('age_span')
+                    }}
+                  />
+                  <div className="queue-secondary-actions queue-secondary-actions--empty">
+                    <button className="ghost" onClick={() => void loadQueueTasks()} disabled={queueBusy}>
+                      刷新
+                    </button>
+                  </div>
+                  <div className="workflow-preferences">
+                    <label className="checkbox">
+                      <input
+                        type="checkbox"
+                        checked={autoContinue}
+                        onChange={(event) => setAutoContinueEnabled(event.target.checked)}
+                      />
+                      <span>刷新頁面後，若仍有待處理任務就喚醒後端 worker</span>
+                    </label>
+                    <label className="checkbox">
+                      <input
+                        type="checkbox"
+                        checked={queueOnlySelected}
+                        onChange={(event) => setQueueOnlySelected(event.target.checked)}
+                      />
+                      <span>只看目前角色</span>
+                    </label>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <WorkflowStepper phase={workflowSnapshot.phase} />
+
+                  <div
+                    className={`workflow-status-card${queueAutoRun ? ' workflow-status-card--busy' : ''}`}
+                  >
+                    <div className="workflow-status-card-header">
+                      <strong>{workflowSnapshot.title}</strong>
+                      {queueAutoRun ? <span className="queue-spinner" aria-hidden="true" /> : null}
+                    </div>
+                    <p>{pipelineMessage || workflowSnapshot.hint}</p>
+                  </div>
+
+                  <QueueKeyboardHints visible={queueAutoRun} />
+
+                  {pipelineProgress ? (
+                    <div className="pipeline-progress-card">
+                      <div className="pipeline-progress-header">
+                        <strong>
+                          年齡軸 · {ageSpanStatus?.character_name || `角色 #${ageSpanStatus?.core_id ?? '?'}`}
+                        </strong>
+                        <span>{pipelineProgress.label} 步已完成</span>
+                      </div>
+                      <div className="pipeline-progress-bar" aria-hidden="true">
+                        <div className="pipeline-progress-fill" style={{ width: `${pipelineProgress.percent}%` }} />
+                      </div>
+                      <div className="pipeline-progress-stats">
+                        <span>已完成 {ageSpanStatus?.accepted_count ?? 0}</span>
+                        <span>進行中 {ageSpanStatus?.pending_count ?? 0}</span>
+                        <span>尚未開始 {ageSpanStatus?.waiting_count ?? 0}</span>
+                        {ageSpanStatus?.failed_count ? (
+                          <span className="warn">失敗 {ageSpanStatus.failed_count}</span>
+                        ) : null}
+                        {ageSpanStatus?.next_runnable_task_id ? (
+                          <span>
+                            下一步 #{ageSpanStatus.next_runnable_task_id}
+                            {ageSpanStatus.next_age != null ? ` · ${ageSpanStatus.next_age} 歲` : ''}
+                          </span>
+                        ) : null}
+                      </div>
+                      {ageSpanStatus?.blocking_reason ? (
+                        <p className="pipeline-blocking-reason">{ageSpanStatus.blocking_reason}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {ageSpanSteps.length ? <QueuePhaseProgress ageSpanSteps={ageSpanSteps} /> : null}
+
+                  <div className="queue-action-bar">
+                    <div className="queue-primary-actions workflow-primary-actions">
+                      {queueAutoRun ? (
+                        <button className="secondary workflow-cta" onClick={() => stopAutoPipeline()} disabled={queueBusy}>
+                          暫停後端生圖
+                        </button>
+                      ) : workflowSnapshot.canAutoRun ? (
+                        <button
+                          className="primary workflow-cta"
+                          onClick={() => void startAutoPipeline({ resetFailed: false })}
+                          disabled={queueBusy}
+                        >
+                          繼續後端生圖
+                        </button>
+                      ) : workflowSnapshot.isComplete && !workflowSnapshot.isEmpty ? (
+                        <button className="secondary workflow-cta" disabled>
+                          流程已完成
+                        </button>
+                      ) : null}
+                      {workflowSnapshot.hasFailed && !queueAutoRun ? (
+                        <button
+                          className="secondary"
+                          onClick={() => void startAutoPipeline({ resetFailed: true })}
+                          disabled={queueBusy || queueAutoRun}
+                        >
+                          重設失敗並繼續
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="queue-secondary-actions">
+                      <button className="ghost" onClick={() => void loadQueueTasks()} disabled={queueBusy}>
+                        刷新
+                      </button>
+                      <button
+                        className="ghost queue-danger-btn"
+                        onClick={() => void clearQueueTasks(queueOnlySelected)}
+                        disabled={queueBusy}
+                      >
+                        清空佇列
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="workflow-preferences">
+                    <label className="checkbox">
+                      <input
+                        type="checkbox"
+                        checked={autoContinue}
+                        onChange={(event) => setAutoContinueEnabled(event.target.checked)}
+                      />
+                      <span>刷新頁面後，若仍有待處理任務就喚醒後端 worker</span>
+                    </label>
+                    <label className="checkbox">
+                      <input
+                        type="checkbox"
+                        checked={queueOnlySelected}
+                        onChange={(event) => setQueueOnlySelected(event.target.checked)}
+                      />
+                      <span>只看目前角色</span>
+                    </label>
+                  </div>
+                </>
+              )}
+
+              {focusTask && !workflowSnapshot.isEmpty ? (
+                <div className={`queue-focus-card status-panel-${effectiveTaskStatus(focusTask)}`}>
+                  {(() => {
+                    const task = focusTask
+                    const detailImages = taskDetailImages(apiBase, task)
+                    const heroImage = taskHeroImage(apiBase, task, detailImages)
+                    const characterSummary = characterSummaries[String(task.core_id)]
+                    const characterName = task.character_name || characterSummary?.name || `角色 ${task.core_id}`
+                    const reviewStatus = taskReviewStatus(task)
+                    const effectiveStatus = effectiveTaskStatus(task)
+                    const thumbSrc =
+                      heroImage?.src ||
+                      taskThumbnailSrc(apiBase, task, detailImages, characterSummary) ||
+                      ''
+                    return (
+                      <>
+                        <div className="queue-focus-header">
+                          <div>
+                            <strong className="queue-focus-title">
+                              目前步驟 · #{task.id} · {purposeLabel(taskPurpose(task) || 'identity')}
+                              {taskAge(task) ? ` · ${taskAge(task)} 歲` : ''}
+                            </strong>
+                            <p className="queue-focus-subtitle">{taskWorkflowHint(task)}</p>
+                          </div>
+                          <div className="task-status-group">
+                            <span className={statusBadgeClass(effectiveStatus)}>
+                              {statusLabel(effectiveStatus, reviewStatus)}
+                            </span>
+                            <span className={purposeBadgeClass(taskPurpose(task) || 'identity')}>
+                              {purposeLabel(taskPurpose(task) || 'identity')}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="queue-focus-body">
+                          {thumbSrc ? (
+                            <a className="queue-focus-preview" href={thumbSrc} target="_blank" rel="noreferrer">
+                              <img src={thumbSrc} alt={characterName} loading="lazy" />
+                            </a>
+                          ) : (
+                            <div className="queue-focus-preview queue-focus-preview--empty">
+                              <span>{normalizeStatus(task.status) === 'pending' ? '等待生圖…' : '尚無預覽'}</span>
+                            </div>
+                          )}
+                          <div className="queue-focus-meta">
+                            <div className="queue-focus-meta-row">
+                              <span>角色</span>
+                              <strong>{characterName}</strong>
+                            </div>
+                            <div className="queue-focus-meta-row">
+                              <span>狀態</span>
+                              <strong>{taskWorkflowLabel(task)}</strong>
+                            </div>
+                            <div className="queue-focus-meta-row">
+                              <span>摘要</span>
+                              <strong>{responseSummary(task)}</strong>
+                            </div>
+                            {task.error_message ? (
+                              <div className="error-banner">{task.error_message}</div>
+                            ) : null}
+                            <div className="queue-focus-actions">
+                              {queueAutoRun && normalizeStatus(task.status) === 'pending' ? (
+                                <span className="pill purpose-age-span">自動生圖中…</span>
+                              ) : null}
+                              {task.result_url ? (
+                                <a
+                                  className="ghost link-button"
+                                  href={`${apiBase}${task.result_url}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  查看結果
+                                </a>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              ) : null}
+
+              {ageSpanSteps.length ? (
+                <div className="age-span-timeline">
+                  <div className="age-span-timeline-header">
+                    <strong>年齡軸時間軸</strong>
+                    <div className="age-span-phase-tabs">
+                      <button
+                        type="button"
+                        className={`ghost ${ageSpanPhaseTab === 'face_detail' ? 'active' : ''}`}
+                        onClick={() => setAgeSpanPhaseTab('face_detail')}
+                      >
+                        面部細緻
+                        <span className="pill purpose-face-detail">
+                          {countStepsByStatus(ageSpanStepsForPhase(ageSpanSteps, 'face_detail'), 'accepted')}/80
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`ghost ${ageSpanPhaseTab === 'tpose' ? 'active' : ''}`}
+                        onClick={() => setAgeSpanPhaseTab('tpose')}
+                      >
+                        T 型外觀
+                        <span className="pill purpose-tpose">
+                          {countStepsByStatus(ageSpanStepsForPhase(ageSpanSteps, 'tpose'), 'accepted')}/80
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="age-span-step-legend">
+                    <span className="legend-item status-accepted">已入庫</span>
+                    <span className="legend-item status-pending">排隊中</span>
+                    <span className="legend-item status-failed">失敗</span>
+                    <span className="legend-item status-missing">未開始</span>
+                  </div>
+                  <div className="age-span-step-grid">
+                    {ageSpanPhaseSteps.map((step) => {
+                      const normalized = normalizeStatus(step.status)
+                      const isCurrent =
+                        focusTask?.id === step.task_id ||
+                        ageSpanStatus?.blocking_task_id === step.task_id ||
+                        ageSpanStatus?.next_runnable_task_id === step.task_id
+                      return (
+                        <button
+                          key={`${step.phase}-${step.age}-${step.step_index}`}
+                          type="button"
+                          className={`age-span-step-cell status-${normalized || 'missing'}${isCurrent ? ' is-current' : ''}`}
+                          title={
+                            step.error_message ||
+                            `${step.age} 歲 · ${ageSpanStepStatusLabel(step.status)}`
+                          }
+                          onClick={() => {
+                            if (step.task_id) {
+                              setPinnedTaskId(step.task_id)
+                            }
+                          }}
+                          disabled={!step.task_id}
+                        >
+                          <span className="age-span-step-age">{step.age}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="age-span-timeline-hint">點選年齡格子可切換上方「目前步驟」預覽；綠色代表已入庫。</p>
+                </div>
+              ) : null}
+
+              <details
+                className="queue-advanced"
+                open={showQueueForm}
+                onToggle={(event) => setShowQueueForm((event.target as HTMLDetailsElement).open)}
+              >
+                <summary className="queue-advanced-summary">
+                  生圖設定（進階）
+                  <span className="subtle">Provider / Model / 單次用途</span>
+                </summary>
+                <div className="inline-grid queue-form-grid">
+                  <label className="field">
+                    <span>用途</span>
+                    <select value={purpose} onChange={(event) => setPurpose(event.target.value)}>
+                      <option value="identity">identity</option>
+                      <option value="face_detail">face_detail</option>
+                      <option value="tpose">tpose</option>
+                      <option value="age_span">age_span（新人物 1–80）</option>
+                      <option value="outfit">outfit</option>
+                      <option value="expression">expression</option>
+                      <option value="thumb">thumb</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Provider</span>
+                    <input value={provider} onChange={(event) => setProvider(event.target.value)} placeholder="wan" />
+                  </label>
+                  <label className="field">
+                    <span>Model</span>
+                    <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="沿用後端預設" />
+                  </label>
+                  <label className="field">
+                    <span>Base URL</span>
+                    <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="沿用後端預設" />
+                  </label>
+                </div>
+                <label className="field">
+                  <span>額外提示詞</span>
+                  <textarea
+                    value={extraPrompt}
+                    onChange={(event) => setExtraPrompt(event.target.value)}
+                    placeholder="可補充服裝、鏡頭、材質、風格等要求"
+                  />
+                </label>
+                <div className="button-row compact">
+                  <button className="primary" onClick={() => void queueImageGeneration()} disabled={!selectedCharacter || imageBusy}>
+                    {purpose === 'age_span' ? '排入 1–80 歲面部 + T型體' : '排入生圖任務'}
+                  </button>
+                  <button className="ghost" onClick={() => void copyPrompt()} disabled={!lastGeneratedPrompt}>
+                    複製最新提示詞
+                  </button>
+                </div>
+              </details>
+
+              <details
+                className="queue-advanced"
+                open={showFullTaskList}
+                onToggle={(event) => setShowFullTaskList((event.target as HTMLDetailsElement).open)}
+              >
+                <summary className="queue-advanced-summary">
+                  技術紀錄（選用）
+                  <span className="pill">{recentCompactTasks.length}</span>
+                  <span className="subtle">任務 ID、狀態明細</span>
+                </summary>
+                <div className="queue-toolbar">
+                  <label className="field">
+                    <span>狀態過濾</span>
+                    <select value={queueStatusFilter} onChange={(event) => setQueueStatusFilter(event.target.value)}>
+                      <option value="">全部</option>
+                      <option value="pending">pending</option>
+                      <option value="accepted">accepted</option>
+                      <option value="rejected">rejected</option>
+                      <option value="ready">ready</option>
+                      <option value="failed">failed</option>
+                    </select>
+                  </label>
+                </div>
+                {recentCompactTasks.length ? (
+                  <div className="queue-recent-list">
+                    {recentCompactTasks.map((task) => {
+                      const reviewStatus = taskReviewStatus(task)
+                      const effectiveStatus = effectiveTaskStatus(task)
+                      return (
+                        <button
+                          key={task.id}
+                          type="button"
+                          className={`queue-recent-row status-panel-${effectiveStatus}${pinnedTaskId === task.id ? ' is-pinned' : ''}`}
+                          onClick={() => setPinnedTaskId(task.id)}
+                        >
+                          <span className="queue-recent-id">#{task.id}</span>
+                          <span className="queue-recent-main">
+                            {purposeLabel(taskPurpose(task) || 'identity')}
+                            {taskAge(task) ? ` · ${taskAge(task)} 歲` : ''}
+                          </span>
+                          <span className={statusBadgeClass(effectiveStatus)}>
+                            {statusLabel(effectiveStatus, reviewStatus)}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="empty-state small">目前沒有符合條件的任務。</div>
+                )}
+              </details>
+
+              {!ageSpanSteps.length ? (
+                <div className="image-sections">
+                  {queuePreviewItems.length === 0 ? (
+                    <div className="empty-state small">任務產出的圖片會顯示在這裡，包含面部細節圖。</div>
+                  ) : (
+                    <section className="image-section">
+                      <div className="section-header compact">
+                        <h4>任務圖片預覽</h4>
+                        <span className="pill">{queuePreviewItems.length}</span>
+                      </div>
+                      <div className="image-grid">
+                        {queuePreviewItems.slice(0, 12).map((item, index) => (
+                          <a
+                            key={`${item.path}-${index}`}
+                            className="image-card"
+                            href={item.src}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <img src={item.src} alt={item.angle || item.note || `queue-image-${index + 1}`} loading="lazy" />
+                            <div className="image-meta">
+                              <strong>{item.angle === 'face_detail' ? 'face_detail' : item.angle || item.note || `image-${index + 1}`}</strong>
+                              <span>{item.path}</span>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </div>
+              ) : null}
             </div>
-            <div className="inline-grid queue-form-grid">
-              <label className="field">
-                <span>用途</span>
-                <select value={purpose} onChange={(event) => setPurpose(event.target.value)}>
-                  <option value="identity">identity</option>
-                  <option value="face_detail">face_detail</option>
-                  <option value="outfit">outfit</option>
-                  <option value="expression">expression</option>
-                  <option value="thumb">thumb</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Provider</span>
-                <input value={provider} onChange={(event) => setProvider(event.target.value)} placeholder="wan" />
-              </label>
-              <label className="field">
-                <span>Model</span>
-                <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="沿用後端預設" />
-              </label>
-              <label className="field">
-                <span>Base URL</span>
-                <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="沿用後端預設" />
-              </label>
-            </div>
-            <label className="field">
-              <span>額外提示詞</span>
-              <textarea
-                value={extraPrompt}
-                onChange={(event) => setExtraPrompt(event.target.value)}
-                placeholder="可補充服裝、鏡頭、材質、風格等要求"
-              />
-            </label>
-            <div className="button-row compact">
-              <button className="primary" onClick={() => void queueImageGeneration()} disabled={!selectedCharacter || imageBusy}>
-                排入生圖任務
-              </button>
-              <button className="ghost" onClick={() => void copyPrompt()} disabled={!lastGeneratedPrompt}>
-                複製最新提示詞
-              </button>
-            </div>
-          </div>
+          </section>
 
           <div className="layer-tabs">
             {LAYERS.map((item) => (
@@ -1987,14 +2933,7 @@ export function CharpassPanel(props: CharpassPanelProps) {
                       const branchImageGroups = detailImageGroups(branchGalleryImages)
                       const branchStatus = branchEffectiveStatus(branch)
                       const branchReviewStatus = normalizeStatus(branch.review_status)
-                      const branchReviewLabel =
-                        branchReviewStatus === 'pending'
-                          ? '待接受'
-                          : branchReviewStatus === 'accepted'
-                            ? '已接受'
-                            : branchReviewStatus === 'rejected'
-                              ? '已拒絕'
-                              : branchReviewStatus || ''
+                      const branchReviewLabel = branchReviewStatusLabel(branch)
                       const branchWorkflow = branchWorkflowLabel(branch)
                       const branchWorkflowDescription = branchWorkflowHint(branch)
                       const branchAngles = branchAngleList(branch, branchImages)
@@ -2031,7 +2970,7 @@ export function CharpassPanel(props: CharpassPanelProps) {
                                   <span className="task-summary-subtitle">{branchTypeLabel(branch.kind, branch.purpose)}</span>
                                 </div>
                                 <div className="task-status-group">
-                                  <span className={statusBadgeClass(branchStatus)}>{statusLabel(branchStatus)}</span>
+                                  <span className={statusBadgeClass(branchStatus)}>{statusLabel(branchStatus, branchReviewStatus)}</span>
                                   {branchReviewLabel ? (
                                     <span className={statusBadgeClass(branchReviewStatus || 'ready')}>審核 {branchReviewLabel}</span>
                                   ) : null}
@@ -2323,484 +3262,6 @@ export function CharpassPanel(props: CharpassPanelProps) {
                 )}
               </>
             )}
-          </section>
-
-          <section className="queue-panel">
-            <div className="section-header compact">
-              <h4>任務面板</h4>
-              <div className="status-strip">
-                <span className="pill">
-                  {queueData?.storage_mode === 'database' ? 'PostgreSQL' : queueData?.storage_mode === 'local' ? '本機 JSON' : '未載入'}
-                </span>
-                <span className="pill">pending {queueData?.stats.total_pending ?? 0}</span>
-                <span className="pill">ready {queueData?.stats.total_ready ?? 0}</span>
-                <span className="pill">failed {queueData?.stats.total_failed ?? 0}</span>
-                <span className="pill">shown {filteredQueueTasks.length}</span>
-              </div>
-            </div>
-            <div className="queue-toolbar">
-              <label className="field">
-                <span>狀態過濾</span>
-                <select value={queueStatusFilter} onChange={(event) => setQueueStatusFilter(event.target.value)}>
-                  <option value="">全部</option>
-                  <option value="pending">pending</option>
-                  <option value="accepted">accepted</option>
-                  <option value="rejected">rejected</option>
-                  <option value="ready">ready</option>
-                  <option value="failed">failed</option>
-                </select>
-              </label>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={queueOnlySelected}
-                  onChange={(event) => setQueueOnlySelected(event.target.checked)}
-                />
-                <span>只看目前角色</span>
-              </label>
-              <div className="button-row compact">
-                <button className="ghost" onClick={() => void loadQueueTasks()} disabled={queueBusy}>
-                  刷新
-                </button>
-                <button className="secondary" onClick={() => void processNextTask()} disabled={queueBusy}>
-                  生成下一筆候選圖（未入庫）
-                </button>
-                <button className="primary" onClick={() => void processAllTasks()} disabled={queueBusy}>
-                  批次生成候選圖（未入庫）
-                </button>
-              </div>
-            </div>
-            <p className="task-inline-summary subtle queue-toolbar-note">
-              `生成` 只會產出候選圖片、暫存資產與待審核分支；只有 `接受入庫` 才會正式寫回角色護照與角色清單縮圖。
-            </p>
-            {filteredQueueTasks.length ? (
-              <div className="queue-task-list">
-                {filteredQueueTasks.map((task) => {
-                  const imageGen = taskImageGeneration(task)
-                  const detailImages = taskDetailImages(apiBase, task)
-                  const angleList = taskAngleList(task, detailImages)
-                  const heroImage = taskHeroImage(apiBase, task, detailImages)
-                  const galleryImages = detailImages.filter(
-                    (item) =>
-                      `${item.path || item.uri}::${item.angle || ''}` !==
-                      `${heroImage?.path || heroImage?.uri || ''}::${heroImage?.angle || ''}`,
-                  )
-                  const imageGroups = detailImageGroups(galleryImages)
-                  const assetPaths = [...new Set(detailImages.map((item) => item.path).filter(Boolean))]
-                  const reviewLabel = reviewStatusLabel(task)
-                  const reviewStatus = taskReviewStatus(task)
-                  const effectiveStatus = effectiveTaskStatus(task)
-                  const workflowLabel = taskWorkflowLabel(task)
-                  const workflowHint = taskWorkflowHint(task)
-                  const detailSectionLabels = taskDetailSections(task)
-                  const characterSummary = characterSummaries[String(task.core_id)]
-                  const characterName = task.character_name || characterSummary?.name || `角色 ${task.core_id}`
-                  const characterThumbnailSrc = taskThumbnailSrc(apiBase, task, detailImages, characterSummary)
-                  const headline = `${purposeLabel(String(imageGen.purpose ?? '').trim() || task.status)} · ${
-                    characterName
-                  }`
-                  return (
-                    <details key={task.id} className={`queue-task-card task-disclosure status-panel-${effectiveStatus}`}>
-                      <summary className="task-summary">
-                        <div className="task-summary-layout">
-                          {characterThumbnailSrc ? (
-                            <a
-                              className="task-summary-thumb"
-                              href={characterThumbnailSrc}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={stopSummaryToggle}
-                              onMouseDown={(event) => event.stopPropagation()}
-                            >
-                              <img src={characterThumbnailSrc} alt={characterName} loading="lazy" />
-                            </a>
-                          ) : null}
-                          <div className="task-summary-main">
-                            <div className="task-summary-title-row">
-                              <div className="task-summary-heading">
-                                <strong>#{task.id} · {headline}</strong>
-                                <span className="task-summary-subtitle">{workflowLabel}</span>
-                              </div>
-                              <div className="task-status-group">
-                                <span className={statusBadgeClass(effectiveStatus)}>{statusLabel(effectiveStatus)}</span>
-                                <span className={purposeBadgeClass(String(imageGen.purpose ?? '').trim() || 'identity')}>
-                                  {purposeLabel(String(imageGen.purpose ?? '').trim() || 'identity')}
-                                </span>
-                                {reviewLabel ? (
-                                  <span className={statusBadgeClass(reviewStatus || 'ready')}>審核 {reviewLabel}</span>
-                                ) : null}
-                              </div>
-                            </div>
-                            <div className="queue-task-meta">
-                              <span>priority {task.priority}</span>
-                              <span>{formatDateTime(task.created_at)}</span>
-                              <span>hash {(task.variant_hash || '').slice(0, 16)}...</span>
-                            </div>
-                            <p className="task-inline-summary">
-                              {detailImages.length
-                                ? `${heroImage?.angle === 'face_detail' ? 'face_detail 優先' : '已含圖片'} · ${detailImages.length} 張`
-                                : responseSummary(task)}
-                              {angleList.length ? ` · ${angleList.join(', ')}` : ''}
-                            </p>
-                            <div className="task-summary-overview">
-                              <span className="summary-outline-pill">{taskParamSummary(task)}</span>
-                              <span className="summary-outline-pill">{workflowHint}</span>
-                              {detailSectionLabels.length ? (
-                                <span className="summary-outline-pill">詳情含 {detailSectionLabels.join(' / ')}</span>
-                              ) : null}
-                            </div>
-                            {angleList.length ? (
-                              <div className="task-chip-row task-chip-row-tight">
-                                {angleList.map((angle) => (
-                                  <span
-                                    key={`${task.id}-summary-angle-${angle}`}
-                                    className={angle === 'face_detail' ? 'pill purpose-face-detail' : 'pill pill-ghost'}
-                                  >
-                                    {angle}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className="task-summary-actions" onClick={(event) => event.stopPropagation()}>
-                            {task.status === 'pending' ? (
-                              <button
-                                className="secondary"
-                                onClick={(event) => {
-                                  stopSummaryToggle(event)
-                                  void processTask(task.id)
-                                }}
-                                onMouseDown={(event) => event.stopPropagation()}
-                                disabled={queueBusy}
-                              >
-                                生成候選圖（未入庫）
-                              </button>
-                            ) : null}
-                            {task.result_url ? (
-                              <a
-                                className="ghost link-button"
-                                href={`${apiBase}${task.result_url}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={stopSummaryToggle}
-                                onMouseDown={(event) => event.stopPropagation()}
-                              >
-                                查看結果
-                              </a>
-                            ) : null}
-                            {hasPendingAccept(task) ? (
-                              <>
-                                <button
-                                  className="primary"
-                                  onClick={(event) => {
-                                    stopSummaryToggle(event)
-                                    void reviewTask(task.id, true)
-                                  }}
-                                  onMouseDown={(event) => event.stopPropagation()}
-                                  disabled={queueBusy}
-                                >
-                                  接受入庫
-                                </button>
-                                <button
-                                  className="ghost"
-                                  onClick={(event) => {
-                                    stopSummaryToggle(event)
-                                    void reviewTask(task.id, false)
-                                  }}
-                                  onMouseDown={(event) => event.stopPropagation()}
-                                  disabled={queueBusy}
-                                >
-                                  拒絕
-                                </button>
-                              </>
-                            ) : null}
-                          </div>
-                        </div>
-                      </summary>
-                      <div className="task-detail-content">
-                        {heroImage ? (
-                          <section className="task-detail-section">
-                            <div className="section-header compact">
-                              <h4>面部細節圖</h4>
-                              <span className="pill purpose-face-detail">固定首圖</span>
-                            </div>
-                            <a
-                              className="image-card task-hero-image face-detail-priority"
-                              href={heroImage.src}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <img src={heroImage.src} alt={heroImage.angle || heroImage.note || 'face_detail'} loading="lazy" />
-                              <div className="image-meta">
-                                <strong>{heroImage.angle || heroImage.note || 'face_detail'}</strong>
-                                <span>{heroImage.summary || heroImage.path || heroImage.uri}</span>
-                              </div>
-                            </a>
-                          </section>
-                        ) : null}
-                        {imageGroups.faceDetail.length ? (
-                          <section className="task-detail-section">
-                            <div className="section-header compact">
-                              <h4>更多 face_detail 圖</h4>
-                              <span className="pill purpose-face-detail">{imageGroups.faceDetail.length}</span>
-                            </div>
-                            <div className="image-grid task-detail-image-grid">
-                              {imageGroups.faceDetail.map((item, index) => (
-                                <a
-                                  key={`${task.id}-face-detail-${item.path || item.uri || index}`}
-                                  className="image-card face-detail-priority"
-                                  href={item.src}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  <img src={item.src} alt={item.angle || item.note || `task-face-detail-${index + 1}`} loading="lazy" />
-                                  <div className="image-meta">
-                                    <strong>{item.angle || item.note || `face-detail-${index + 1}`}</strong>
-                                    <span>{item.summary || item.path || item.uri}</span>
-                                  </div>
-                                </a>
-                              ))}
-                            </div>
-                          </section>
-                        ) : null}
-                        {imageGroups.otherAngles.length ? (
-                          <section className="task-detail-section">
-                            <div className="section-header compact">
-                              <h4>其他角度圖</h4>
-                              <span className="pill">{imageGroups.otherAngles.length}</span>
-                            </div>
-                            <div className="image-grid task-detail-image-grid">
-                              {imageGroups.otherAngles.map((item, index) => (
-                                <a
-                                  key={`${task.id}-${item.path || item.uri || index}`}
-                                  className="image-card"
-                                  href={item.src}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  <img src={item.src} alt={item.angle || item.note || `task-image-${index + 1}`} loading="lazy" />
-                                  <div className="image-meta">
-                                    <strong>{item.angle || item.note || `image-${index + 1}`}</strong>
-                                    <span>{item.summary || item.path || item.uri}</span>
-                                  </div>
-                                </a>
-                              ))}
-                            </div>
-                          </section>
-                        ) : null}
-                        {promptText(task) || negativePromptText(task) ? (
-                          <div className="task-detail-grid">
-                            {promptText(task) ? (
-                              <section className="task-detail-section">
-                                <div className="section-header compact">
-                                  <h4>Prompt</h4>
-                                </div>
-                                <pre className="layer-preview queue-preview-block">{promptText(task)}</pre>
-                              </section>
-                            ) : null}
-                            {negativePromptText(task) ? (
-                              <section className="task-detail-section">
-                                <div className="section-header compact">
-                                  <h4>Negative Prompt</h4>
-                                </div>
-                                <pre className="layer-preview queue-preview-block">{negativePromptText(task)}</pre>
-                              </section>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        <section className="task-detail-section">
-                          <div className="section-header compact">
-                            <h4>演化參數</h4>
-                          </div>
-                          <pre className="layer-preview queue-preview-block">{safeJson(task.evolution_params ?? {})}</pre>
-                        </section>
-                        {task.error_message ? (
-                          <section className="task-detail-section">
-                            <div className="section-header compact">
-                              <h4>錯誤</h4>
-                            </div>
-                            <div className="error-banner">{task.error_message}</div>
-                          </section>
-                        ) : null}
-                        <section className="task-detail-section">
-                          <div className="section-header compact">
-                            <h4>回應摘要</h4>
-                          </div>
-                          <div className="task-meta-stack">
-                            {responseSummaryRows(task).map((row) => (
-                              <div
-                                key={`${task.id}-response-${row.label}`}
-                                className={`task-meta-row ${row.label === '摘要' ? 'task-meta-row-block' : ''}`}
-                              >
-                                <span>{row.label}</span>
-                                <strong>{row.value}</strong>
-                              </div>
-                            ))}
-                          </div>
-                          <pre className="layer-preview queue-preview-block">{safeJson(imageGen)}</pre>
-                        </section>
-                        <section className="task-detail-section">
-                          <div className="section-header compact">
-                            <h4>人物關聯</h4>
-                            <span className="pill">{selectedCharacter?.id === String(task.core_id) ? '目前角色' : '跨角色任務'}</span>
-                          </div>
-                          <div className="task-character-card">
-                            {characterThumbnailSrc ? (
-                              <a className="task-character-thumb" href={characterThumbnailSrc} target="_blank" rel="noreferrer">
-                                <img src={characterThumbnailSrc} alt={characterName} loading="lazy" />
-                              </a>
-                            ) : null}
-                            <div className="task-character-meta">
-                              <strong>{characterName}</strong>
-                              <div className="queue-task-meta">
-                                <span>角色 #{task.core_id}</span>
-                                {selectedCharacter?.id === String(task.core_id) ? <span>目前選中</span> : null}
-                                <span>{purposeLabel(String(imageGen.purpose ?? '').trim() || 'identity')}</span>
-                              </div>
-                              <div className="task-chip-row">
-                                <span className={purposeBadgeClass(String(imageGen.purpose ?? '').trim() || 'identity')}>
-                                  {purposeLabel(String(imageGen.purpose ?? '').trim() || 'identity')}
-                                </span>
-                                {angleList.map((angle) => (
-                                  <span key={`${task.id}-angle-${angle}`} className="pill pill-ghost">
-                                    {angle}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </section>
-                        <div className="task-detail-grid task-detail-grid--meta">
-                          <section className="task-detail-section">
-                            <div className="section-header compact">
-                              <h4>任務摘要</h4>
-                            </div>
-                            <div className="task-meta-stack">
-                              <div className="task-meta-row">
-                                <span>工作流</span>
-                                <strong>{workflowLabel}</strong>
-                              </div>
-                              <div className="task-meta-row task-meta-row-block">
-                                <span>說明</span>
-                                <strong>{workflowHint}</strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>狀態</span>
-                                <strong>{statusLabel(effectiveStatus)}</strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>審核</span>
-                                <strong>{reviewLabel ? `審核 ${reviewLabel}` : '尚未進入審核'}</strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>建立時間</span>
-                                <strong>{formatDateTime(task.created_at)}</strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>更新時間</span>
-                                <strong>{formatDateTime(task.updated_at)}</strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>Provider / Model</span>
-                                <strong>{summarizeText(`${imageGen.provider ?? '-'} / ${imageGen.model ?? '-'}`, '-', 80)}</strong>
-                              </div>
-                            </div>
-                          </section>
-                          <section className="task-detail-section">
-                            <div className="section-header compact">
-                              <h4>資產與回寫</h4>
-                            </div>
-                            <div className="task-meta-stack">
-                              <div className="task-meta-row">
-                                <span>圖片數</span>
-                                <strong>{detailImages.length || queueImageCollections(imageGen).length || 0}</strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>用途</span>
-                                <strong>{purposeLabel(String(imageGen.purpose ?? '').trim() || 'identity')}</strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>face_detail</span>
-                                <strong>{detailImages.some((item) => item.angle === 'face_detail') ? '有' : '無'}</strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>代表縮圖</span>
-                                <strong>
-                                  {firstNonEmptyString(
-                                    asRecord(task.result_metadata).face_detail_asset_path,
-                                    asRecord(task.result_metadata).thumbnail_asset_path,
-                                    imageGen.face_detail_asset_path,
-                                    imageGen.thumbnail_asset_path,
-                                  ) || '-'}
-                                </strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>寫回實體</span>
-                                <strong>{String(asRecord(task.result_metadata).persist_entity_id ?? task.core_id)}</strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>入庫條件</span>
-                                <strong>
-                                  {hasPendingAccept(task)
-                                    ? '待接受後才入庫'
-                                    : reviewStatus === 'accepted'
-                                      ? '已接受並入庫'
-                                      : reviewStatus === 'rejected'
-                                        ? '已拒絕，不入庫'
-                                        : '尚未入庫'}
-                                </strong>
-                              </div>
-                              <div className="task-meta-row">
-                                <span>結果連結</span>
-                                <strong>{task.result_url ? '可開啟' : '尚無'}</strong>
-                              </div>
-                            </div>
-                          </section>
-                        </div>
-                        <section className="task-detail-section">
-                          <div className="section-header compact">
-                            <h4>資產路徑</h4>
-                          </div>
-                          <pre className="layer-preview queue-preview-block">{safeJson(assetPaths)}</pre>
-                        </section>
-                      </div>
-                    </details>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="empty-state small">目前沒有符合條件的任務。</div>
-            )}
-
-            <div className="image-sections">
-              {queuePreviewItems.length === 0 ? (
-                <div className="empty-state small">任務產出的圖片會顯示在這裡，包含面部細節圖。</div>
-              ) : (
-                <section className="image-section">
-                  <div className="section-header compact">
-                    <h4>任務圖片預覽</h4>
-                    <span className="pill">{queuePreviewItems.length}</span>
-                  </div>
-                  <div className="image-grid">
-                    {queuePreviewItems.map((item, index) => (
-                      <a
-                        key={`${item.path}-${index}`}
-                        className="image-card"
-                        href={item.src}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <img src={item.src} alt={item.angle || item.note || `queue-image-${index + 1}`} loading="lazy" />
-                        <div className="image-meta">
-                          <strong>{item.angle === 'face_detail' ? 'face_detail' : item.angle || item.note || `image-${index + 1}`}</strong>
-                          <span>{item.path}</span>
-                        </div>
-                      </a>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </div>
           </section>
 
           <pre className="layer-preview">{JSON.stringify(asRecord(draft[layer]), null, 2)}</pre>

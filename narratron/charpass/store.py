@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
+from narratron.charpass.image_gen_compact import compact_image_gen_extensions
 from narratron.charpass.schema import (
     LEGACY_MANIFEST_SIDECAR,
     LEGACY_READABLE_SIDECAR,
@@ -16,6 +18,9 @@ from narratron.charpass.schema import (
     is_json_charpass,
     strip_local_sidecar,
 )
+
+logger = logging.getLogger(__name__)
+HISTORY_ASSET_DIRS = ("assets", "thumb")
 
 
 def sidecar_manifest(manifest: dict) -> dict:
@@ -38,26 +43,57 @@ class CharpassStore:
         safe = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in entity_id)
         return self.root / (safe or "unknown")
 
-    def write(self, entity_id: str, blob: bytes, filename: str | None = None) -> Path:
+    def write(
+        self,
+        entity_id: str,
+        blob: bytes,
+        filename: str | None = None,
+        *,
+        snapshot_history: bool = True,
+    ) -> Path:
         folder = self.entity_dir(entity_id)
         history = folder / "history"
         history.mkdir(parents=True, exist_ok=True)
         current = folder / LOCAL_CURRENT_FILE
-        if current.is_file():
-            archive_blob = self._archive_blob(folder, current.read_bytes())
-            next_index = self._next_history_index(history)
-            (history / f"{next_index:03d}.charpass").write_bytes(archive_blob)
-        (folder / "filename.txt").write_text(filename or LOCAL_CURRENT_FILE, encoding="utf-8")
-        self._write_local_current(folder, blob)
-        self._remove_legacy_sidecars(folder)
+        if snapshot_history and current.is_file():
+            try:
+                archive_blob = self._archive_blob(folder, current.read_bytes())
+                next_index = self._next_history_index(history)
+                self._write_bytes_atomic(history / f"{next_index:03d}.charpass", archive_blob)
+            except OSError as exc:
+                logger.warning("跳過歷史快照（檔案被占用）：%s", exc)
+        try:
+            self._write_text_atomic(folder / "filename.txt", filename or LOCAL_CURRENT_FILE)
+        except OSError as exc:
+            logger.warning("無法更新 filename.txt：%s", exc)
+        try:
+            written = self._write_local_current(folder, blob)
+            if written is None and is_json_charpass(blob):
+                self._write_text_atomic(
+                    current,
+                    blob.decode("utf-8") if blob.endswith(b"\n") else blob.decode("utf-8") + "\n",
+                )
+        except OSError as exc:
+            logger.warning("無法更新 current.charpass：%s", exc)
+            raise
+        try:
+            self._remove_legacy_sidecars(folder)
+        except OSError as exc:
+            logger.warning("無法移除舊 sidecar：%s", exc)
         self._prune(folder)
         return current
 
-    def write_manifest(self, entity_id: str, manifest: dict) -> Path:
+    def write_manifest(
+        self,
+        entity_id: str,
+        manifest: dict,
+        *,
+        snapshot_history: bool = True,
+    ) -> Path:
         """寫入本機可讀 JSON 護照（自動加上 `_local` 提示）。"""
-        cleaned = strip_local_sidecar(dict(manifest))
+        cleaned = compact_image_gen_extensions(strip_local_sidecar(dict(manifest)))
         blob = json.dumps(sidecar_manifest(cleaned), ensure_ascii=False, indent=2).encode("utf-8")
-        return self.write(entity_id, blob)
+        return self.write(entity_id, blob, snapshot_history=snapshot_history)
 
     def read_current(self, entity_id: str) -> bytes | None:
         """讀取目前護照；本機 JSON 會即時打包成 ZIP 供 API／匯出使用。"""
@@ -201,6 +237,28 @@ class CharpassStore:
                 continue
         return (max(indexes) + 1) if indexes else 1
 
+    def _write_bytes_atomic(self, path: Path, payload: bytes) -> None:
+        tmp = path.with_name(f"{path.name}.tmp")
+        tmp.write_bytes(payload)
+        try:
+            tmp.replace(path)
+        except OSError:
+            try:
+                path.write_bytes(payload)
+            finally:
+                tmp.unlink(missing_ok=True)
+
+    def _write_text_atomic(self, path: Path, text: str) -> None:
+        tmp = path.with_name(f"{path.name}.tmp")
+        tmp.write_text(text, encoding="utf-8")
+        try:
+            tmp.replace(path)
+        except OSError:
+            try:
+                path.write_text(text, encoding="utf-8")
+            finally:
+                tmp.unlink(missing_ok=True)
+
     def _write_local_current(self, folder: Path, blob: bytes) -> Path | None:
         """寫入本機可讀 JSON `current.charpass`；輸入可為 ZIP 或 JSON。"""
         try:
@@ -213,9 +271,9 @@ class CharpassStore:
             self.write_assets(folder.name, unpacked.assets)
         sidecar = sidecar_manifest(unpacked.manifest)
         manifest_path = folder / LOCAL_CURRENT_FILE
-        manifest_path.write_text(
+        self._write_text_atomic(
+            manifest_path,
             json.dumps(sidecar, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
         return manifest_path
 
@@ -257,7 +315,7 @@ class CharpassStore:
 
     def _collect_local_assets(self, folder: Path) -> dict[str, bytes]:
         assets: dict[str, bytes] = {}
-        for sub in ("assets", "thumb", "causal"):
+        for sub in HISTORY_ASSET_DIRS:
             subdir = folder / sub
             if not subdir.is_dir():
                 continue
@@ -281,4 +339,7 @@ class CharpassStore:
         keep_history = MAX_STORED_VERSIONS - (1 if current.is_file() else 0)
         drop = history[:-keep_history] if keep_history > 0 else history
         for path in drop:
-            path.unlink(missing_ok=True)
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning("無法刪除舊歷史快照 %s：%s", path, exc)

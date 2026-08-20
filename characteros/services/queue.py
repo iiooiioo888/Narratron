@@ -6,14 +6,24 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import logging
 
-from characteros.imaging.settings import settings as imaging_settings
 from characteros.models.orm import CharacterCore, CharacterProfile, CharacterVariant
 from characteros.services.characters import CharacterService
-from characteros.services.imaging import (
-    ImagingService,
-    finalize_reviewed_generation,
-    sync_review_artifacts,
+from characteros.services.age_span import find_next_runnable_task
+from characteros.services.pipeline_coordinator import (
+    after_image_task_succeeded,
+    sync_age_span_task_states,
 )
+from characteros.services.image_task_runner import (
+    ImageQueueExecution,
+    execute_image_queue_task,
+)
+from characteros.services.queue_task_utils import (
+    apply_review_metadata,
+    build_image_result_metadata,
+    effective_task_status,
+    review_status_from_metadata,
+)
+from characteros.services.imaging import finalize_reviewed_generation, sync_review_artifacts
 from characteros.services.variant_processor import (
     evolve_manifest,
     extract_image_request,
@@ -22,73 +32,6 @@ from characteros.services.variant_processor import (
 from characteros.utils.hash import compute_variant_hash
 
 logger = logging.getLogger(__name__)
-PREFERRED_RESULT_ANGLES = (
-    "face_detail",
-    "front",
-    "three_quarter",
-    "left",
-    "right",
-    "back",
-    "top",
-    "bottom",
-)
-
-
-def _review_rank(value: Any) -> int:
-    normalized = str(value or "").strip().lower()
-    if normalized == "pending":
-        return 3
-    if normalized == "accepted":
-        return 4
-    if normalized == "ready":
-        return 2
-    if normalized == "rejected":
-        return 1
-    if normalized == "failed":
-        return 0
-    return -1
-
-
-def _review_status_from_metadata(result_metadata: dict[str, Any]) -> str | None:
-    image_generation = result_metadata.get("image_generation")
-    if isinstance(image_generation, dict):
-        review = image_generation.get("review")
-        if isinstance(review, dict):
-            status = str(review.get("status") or "").strip().lower()
-            if status:
-                return status
-        status = str(image_generation.get("review_status") or "").strip().lower()
-        if status:
-            return status
-    status = str(result_metadata.get("review_status") or "").strip().lower()
-    return status or None
-
-
-def _effective_task_status(status: Any, result_metadata: dict[str, Any]) -> str:
-    review_status = _review_status_from_metadata(result_metadata)
-    if review_status in {"pending", "accepted", "rejected"}:
-        return review_status
-    normalized_status = str(status or "").strip().lower()
-    return normalized_status or "pending"
-
-
-def _ordered_angles(values: list[Any], *, has_face_detail: bool = False) -> list[str]:
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for preferred in PREFERRED_RESULT_ANGLES:
-        if preferred == "face_detail" and not has_face_detail:
-            continue
-        if any(str(value or "").strip() == preferred for value in values):
-            ordered.append(preferred)
-            seen.add(preferred)
-    for value in values:
-        normalized = str(value or "").strip()
-        if normalized and normalized not in seen:
-            ordered.append(normalized)
-            seen.add(normalized)
-    if has_face_detail and "face_detail" not in seen:
-        ordered.insert(0, "face_detail")
-    return ordered
 
 
 def _entity_id_for_manifest(
@@ -102,178 +45,6 @@ def _entity_id_for_manifest(
         return raw
     fallback = str(fallback_name or "character").strip() or "character"
     return f"character-{fallback}"
-
-
-def _prepare_result_urls(
-    core_id: int,
-    payload: dict[str, Any],
-    *,
-    processed_at: str,
-) -> tuple[str, dict[str, Any]]:
-    images = payload.get("images") if isinstance(payload.get("images"), list) else []
-    image_urls: list[str] = []
-    representative_url: str | None = None
-    for image in images:
-        if not isinstance(image, dict):
-            continue
-        asset_path = str(image.get("asset_path") or "").strip()
-        if asset_path:
-            image_url = f"/api/v1/characters/{core_id}/assets/{asset_path}"
-            image_urls.append(image_url)
-            if representative_url is None:
-                representative_url = image_url
-
-    thumbnail_image = payload.get("thumbnail_image") if isinstance(payload.get("thumbnail_image"), dict) else {}
-    thumbnail_asset_path = str(
-        payload.get("thumbnail_asset_path")
-        or thumbnail_image.get("asset_path")
-        or ""
-    ).strip()
-    face_detail_asset_path = str(payload.get("face_detail_asset_path") or "").strip()
-    representative_asset_path = face_detail_asset_path or thumbnail_asset_path
-    if representative_asset_path:
-        representative_url = f"/api/v1/characters/{core_id}/assets/{representative_asset_path}"
-    else:
-        for angle in PREFERRED_RESULT_ANGLES:
-            for image in images:
-                if not isinstance(image, dict):
-                    continue
-                if str(image.get("angle") or "").strip() != angle:
-                    continue
-                asset_path = str(image.get("asset_path") or "").strip()
-                if asset_path:
-                    representative_url = f"/api/v1/characters/{core_id}/assets/{asset_path}"
-                    break
-            if representative_url:
-                break
-    result_url = representative_url or (image_urls[0] if image_urls else f"/api/v1/characters/{core_id}/variants")
-    review = payload.get("review") if isinstance(payload.get("review"), dict) else {}
-    review_status = str(review.get("status") or "").strip() or None
-    normalized_angles: list[str] = []
-    for angle in payload.get("angles") or []:
-        normalized = str(angle or "").strip()
-        if normalized and normalized not in normalized_angles:
-            normalized_angles.append(normalized)
-    if "face_detail" not in normalized_angles and face_detail_asset_path:
-        normalized_angles.insert(0, "face_detail")
-    normalized_angles.sort(
-        key=lambda angle: (
-            PREFERRED_RESULT_ANGLES.index(angle)
-            if angle in PREFERRED_RESULT_ANGLES
-            else len(PREFERRED_RESULT_ANGLES),
-            angle,
-        )
-    )
-    representative_angle = None
-    if face_detail_asset_path:
-        representative_angle = "face_detail"
-    elif thumbnail_asset_path:
-        representative_angle = next(
-            (
-                str(image.get("angle") or "").strip()
-                for image in images
-                if isinstance(image, dict)
-                and str(image.get("asset_path") or "").strip() == thumbnail_asset_path
-                and str(image.get("angle") or "").strip()
-            ),
-            "front",
-        )
-    representative_asset_path = face_detail_asset_path or thumbnail_asset_path or None
-    metadata = {
-        "processed_at": processed_at,
-        "thumbnail_asset_path": thumbnail_asset_path or None,
-        "face_detail_asset_path": face_detail_asset_path or None,
-        "face_detail_count": payload.get("face_detail_count") or 0,
-        "has_face_detail": bool(payload.get("face_detail_count") or face_detail_asset_path),
-        "representative_asset_path": representative_asset_path,
-        "representative_angle": representative_angle,
-        "review_status": review_status,
-        "effective_status": review_status or ("ready" if images else None),
-        "purpose": payload.get("purpose"),
-        "angles": normalized_angles,
-        "image_count": len(image_urls),
-        "image_generation": {
-            "provider": payload.get("provider"),
-            "model": payload.get("model"),
-            "purpose": payload.get("purpose"),
-            "prompt": payload.get("prompt"),
-            "negative_prompt": payload.get("negative_prompt"),
-            "multi_angle": payload.get("multi_angle"),
-            "angles": payload.get("angles") or [],
-            "images": images,
-            "image_urls": image_urls,
-            "images_by_angle": payload.get("images_by_angle") or {},
-            "face_detail_images": payload.get("face_detail_images") or [],
-            "face_detail_asset_path": face_detail_asset_path or None,
-            "face_detail_count": payload.get("face_detail_count") or 0,
-            "thumbnail_image": payload.get("thumbnail_image"),
-            "thumbnail_asset_path": thumbnail_asset_path or None,
-            "review": review,
-            "review_status": review_status,
-            "has_face_detail": bool(payload.get("face_detail_count") or face_detail_asset_path),
-            "representative_asset_path": representative_asset_path,
-            "representative_angle": representative_angle,
-            "image_count": len(image_urls),
-        },
-    }
-    return result_url, metadata
-
-
-def _apply_review_metadata(
-    result_metadata: dict[str, Any],
-    image_generation: dict[str, Any],
-) -> None:
-    review = image_generation.get("review") if isinstance(image_generation.get("review"), dict) else {}
-    review_status = str(review.get("status") or "").strip() or None
-    thumbnail_asset_path = str(image_generation.get("thumbnail_asset_path") or "").strip() or None
-    face_detail_asset_path = str(image_generation.get("face_detail_asset_path") or "").strip() or None
-    representative_asset_path = face_detail_asset_path or thumbnail_asset_path
-    representative_angle = None
-    if face_detail_asset_path:
-        representative_angle = "face_detail"
-    elif thumbnail_asset_path:
-        representative_angle = next(
-            (
-                str(image.get("angle") or "").strip()
-                for image in (image_generation.get("images") or [])
-                if isinstance(image, dict)
-                and str(image.get("asset_path") or "").strip() == thumbnail_asset_path
-                and str(image.get("angle") or "").strip()
-            ),
-            "front",
-        )
-    angles: list[str] = []
-    for angle in image_generation.get("angles") or []:
-        normalized = str(angle or "").strip()
-        if normalized and normalized not in angles:
-            angles.append(normalized)
-    if "face_detail" not in angles and face_detail_asset_path:
-        angles.insert(0, "face_detail")
-    angles.sort(
-        key=lambda angle: (
-            PREFERRED_RESULT_ANGLES.index(angle)
-            if angle in PREFERRED_RESULT_ANGLES
-            else len(PREFERRED_RESULT_ANGLES),
-            angle,
-        )
-    )
-    image_generation["review_status"] = review_status
-    image_generation["has_face_detail"] = bool(image_generation.get("face_detail_count") or face_detail_asset_path)
-    image_generation["representative_asset_path"] = representative_asset_path
-    image_generation["representative_angle"] = representative_angle
-    image_generation["image_count"] = len(image_generation.get("image_urls") or [])
-    result_metadata["image_generation"] = image_generation
-    result_metadata["thumbnail_asset_path"] = thumbnail_asset_path
-    result_metadata["face_detail_asset_path"] = face_detail_asset_path
-    result_metadata["face_detail_count"] = image_generation.get("face_detail_count") or 0
-    result_metadata["has_face_detail"] = bool(image_generation.get("face_detail_count") or face_detail_asset_path)
-    result_metadata["representative_asset_path"] = representative_asset_path
-    result_metadata["representative_angle"] = representative_angle
-    result_metadata["review_status"] = review_status
-    result_metadata["effective_status"] = review_status or result_metadata.get("effective_status") or "ready"
-    result_metadata["purpose"] = image_generation.get("purpose")
-    result_metadata["angles"] = angles
-    result_metadata["image_count"] = len(image_generation.get("image_urls") or [])
 
 
 class QueueManager:
@@ -295,7 +66,8 @@ class QueueManager:
         self,
         core_id: int,
         evolution_params: Dict[str, Any],
-        priority: int = 0
+        priority: int = 0,
+        status: str = "pending",
     ) -> Tuple[CharacterVariant, bool]:
         """
         請求變體生成
@@ -354,7 +126,7 @@ class QueueManager:
             profile_id=profile_id,
             variant_hash=variant_hash,
             evolution_params=evolution_params,
-            status='pending',
+            status=str(status or "pending").strip() or "pending",
             priority=priority,
             retry_count=0,
             max_retries=3
@@ -416,92 +188,83 @@ class QueueManager:
         if variant.status == "ready":
             return variant
 
-        started_at = datetime.now(timezone.utc)
-        try:
-            profile = None
-            if variant.profile_id:
-                profile = self.db.query(CharacterProfile).filter(
-                    CharacterProfile.id == variant.profile_id
-                ).first()
-            if profile is None:
-                profile = self.db.query(CharacterProfile).filter(
-                    CharacterProfile.core_id == variant.core_id,
-                    CharacterProfile.is_active == True,
-                ).order_by(CharacterProfile.version.desc()).first()
+        profile = None
+        if variant.profile_id:
+            profile = self.db.query(CharacterProfile).filter(
+                CharacterProfile.id == variant.profile_id
+            ).first()
+        if profile is None:
+            profile = self.db.query(CharacterProfile).filter(
+                CharacterProfile.core_id == variant.core_id,
+                CharacterProfile.is_active == True,
+            ).order_by(CharacterProfile.version.desc()).first()
 
-            base_manifest = profile.manifest if profile and isinstance(profile.manifest, dict) else {}
-            raw_params = variant.evolution_params or {}
-            params = sanitize_evolution_params(raw_params)
-            image_request = extract_image_request(raw_params)
-            evolved_manifest = evolve_manifest(base_manifest, params)
-            finished_at = datetime.now(timezone.utc)
+        base_manifest = profile.manifest if profile and isinstance(profile.manifest, dict) else {}
+        core = self.db.query(CharacterCore).filter(CharacterCore.id == variant.core_id).first()
+        core_name = core.name if core else f"character-{variant.core_id}"
+        raw_params = variant.evolution_params or {}
+        evolved_for_entity = evolve_manifest(
+            base_manifest,
+            sanitize_evolution_params(raw_params),
+        )
+        sibling_tasks = [
+            item.to_dict()
+            for item in self.db.query(CharacterVariant)
+            .filter(CharacterVariant.core_id == variant.core_id)
+            .all()
+        ]
 
-            variant.status = "ready"
-            variant.error_message = None
-            variant.queue_wait_ms = max(
-                0,
-                int((started_at - (variant.created_at or started_at)).total_seconds() * 1000),
+        outcome = execute_image_queue_task(
+            ImageQueueExecution(
+                core_id=int(variant.core_id),
+                task_id=int(variant.id),
+                character_name=str(core_name),
+                raw_evolution_params=raw_params,
+                sibling_tasks=sibling_tasks,
+                base_manifest=base_manifest,
+                entity_id=_entity_id_for_manifest(evolved_for_entity, core_name),
+                save_manifest=lambda manifest: CharacterService(self.db).save_charpass(variant.core_id, manifest),
+                created_at=variant.created_at,
             )
-            variant.generation_duration_ms = max(
-                0,
-                int((finished_at - started_at).total_seconds() * 1000),
-            )
-            result_url = f"/api/v1/characters/{variant.core_id}/variants"
-            result_metadata = {
-                "processed_at": finished_at.isoformat(),
-                "evolved_manifest": evolved_manifest,
-                "evolution_params": params,
-            }
-            if image_request:
-                core = self.db.query(CharacterCore).filter(CharacterCore.id == variant.core_id).first()
-                core_name = core.name if core else f"character-{variant.core_id}"
-                persist_enabled = bool(image_request.get("persist", True))
-                persist_entity_id = (
-                    _entity_id_for_manifest(evolved_manifest, core_name)
-                    if persist_enabled
-                    else None
-                )
-                provider_name = str(image_request.get("provider") or imaging_settings.get_provider() or "null")
-                explicit_model = str(image_request.get("model") or "").strip()
-                explicit_base_url = str(image_request.get("base_url") or "").strip()
-                explicit_api_key = str(image_request.get("api_key") or "").strip()
-                payload = ImagingService().generate_for_manifest(
-                    evolved_manifest,
-                    purpose=str(image_request.get("purpose") or "identity"),
-                    provider_name=provider_name,
-                    extra=str(image_request.get("extra") or ""),
-                    n=int(image_request.get("n") or 1),
-                    model=explicit_model or ("" if provider_name == "null" else str(imaging_settings.get_model() or "")),
-                    base_url=explicit_base_url or ("" if provider_name == "null" else str(imaging_settings.get_base_url() or "")),
-                    api_key=explicit_api_key or ("" if provider_name == "null" else str(imaging_settings.get_api_key() or "")),
-                    persist_entity_id=persist_entity_id,
-                    multi_angle=bool(image_request.get("multi_angle", True)),
-                    auto_accept=False,
-                )
-                result_url, image_metadata = _prepare_result_urls(
-                    variant.core_id,
-                    payload,
-                    processed_at=finished_at.isoformat(),
-                )
-                result_metadata.update(image_metadata)
-                result_metadata["persist_entity_id"] = persist_entity_id
-                result_metadata["image_request"] = image_request
-                result_metadata["effective_status"] = _effective_task_status(variant.status, result_metadata)
+        )
 
-            variant.result_url = result_url
-            variant.result_metadata = result_metadata
-            self.db.add(variant)
-            self.db.commit()
-            self.db.refresh(variant)
-            return variant
-        except Exception as exc:
-            variant.status = "failed"
+        variant.status = outcome.status
+        variant.error_message = outcome.error_message
+        variant.queue_wait_ms = outcome.queue_wait_ms
+        variant.generation_duration_ms = outcome.generation_duration_ms
+        if outcome.result_url:
+            variant.result_url = outcome.result_url
+        variant.result_metadata = outcome.result_metadata
+        if outcome.status == "failed":
             variant.retry_count = int(variant.retry_count or 0) + 1
-            variant.error_message = str(exc)
-            self.db.add(variant)
-            self.db.commit()
-            self.db.refresh(variant)
-            return variant
+
+        self.db.add(variant)
+        self.db.commit()
+        self.db.refresh(variant)
+
+        if outcome.status == "ready":
+            tasks = self._all_variant_task_dicts()
+            sync_age_span_task_states(tasks)
+            self._apply_age_span_statuses(tasks)
+
+            def _enqueue(**kwargs: Any) -> tuple[CharacterVariant, bool]:
+                return self.request_variant_generation(
+                    core_id=int(kwargs["core_id"]),
+                    evolution_params=kwargs["evolution_params"],
+                    priority=int(kwargs.get("priority") or 0),
+                    status=str(kwargs.get("status") or "pending"),
+                )
+
+            after_image_task_succeeded(
+                self._all_variant_task_dicts(),
+                enqueue=_enqueue,
+                core_id=variant.core_id,
+            )
+            self._sync_age_span_queue()
+        elif outcome.status == "waiting":
+            self._sync_age_span_queue()
+
+        return variant
 
     def review_variant(self, variant_id: int, *, accepted: bool) -> CharacterVariant:
         """人工接受或拒絕已完成的生圖任務。"""
@@ -557,9 +320,13 @@ class QueueManager:
             promoted = finalize_reviewed_generation(entity_id, image_generation)
             CharacterService(self.db).save_charpass(variant.core_id, promoted["manifest"])
             image_generation.update(promoted["payload"])
-            variant.result_url, image_meta = _prepare_result_urls(
-                variant.core_id,
-                image_generation,
+            variant.result_url, image_meta, _image_urls = build_image_result_metadata(
+                core_id=variant.core_id,
+                payload=image_generation,
+                image_request={},
+                provider_name=str(image_generation.get("provider") or ""),
+                explicit_model=str(image_generation.get("model") or ""),
+                persist_entity_id=entity_id or None,
                 processed_at=datetime.now(timezone.utc).isoformat(),
             )
             result_metadata.update(image_meta)
@@ -571,36 +338,174 @@ class QueueManager:
         if entity_id:
             sync_review_artifacts(entity_id, image_generation)
 
-        _apply_review_metadata(result_metadata, image_generation)
-        result_metadata["effective_status"] = _effective_task_status(variant.status, result_metadata)
+        apply_review_metadata(result_metadata, image_generation)
+        result_metadata["effective_status"] = effective_task_status(variant.status, result_metadata)
         variant.result_metadata = result_metadata
         self.db.add(variant)
         self.db.commit()
         self.db.refresh(variant)
         return variant
 
-    def process_next_pending(self) -> Optional[CharacterVariant]:
-        """處理優先級最高且最早建立的 pending 任務。"""
-        variant = (
-            self.db.query(CharacterVariant)
-            .filter(CharacterVariant.status == "pending")
-            .order_by(CharacterVariant.priority.desc(), CharacterVariant.created_at.asc())
-            .first()
-        )
-        if not variant:
-            return None
-        return self.process_variant(variant.id)
+    def ensure_following_age_span_tasks(self, *, core_id: int | None = None) -> list[CharacterVariant]:
+        """年齡軸完成一步後，只再排入下一步。"""
+        tasks = self._all_variant_task_dicts()
 
-    def process_all_pending(self, *, limit: int = 20) -> list[CharacterVariant]:
-        """批次處理 pending 任務。"""
+        def _enqueue(**kwargs: Any) -> tuple[CharacterVariant, bool]:
+            variant, is_new = self.request_variant_generation(
+                core_id=int(kwargs["core_id"]),
+                evolution_params=kwargs["evolution_params"],
+                priority=int(kwargs.get("priority") or 0),
+                status=str(kwargs.get("status") or "pending"),
+            )
+            return variant, is_new
+
+        created_variants: list[CharacterVariant] = []
+        for item in enqueue_next_age_span_steps(tasks, enqueue=_enqueue, core_id=core_id):
+            if isinstance(item, CharacterVariant):
+                created_variants.append(item)
+        self._sync_age_span_queue()
+        return created_variants
+
+    def _apply_age_span_statuses(self, tasks: list[dict[str, Any]]) -> None:
+        changed = False
+        by_id = {int(item.get("id") or 0): str(item.get("status") or "") for item in tasks}
+        for variant in self.db.query(CharacterVariant).all():
+            next_status = by_id.get(int(variant.id))
+            if next_status in {"pending", "waiting"} and variant.status != next_status:
+                variant.status = next_status
+                self.db.add(variant)
+                changed = True
+        if changed:
+            self.db.commit()
+
+    def _sync_age_span_queue(self) -> None:
+        tasks = self._all_variant_task_dicts()
+        sync_age_span_task_states(tasks)
+        self._apply_age_span_statuses(tasks)
+
+    def normalize_age_span_statuses(self) -> None:
+        self._sync_age_span_queue()
+
+    def _variant_task_dict(self, variant: CharacterVariant) -> dict[str, Any]:
+        return {
+            "id": variant.id,
+            "core_id": variant.core_id,
+            "status": variant.status,
+            "priority": variant.priority,
+            "evolution_params": variant.evolution_params or {},
+            "result_metadata": variant.result_metadata or {},
+            "created_at": variant.created_at.isoformat() if variant.created_at else "",
+        }
+
+    def _list_pending_variant_dicts(self) -> list[dict[str, Any]]:
         variants = (
             self.db.query(CharacterVariant)
             .filter(CharacterVariant.status == "pending")
             .order_by(CharacterVariant.priority.desc(), CharacterVariant.created_at.asc())
-            .limit(max(1, min(limit, 200)))
             .all()
         )
-        return [self.process_variant(variant.id) for variant in variants]
+        return [self._variant_task_dict(variant) for variant in variants]
+
+    def _all_variant_task_dicts(self) -> list[dict[str, Any]]:
+        variants = self.db.query(CharacterVariant).all()
+        return [self._variant_task_dict(variant) for variant in variants]
+
+    def reset_failed_tasks(
+        self,
+        *,
+        core_id: int | None = None,
+        from_id: int | None = None,
+    ) -> list[CharacterVariant]:
+        """將 failed 任務重設為 pending。"""
+        query = self.db.query(CharacterVariant).filter(CharacterVariant.status == "failed")
+        if core_id is not None:
+            query = query.filter(CharacterVariant.core_id == int(core_id))
+        if from_id is not None:
+            query = query.filter(CharacterVariant.id >= int(from_id))
+        reset: list[CharacterVariant] = []
+        for variant in query.all():
+            variant.status = "waiting"
+            variant.error_message = None
+            self.db.add(variant)
+            reset.append(variant)
+        if reset:
+            self.db.commit()
+            self._sync_age_span_queue()
+            for variant in reset:
+                self.db.refresh(variant)
+        return reset
+
+    def clear_tasks(self, *, core_id: int | None = None) -> int:
+        """清空佇列任務；可選只清除指定角色的任務。"""
+        query = self.db.query(CharacterVariant)
+        if core_id is not None:
+            query = query.filter(CharacterVariant.core_id == int(core_id))
+        removed = query.count()
+        if removed:
+            query.delete(synchronize_session=False)
+            self.db.commit()
+        return removed
+
+    def reset_variant_to_pending(self, variant_id: int) -> CharacterVariant:
+        variant = self.get_variant_by_id(variant_id)
+        if not variant:
+            from fastapi import HTTPException, status
+
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Queue task {variant_id} not found",
+            )
+        if variant.status != "failed":
+            from fastapi import HTTPException, status
+
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only failed tasks can be reset to pending",
+            )
+        variant.status = "waiting"
+        variant.error_message = None
+        self.db.add(variant)
+        self.db.commit()
+        self._sync_age_span_queue()
+        self.db.refresh(variant)
+        return variant
+
+    def process_next_pending(self, *, core_id: int | None = None) -> Optional[CharacterVariant]:
+        """處理下一筆可執行的 pending 任務。"""
+        tasks = self._all_variant_task_dicts()
+
+        def _enqueue(**kwargs: Any) -> tuple[CharacterVariant, bool]:
+            return self.request_variant_generation(
+                core_id=int(kwargs["core_id"]),
+                evolution_params=kwargs["evolution_params"],
+                priority=int(kwargs.get("priority") or 0),
+                status=str(kwargs.get("status") or "pending"),
+            )
+
+        from characteros.services.pipeline_coordinator import prepare_for_processing
+
+        prepare_for_processing(tasks, enqueue=_enqueue, core_id=core_id)
+        self._sync_age_span_queue()
+        scoped = tasks if core_id is None else [
+            item for item in tasks if int(item.get("core_id", 0)) == int(core_id)
+        ]
+        runnable = find_next_runnable_task(scoped)
+        if not runnable:
+            return None
+        return self.process_variant(int(runnable["id"]))
+
+    def process_all_pending(self, *, limit: int = 20) -> list[CharacterVariant]:
+        """批次處理 pending 任務（每次只處理當下可執行者）。"""
+        processed: list[CharacterVariant] = []
+        max_count = max(1, min(limit, 200))
+        for _ in range(max_count):
+            self._sync_age_span_queue()
+            self.ensure_following_age_span_tasks()
+            runnable = find_next_runnable_task(self._all_variant_task_dicts())
+            if not runnable:
+                break
+            processed.append(self.process_variant(int(runnable["id"])))
+        return processed
     
     def get_pending_queue_count(self) -> int:
         """
@@ -625,6 +530,10 @@ class QueueManager:
         # 各狀態數量
         pending_count = self.db.query(CharacterVariant).filter(
             CharacterVariant.status == 'pending'
+        ).count()
+        
+        waiting_count = self.db.query(CharacterVariant).filter(
+            CharacterVariant.status == 'waiting'
         ).count()
         
         ready_count = self.db.query(CharacterVariant).filter(
@@ -654,6 +563,7 @@ class QueueManager:
         
         return {
             "total_pending": pending_count,
+            "total_waiting": waiting_count,
             "total_ready": ready_count,
             "total_failed": failed_count,
             "average_wait_time_ms": float(avg_wait),
@@ -681,7 +591,7 @@ class QueueManager:
                 CharacterVariant.priority.desc(),
                 CharacterVariant.created_at.asc(),
             )
-            .limit(max(1, min(limit, 200)))
+            .limit(max(1, min(limit, 400)))
             .all()
         )
         tasks: list[dict] = []
@@ -689,7 +599,7 @@ class QueueManager:
             item = variant.to_dict()
             item["character_name"] = character_name
             result_metadata = item.get("result_metadata") if isinstance(item.get("result_metadata"), dict) else {}
-            item["review_status"] = _review_status_from_metadata(result_metadata)
-            item["effective_status"] = _effective_task_status(item.get("status"), result_metadata)
+            item["review_status"] = review_status_from_metadata(result_metadata)
+            item["effective_status"] = effective_task_status(item.get("status"), result_metadata)
             tasks.append(item)
         return tasks

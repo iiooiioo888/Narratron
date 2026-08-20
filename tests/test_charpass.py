@@ -182,6 +182,20 @@ def test_store_keeps_five_versions(tmp_path: Path) -> None:
     assert len(store.list_versions("character-lina")) == 5
 
 
+def test_store_history_lock_does_not_block_current(tmp_path: Path, monkeypatch) -> None:
+    store = CharpassStore(tmp_path)
+    packer = CharpassPacker()
+    store.write("character-lina", packer.pack(_base_manifest("莉娜-1")).data)
+
+    def boom(_path, _payload):
+        raise PermissionError(5, "存取被拒")
+
+    monkeypatch.setattr(store, "_write_bytes_atomic", boom)
+    store.write("character-lina", packer.pack(_base_manifest("莉娜-2")).data)
+    current = json.loads((tmp_path / "character-lina" / "current.charpass").read_text(encoding="utf-8"))
+    assert current["_identity"]["name"] == "莉娜-2"
+
+
 def test_store_writes_readable_json_charpass(tmp_path: Path) -> None:
     store = CharpassStore(tmp_path)
     packed = CharpassPacker().pack(_base_manifest("卡爾"))

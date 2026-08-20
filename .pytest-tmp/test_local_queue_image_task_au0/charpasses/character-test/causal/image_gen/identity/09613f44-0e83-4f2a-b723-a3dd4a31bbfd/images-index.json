@@ -1,0 +1,450 @@
+{
+  "job_id": "09613f44-0e83-4f2a-b723-a3dd4a31bbfd",
+  "purpose": "identity",
+  "provider": "null",
+  "model": "null",
+  "entity_id": "character-test",
+  "asset_dir": "assets/identity",
+  "thumbnail_image": {
+    "filename": "ref_face_001.png",
+    "url": null,
+    "has_bytes": true,
+    "mime_type": "image/png",
+    "angle": "front",
+    "requested_angle": "front",
+    "requested_purpose": "identity",
+    "prompt": "測試角色, human, 30, cinematic, T型體, front view, single character turnaround reference, one person only, one subject per image, face clearly visible, neutral expression, model sheet consistency, same character identity across all turnaround angles, front view, facing camera directly, full body, neutral standing pose, arms relaxed at sides, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, keep the same named character, same rendering style, same visual medium, same aesthetic treatment and same design language, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, single character only, one person only, full body isolated subject, each image contains exactly one character, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage",
+    "asset_path": "assets/identity/ref_face_001.png"
+  },
+  "thumbnail_asset_path": "assets/identity/ref_face_001.png",
+  "face_detail_images": [],
+  "face_detail_asset_path": null,
+  "face_detail_count": 0,
+  "images": [
+    {
+      "filename": "ref_face_001.png",
+      "url": null,
+      "has_bytes": true,
+      "mime_type": "image/png",
+      "angle": "front",
+      "requested_angle": "front",
+      "requested_purpose": "identity",
+      "prompt": "測試角色, human, 30, cinematic, T型體, front view, single character turnaround reference, one person only, one subject per image, face clearly visible, neutral expression, model sheet consistency, same character identity across all turnaround angles, front view, facing camera directly, full body, neutral standing pose, arms relaxed at sides, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, keep the same named character, same rendering style, same visual medium, same aesthetic treatment and same design language, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, single character only, one person only, full body isolated subject, each image contains exactly one character, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage",
+      "asset_path": "assets/identity/ref_face_001.png"
+    }
+  ],
+  "images_by_angle": {
+    "front": [
+      {
+        "filename": "ref_face_001.png",
+        "url": null,
+        "has_bytes": true,
+        "mime_type": "image/png",
+        "angle": "front",
+        "requested_angle": "front",
+        "requested_purpose": "identity",
+        "prompt": "測試角色, human, 30, cinematic, T型體, front view, single character turnaround reference, one person only, one subject per image, face clearly visible, neutral expression, model sheet consistency, same character identity across all turnaround angles, front view, facing camera directly, full body, neutral standing pose, arms relaxed at sides, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, keep the same named character, same rendering style, same visual medium, same aesthetic treatment and same design language, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, single character only, one person only, full body isolated subject, each image contains exactly one character, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage",
+        "asset_path": "assets/identity/ref_face_001.png"
+      }
+    ]
+  },
+  "review": {
+    "status": "accepted",
+    "auto_accept": true,
+    "job_id": "09613f44-0e83-4f2a-b723-a3dd4a31bbfd",
+    "entity_id": "character-test",
+    "purpose": "identity",
+    "staged_at": null,
+    "manifest_candidate": {
+      "schema": "https://narratron.dev/schemas/charpass/v1.json",
+      "_mode": "full",
+      "_asset_base_url": null,
+      "_meta": {
+        "format": "charpass",
+        "format_version": "1.0.0",
+        "charpass_id": "76596e48-322f-456a-90cf-a7a404e38970",
+        "character_name": "測試角色",
+        "character_alias": [],
+        "created_at": "2026-08-20T04:19:04.747145Z",
+        "updated_at": "2026-08-20T04:19:04.748146Z",
+        "created_by": "3D建模風格, T型體",
+        "project_id": null,
+        "tags": [
+          "demo"
+        ],
+        "description": "",
+        "thumbnail": "assets/identity/ref_face_001.png",
+        "license": "project_internal",
+        "checksum": "",
+        "parent_charpass_id": null,
+        "generation_count": 0,
+        "encryption": null,
+        "encryption_level": "L0",
+        "mode": "full",
+        "size_bytes": 0,
+        "parser_version": "1.0.0",
+        "entity_id": "character-test",
+        "archived": false
+      },
+      "_identity": {
+        "ref_images": [
+          {
+            "path": "assets/identity/ref_face_001.png",
+            "uri": "assets/identity/ref_face_001.png",
+            "kind": "reference_image",
+            "angle": "front",
+            "note": "generated:null:identity:front"
+          }
+        ],
+        "face_embedding": {
+          "path": "",
+          "model": "",
+          "dimension": 512,
+          "dtype": "float32"
+        },
+        "ip_adapter": {
+          "enabled": true,
+          "model": "ip-adapter-faceid-plusv2",
+          "weight": 0.85,
+          "noise_aug": 0.02
+        },
+        "blend": {
+          "mode": "single",
+          "sources": [],
+          "ethnicity_bias": 0.0,
+          "gender_spectrum": 0.4,
+          "age_offset": 0,
+          "age_visual": null
+        },
+        "lock_rules": {
+          "face_consistency_threshold": 0.88,
+          "allow_expression_change": true,
+          "allow_aging_progression": true,
+          "forbidden_regions": []
+        },
+        "name": "測試角色",
+        "aliases": [],
+        "species": "human",
+        "gender_spectrum": 0.4,
+        "age_appearance": "30",
+        "face_id": null,
+        "face_threshold": 0.7,
+        "note": null,
+        "project_id": null,
+        "entity_id": "character-test"
+      },
+      "_body": {
+        "template": "",
+        "skeleton": {
+          "path": "",
+          "format": "openpose_18",
+          "head_ratio": null,
+          "height_cm": null,
+          "weight_kg": null
+        },
+        "proportions": {},
+        "limb_thickness": {},
+        "posture_defaults": {
+          "spine_curve": "",
+          "shoulder_state": "",
+          "head_tilt": 0.0,
+          "note": ""
+        },
+        "mesh": {
+          "path": "",
+          "format": "glTF_2.0",
+          "polycount": null
+        },
+        "skin_tone": {
+          "base_hex": "",
+          "undertone": "",
+          "freckle_density": 0.0,
+          "tan_lines": []
+        },
+        "height_cm": null,
+        "build": null,
+        "skin": null
+      },
+      "_style": {
+        "outfit": {
+          "description": "",
+          "ref_images": [],
+          "items": []
+        },
+        "hair": null,
+        "makeup": {
+          "type": "none",
+          "intensity": 0.0,
+          "regions": []
+        },
+        "damage_regions": [],
+        "accessories": [],
+        "clothing": [],
+        "colors": {},
+        "ip_adapter_weight": 0.7,
+        "reference_images": [],
+        "character_style": {
+          "visual": {
+            "medium": "cinematic",
+            "aesthetic": "T型體",
+            "color_palette": [],
+            "lighting": "",
+            "camera": "",
+            "keywords": [],
+            "note": ""
+          },
+          "art_prompt": {
+            "positive": "",
+            "negative": "",
+            "strength": 1.0,
+            "template": "",
+            "note": ""
+          },
+          "narrative": {
+            "tone": "",
+            "speech_pattern": "",
+            "diction": "",
+            "register": "",
+            "sample_lines": [],
+            "note": ""
+          },
+          "consistency_notes": ""
+        },
+        "additional_descriptors": []
+      },
+      "_expression": {
+        "base_emotion": "neutral",
+        "micro_asymmetry": 0.0,
+        "resting_face": {
+          "brow_position": 0.0,
+          "eye_openness": 1.0,
+          "gaze_direction": "",
+          "mouth_state": "",
+          "jaw_tension": 0.0
+        },
+        "au_library": {
+          "default_set": [],
+          "custom_presets": []
+        },
+        "gaze": {
+          "default_target": "",
+          "tracking_mode": "fixed",
+          "saccade_frequency": 0.0,
+          "blink_rate_per_min": null
+        },
+        "lip_sync": {
+          "neutral_mouth_shape": "rest_closed",
+          "openness_range": [
+            0.0,
+            1.0
+          ],
+          "dental_visibility": 0.0
+        },
+        "default": "neutral",
+        "range": [],
+        "intensity": 0.5
+      },
+      "_pose": {
+        "default_pose": {
+          "skeleton_path": "",
+          "format": "openpose_18",
+          "description": ""
+        },
+        "pose_library": [],
+        "movement_style": {
+          "speed_factor": 1.0,
+          "fluidity": 0.5,
+          "weight_shift": "",
+          "note": ""
+        },
+        "interaction_constraints": {
+          "personal_space_radius_cm": null,
+          "touch_aversion": [],
+          "note": ""
+        },
+        "default": "standing",
+        "head_tilt": 0.0,
+        "constraints": []
+      },
+      "_physics": {
+        "skin": {
+          "detail_level": 0.5,
+          "pore_visibility": 0.5,
+          "subsurface_scattering": 0.5,
+          "wrinkle_depth": 0.5,
+          "elasticity": 0.5,
+          "note": ""
+        },
+        "cloth": {
+          "simulation_mode": "auto_by_material",
+          "wind_sensitivity": 0.5,
+          "gravity_response": 0.5,
+          "collision_with_body": true,
+          "wrinkle_memory": 0.5
+        },
+        "hair": {
+          "simulation_mode": "strand_based",
+          "strand_count_hint": "medium",
+          "static_electricity": 0.0,
+          "wet_behavior": {
+            "clump_factor": 0.0,
+            "darkening": 0.0,
+            "weight_increase": 0.0
+          }
+        },
+        "fluids": {
+          "sweat": {
+            "enabled": false,
+            "trigger": "",
+            "regions": [],
+            "flow_speed": 0.0
+          },
+          "tears": {
+            "enabled": false,
+            "trigger": "",
+            "flow_path": "",
+            "volume": ""
+          },
+          "blood": {
+            "enabled": false,
+            "trigger": "",
+            "color_hex": "#8B0000",
+            "viscosity": 0.5
+          }
+        },
+        "lighting_response": {
+          "skin_specular": 0.3,
+          "eye_reflection": true,
+          "shadow_softness": 0.5
+        },
+        "mass_kg": null,
+        "rigidity": 0.5,
+        "cloth_sim": false
+      },
+      "_voice": {
+        "enabled": false,
+        "ref_audio": {
+          "path": "",
+          "duration_sec": null,
+          "sample_rate": null,
+          "channels": null
+        },
+        "voice_embedding": {
+          "path": "",
+          "model": "",
+          "dimension": 256
+        },
+        "characteristics": {
+          "pitch": null,
+          "speed_factor": 1.0,
+          "breathiness": 0.0,
+          "roughness": 0.0,
+          "accent": "",
+          "habitual_pause_ms": null,
+          "note": ""
+        },
+        "emotional_range": {},
+        "timbre": null,
+        "pitch": 0.5,
+        "sample_uri": null,
+        "language": "zh-Hant",
+        "samples": []
+      },
+      "_causal": {
+        "evolution_log": [
+          {
+            "scene": null,
+            "scene_index": null,
+            "event": "",
+            "changes": {},
+            "description": "",
+            "note": "",
+            "permanent": null,
+            "heal_scene": null,
+            "revert_scene": null,
+            "at": null,
+            "shot_id": null,
+            "cause": "",
+            "effect": "",
+            "type": "queue_variant_processed",
+            "created_at": "2026-08-20T04:19:04.736150Z",
+            "params": {}
+          }
+        ],
+        "current_state_snapshot": {}
+      },
+      "_constraints": {
+        "must_always": [],
+        "must_never": [],
+        "conditional": [],
+        "quality_floor": {
+          "face_consistency_min": 0.88,
+          "body_proportion_tolerance": 0.05,
+          "outfit_color_delta_e_max": 4.0
+        },
+        "forbidden": [],
+        "required": [],
+        "continuity": []
+      },
+      "_extensions": {
+        "comfyui_workflow": {
+          "path": "",
+          "version": ""
+        },
+        "comfyui": {
+          "path": "",
+          "version": ""
+        },
+        "image_gen": {
+          "provider": "null",
+          "model": "null",
+          "endpoint": "",
+          "size": "1024x1024",
+          "last_job_id": "09613f44-0e83-4f2a-b723-a3dd4a31bbfd",
+          "last_asset_paths": [
+            "assets/identity/ref_face_001.png"
+          ],
+          "note": "",
+          "last_purpose": "identity",
+          "last_angles": [
+            "front"
+          ],
+          "latest_by_purpose": {
+            "identity": {
+              "job_id": "09613f44-0e83-4f2a-b723-a3dd4a31bbfd",
+              "provider": "null",
+              "model": "null",
+              "asset_paths": [
+                "assets/identity/ref_face_001.png"
+              ],
+              "angles": [
+                "front"
+              ],
+              "images_by_angle": {
+                "front": [
+                  {
+                    "angle": "front",
+                    "asset_path": "assets/identity/ref_face_001.png",
+                    "filename": "assets/identity/ref_face_001.png"
+                  }
+                ]
+              },
+              "thumbnail_asset_path": "assets/identity/ref_face_001.png",
+              "face_detail_asset_path": null,
+              "face_detail_count": 0,
+              "face_detail_images": [],
+              "updated_at": "2026-08-20T04:19:04.748146Z"
+            }
+          }
+        }
+      }
+    },
+    "request_path": "causal/image_gen/identity/09613f44-0e83-4f2a-b723-a3dd4a31bbfd/request.json",
+    "response_path": "causal/image_gen/identity/09613f44-0e83-4f2a-b723-a3dd4a31bbfd/response.json",
+    "full_response_path": "causal/image_gen/identity/09613f44-0e83-4f2a-b723-a3dd4a31bbfd/full-response.json",
+    "raw_response_path": "causal/image_gen/identity/09613f44-0e83-4f2a-b723-a3dd4a31bbfd/raw-response.json",
+    "record_path": "causal/image_gen/identity/09613f44-0e83-4f2a-b723-a3dd4a31bbfd/record.json",
+    "images_index_path": "causal/image_gen/identity/09613f44-0e83-4f2a-b723-a3dd4a31bbfd/images-index.json"
+  },
+  "review_status": "accepted"
+}

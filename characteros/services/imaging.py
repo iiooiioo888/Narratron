@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
+import copy
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+logger = logging.getLogger(__name__)
+
 from characteros.imaging.base import ImageGenRequest, ImageGenResult
 from characteros.imaging.prompt import assemble_request
+from characteros.imaging.ref_uris import WAN_MAX_REF_IMAGES, cap_ref_uris_for_api, normalize_ref_uris_for_api
 from characteros.imaging.registry import get_provider
+from narratron.charpass.image_gen_compact import compact_image_gen_extensions
 from narratron.charpass.schema import manifest_to_dict
 from narratron.charpass.style_prompt import (
     IDENTITY_SUPPLEMENTAL_ANGLES,
     MULTI_VIEW_ANGLES,
     PURPOSE_SLOTS,
+    TPOSE_ANGLES,
     apply_default_character_style,
     default_single_angle_for_purpose,
 )
@@ -22,17 +29,19 @@ from narratron.charpass.store import CharpassStore
 
 ANGLE_SORT_ORDER = {
     "face_detail": 0,
-    "front": 1,
-    "three_quarter": 2,
-    "left": 3,
-    "right": 4,
-    "back": 5,
-    "top": 6,
-    "bottom": 7,
+    "tpose": 1,
+    "front": 2,
+    "three_quarter": 3,
+    "left": 4,
+    "right": 5,
+    "back": 6,
+    "top": 7,
+    "bottom": 8,
 }
 
 ANGLE_HINTS = {
     "face_detail": ("face_detail", "face-detail", "face detail"),
+    "tpose": ("tpose", "t-pose", "t pose", "t型"),
 }
 
 KNOWN_ANGLES = tuple(ANGLE_SORT_ORDER.keys())
@@ -76,6 +85,61 @@ def _staging_asset_path(*, purpose: str, job_id: str, filename: str) -> str:
     return f"causal/review/{clean_purpose}/{job_id}/{clean_name}"
 
 
+def is_published_asset_relpath(path: str) -> bool:
+    normalized = str(path or "").replace("\\", "/").lstrip("/")
+    return normalized == "assets" or normalized.startswith("assets/")
+
+
+def _preview_asset_paths(payload: dict[str, Any]) -> list[str]:
+    """收集可供預覽的路徑；不含 review.manifest_candidate 內的預定正式路徑。"""
+    paths: list[str] = []
+
+    def _push(value: Any) -> None:
+        text = str(value or "").strip()
+        if text:
+            paths.append(text)
+
+    for key in ("thumbnail_asset_path", "face_detail_asset_path", "representative_asset_path"):
+        _push(payload.get(key))
+
+    def _collect_image(item: Any) -> None:
+        if not isinstance(item, dict):
+            return
+        _push(item.get("asset_path"))
+        _push(item.get("path"))
+
+    images = payload.get("images")
+    if isinstance(images, list):
+        for item in images:
+            _collect_image(item)
+
+    images_by_angle = payload.get("images_by_angle")
+    if isinstance(images_by_angle, dict):
+        for entries in images_by_angle.values():
+            if isinstance(entries, list):
+                for item in entries:
+                    _collect_image(item)
+
+    face_detail_images = payload.get("face_detail_images")
+    if isinstance(face_detail_images, list):
+        for item in face_detail_images:
+            _collect_image(item)
+
+    _collect_image(payload.get("thumbnail_image"))
+    return paths
+
+
+def ensure_unaccepted_generation_is_staged(payload: dict[str, Any]) -> None:
+    """未接受的生圖結果，預覽路徑不得指向正式 `assets/`。"""
+    review = payload.get("review") if isinstance(payload.get("review"), dict) else {}
+    status = str(review.get("status") or payload.get("review_status") or "").strip().lower()
+    if status in {"", "accepted"}:
+        return
+    for asset_path in _preview_asset_paths(payload):
+        if is_published_asset_relpath(asset_path):
+            raise RuntimeError("pending/rejected generation must not publish assets/")
+
+
 def _asset_dir_for_generated_image(request: ImageGenRequest, image: Any) -> str:
     slot = PURPOSE_SLOTS.get(request.purpose, PURPOSE_SLOTS["identity"])
     override = ""
@@ -104,6 +168,8 @@ def _default_angle_for_generation(*, purpose: str, requested_angle: Any = None) 
         return explicit
     if purpose == "face_detail":
         return "face_detail"
+    if purpose == "tpose":
+        return "tpose"
     if purpose == "identity":
         return "front"
     return None
@@ -156,6 +222,8 @@ def _image_angle_value(image: dict[str, Any]) -> str:
     purpose = str(image.get("purpose") or image.get("requested_purpose") or "").strip()
     if purpose == "face_detail":
         return "face_detail"
+    if purpose == "tpose":
+        return "tpose"
     return _infer_angle_from_text(
         image.get("final_asset_path"),
         image.get("asset_path"),
@@ -219,7 +287,7 @@ def _face_detail_summary(images: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _thumbnail_candidate(refs: list[dict[str, Any]]) -> str:
-    preferred_order = ("face_detail", "front", "three_quarter", "left", "right", "back", "top", "bottom")
+    preferred_order = ("face_detail", "tpose", "front", "three_quarter", "left", "right", "back", "top", "bottom")
     for angle in preferred_order:
         for item in refs:
             if item.get("angle") == angle and item.get("path"):
@@ -228,7 +296,7 @@ def _thumbnail_candidate(refs: list[dict[str, Any]]) -> str:
 
 
 def _thumbnail_image_payload(images: list[dict[str, Any]]) -> dict[str, Any] | None:
-    preferred_order = ("face_detail", "front", "three_quarter", "left", "right", "back", "top", "bottom")
+    preferred_order = ("face_detail", "tpose", "front", "three_quarter", "left", "right", "back", "top", "bottom")
     for angle in preferred_order:
         for item in images:
             if item.get("angle") == angle:
@@ -401,6 +469,8 @@ def _generation_angles_for(purpose: str, multi_angle: bool) -> list[dict[str, st
         return []
     if purpose == "face_detail":
         return list(IDENTITY_SUPPLEMENTAL_ANGLES)
+    if purpose == "tpose":
+        return list(TPOSE_ANGLES)
     angles = list(MULTI_VIEW_ANGLES)
     if purpose == "identity":
         angles.extend(IDENTITY_SUPPLEMENTAL_ANGLES)
@@ -426,30 +496,46 @@ def apply_result_to_manifest(
         note = f"generated:{result.provider}:{request.purpose}"
         if angle:
             note = f"{note}:{angle}"
-        refs.append(
-            {
-                "path": path,
-                "uri": image.url or path,
-                "kind": "reference_image",
-                "angle": angle,
-                "note": note,
-            }
-        )
+        ref_item = {
+            "path": path,
+            "uri": image.url or path,
+            "kind": "reference_image",
+            "angle": angle,
+            "note": note,
+        }
+        age_value = request.extra.get("age") if isinstance(request.extra, dict) else None
+        if age_value not in (None, ""):
+            ref_item["age"] = age_value
+        refs.append(ref_item)
 
     style = data.setdefault("_style", {})
     identity = data.setdefault("_identity", {})
-    generated_angles = {ref.get("angle") for ref in refs if ref.get("angle")}
+    generated_keys = {
+        (ref.get("angle"), ref.get("age"))
+        for ref in refs
+        if ref.get("angle")
+    }
 
     def _replace_angles(existing: list[dict[str, Any]] | list[Any]) -> list[Any]:
         # 針對同一個角度（front/back/...）做覆蓋，避免重複累積舊版本。
         filtered: list[Any] = []
         for item in existing:
-            if isinstance(item, dict) and item.get("angle") in generated_angles:
+            if not isinstance(item, dict):
+                filtered.append(item)
+                continue
+            key = (item.get("angle"), item.get("age"))
+            if key in generated_keys or (
+                item.get("age") in (None, "") and item.get("angle") in {angle for angle, _age in generated_keys}
+            ):
                 continue
             filtered.append(item)
         return filtered
 
-    if request.purpose in {"identity", "face_detail"}:
+    pipeline = str(request.extra.get("pipeline") or "").strip() if isinstance(request.extra, dict) else ""
+    if pipeline == "age_span":
+        # 年齡軸只寫入 _extensions.image_gen.age_span，不污染 identity.ref_images。
+        pass
+    elif request.purpose in {"identity", "face_detail", "tpose"}:
         existing = identity.setdefault("ref_images", [])
         identity["ref_images"] = _replace_angles(existing)
         identity["ref_images"].extend(refs)
@@ -481,6 +567,17 @@ def apply_result_to_manifest(
     face_detail_paths = [item["path"] for item in refs if item.get("angle") == "face_detail" and item.get("path")]
     if face_detail_paths:
         image_gen["last_face_detail_paths"] = face_detail_paths
+    if pipeline == "age_span":
+        age_span = image_gen.setdefault("age_span", {"faces": {}, "tposes": {}})
+        if not isinstance(age_span, dict):
+            age_span = {"faces": {}, "tposes": {}}
+            image_gen["age_span"] = age_span
+        bucket = "faces" if request.purpose == "face_detail" else "tposes" if request.purpose == "tpose" else "other"
+        bucket_data = age_span.setdefault(bucket, {})
+        if isinstance(bucket_data, dict):
+            age_key = str((request.extra or {}).get("age") or "")
+            if age_key:
+                bucket_data[age_key] = refs
     latest_by_purpose = image_gen.setdefault("latest_by_purpose", {})
     if isinstance(latest_by_purpose, dict):
         summary_images = [
@@ -508,7 +605,7 @@ def apply_result_to_manifest(
     elif request.purpose in {"identity", "face_detail"} and thumb_path:
         meta["thumbnail"] = thumb_path
     meta["updated_at"] = _utcnow()
-    return data
+    return compact_image_gen_extensions(data)
 
 
 class ImagingService:
@@ -516,6 +613,40 @@ class ImagingService:
 
     def __init__(self, store: CharpassStore | None = None) -> None:
         self.store = store or CharpassStore()
+
+    def _prepare_request_for_provider(
+        self,
+        request: ImageGenRequest,
+        *,
+        entity_id: str,
+        provider_name: str | None = None,
+        manifest: dict | None = None,
+    ) -> ImageGenRequest:
+        preferred_angle = None
+        if isinstance(request.extra, dict):
+            preferred_angle = str(request.extra.get("angle") or "").strip() or None
+        provider = str(provider_name or "wan").strip().lower()
+        if provider == "wan":
+            normalized = [
+                str(uri).strip()
+                for uri in request.ref_image_uris
+                if str(uri or "").strip().lower().startswith(("http://", "https://"))
+            ]
+        else:
+            normalized = normalize_ref_uris_for_api(
+                list(request.ref_image_uris),
+                store=self.store,
+                entity_id=entity_id,
+            )
+        prepared = cap_ref_uris_for_api(
+            normalized,
+            provider=provider_name or "wan",
+            manifest=manifest,
+            preferred_angle=preferred_angle,
+        )
+        if prepared == request.ref_image_uris:
+            return request
+        return request.model_copy(update={"ref_image_uris": prepared})
 
     def _download_remote_assets(self, result: ImageGenResult) -> dict[str, bytes]:
         """下載 provider 回傳但未直接附帶 bytes 的遠端圖片。"""
@@ -587,6 +718,8 @@ class ImagingService:
         persist_entity_id: str | None = None,
         multi_angle: bool = True,
         auto_accept: bool = True,
+        extra_ref_uris: list[str] | None = None,
+        extra_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         manifest = apply_default_character_style(manifest)
         provider = get_provider(
@@ -616,14 +749,21 @@ class ImagingService:
             angle_defs = _generation_angles_for(purpose, multi_angle)
 
             for angle_def in angle_defs:
-                request = assemble_request(
-                    manifest,
-                    purpose=purpose,
-                    extra=extra,
-                    n=1,
-                    model=model,
-                    angle=angle_def["key"],
-                    multi_angle=True,
+                request = self._prepare_request_for_provider(
+                    assemble_request(
+                        manifest,
+                        purpose=purpose,
+                        extra=extra,
+                        n=1,
+                        model=model,
+                        angle=angle_def["key"],
+                        multi_angle=True,
+                        extra_ref_uris=extra_ref_uris,
+                        extra_fields=extra_fields,
+                    ),
+                    entity_id=entity_id,
+                    provider_name=provider.name,
+                    manifest=manifest,
                 )
                 result = provider.generate(request)
                 for image in result.images:
@@ -649,13 +789,20 @@ class ImagingService:
             result = combined
             combined_prompt = "\n".join(prompt_lines)
         else:
-            request = assemble_request(
-                manifest,
-                purpose=purpose,
-                extra=extra,
-                n=n,
-                model=model,
-                multi_angle=False,
+            request = self._prepare_request_for_provider(
+                assemble_request(
+                    manifest,
+                    purpose=purpose,
+                    extra=extra,
+                    n=n,
+                    model=model,
+                    multi_angle=False,
+                    extra_ref_uris=extra_ref_uris,
+                    extra_fields=extra_fields,
+                ),
+                entity_id=entity_id,
+                provider_name=provider.name,
+                manifest=manifest,
             )
             result = provider.generate(request)
             default_angle = _default_angle_for_generation(
@@ -670,7 +817,8 @@ class ImagingService:
             combined_prompt = request.prompt
 
         job_id = str(uuid4())
-        updated = apply_result_to_manifest(manifest, request, result, job_id=job_id)
+        source_manifest = copy.deepcopy(manifest) if not auto_accept else manifest
+        updated = apply_result_to_manifest(source_manifest, request, result, job_id=job_id)
         updated.setdefault("_meta", {})["entity_id"] = entity_id
         updated.setdefault("_identity", {})["entity_id"] = entity_id
         angles = [item["key"] for item in _generation_angles_for(purpose, multi_angle)] if multi_angle else []
@@ -741,7 +889,7 @@ class ImagingService:
                 "entity_id": persist_entity_id,
                 "purpose": request.purpose,
                 "staged_at": None if auto_accept else _utcnow(),
-                "manifest_candidate": updated,
+                "manifest_candidate": None if auto_accept else compact_image_gen_extensions(copy.deepcopy(updated)),
                 "request_path": f"{purpose_dir}/request.json",
                 "response_path": f"{purpose_dir}/response.json",
                 "full_response_path": f"{purpose_dir}/full-response.json",
@@ -806,11 +954,14 @@ class ImagingService:
                 if image.data
             }
             if assets:
+                if not auto_accept:
+                    leaked = [path for path in assets if is_published_asset_relpath(path)]
+                    if leaked:
+                        raise RuntimeError("pending review must not write formal assets/")
                 self.store.write_assets(entity_id, assets)
             if auto_accept:
                 extensions = updated.setdefault("_extensions", {})
                 image_gen = extensions.setdefault("image_gen", {})
-                image_gen["last_api_response"] = _json_safe(payload)
                 image_gen["last_api_response_path"] = f"{purpose_dir}/full-response.json"
                 image_gen["last_request_path"] = f"{purpose_dir}/request.json"
                 image_gen["last_raw_response_path"] = f"{purpose_dir}/raw-response.json"
@@ -838,6 +989,12 @@ class ImagingService:
                     }
                 )
                 image_gen["history"] = history[-20:]
-                self.store.write_manifest(entity_id, updated)
+                compact_image_gen_extensions(updated)
+                try:
+                    self.store.write_manifest(entity_id, updated, snapshot_history=False)
+                except OSError as exc:
+                    logger.warning("生圖資產已寫入，略過護照寫入（檔案被占用）：%s", exc)
 
+        if not auto_accept:
+            ensure_unaccepted_generation_is_staged(payload)
         return payload

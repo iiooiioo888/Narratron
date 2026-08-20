@@ -55,9 +55,31 @@ def get_admin_panel() -> str:
     .stat-chip.ready { background: #d1fae5; color: #065f46; }
     .stat-chip.failed { background: #fee2e2; color: #991b1b; }
     .stat-chip.mode { background: #eff6ff; color: #1d4ed8; }
-    .queue-toolbar { display: grid; grid-template-columns: 1fr 1fr auto auto auto auto auto; gap: 8px; align-items: end; margin-bottom: 10px; }
+    .queue-toolbar { display: grid; grid-template-columns: 1fr 1fr auto auto auto; gap: 8px; align-items: end; margin-bottom: 10px; }
     .queue-toolbar label { margin-top: 0; }
     .queue-toolbar button { margin-bottom: 0; }
+    .queue-cta-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+    .queue-cta-row button { width: auto; min-width: 160px; margin: 0; padding: 10px 16px; font-weight: 700; }
+    .queue-cta-row button.secondary { min-width: 0; font-weight: 600; }
+    .current-step-card { display: none; grid-template-columns: 140px 1fr; gap: 14px; align-items: start; padding: 12px; border: 1px solid #dbeafe; background: #f8fbff; border-radius: 12px; margin-bottom: 12px; }
+    .current-step-card.visible { display: grid; }
+    .current-step-card img { width: 140px; height: 140px; object-fit: cover; border-radius: 10px; background: #e5e7eb; }
+    .current-step-card .preview-empty { width: 140px; height: 140px; border-radius: 10px; background: #eef2ff; color: #6366f1; display: grid; place-items: center; font-size: 13px; text-align: center; padding: 8px; }
+    .current-step-card strong { display: block; font-size: 16px; margin-bottom: 4px; }
+    .current-step-card p { margin: 0 0 8px; color: #4b5563; font-size: 13px; line-height: 1.5; }
+    .age-span-grid-wrap { margin-bottom: 12px; }
+    .age-span-grid-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .age-span-tabs { display: flex; gap: 6px; }
+    .age-span-tabs button { width: auto; margin: 0; padding: 6px 10px; background: #e5e7eb; color: #111827; }
+    .age-span-tabs button.active { background: #2563eb; color: #fff; }
+    .age-span-grid { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 4px; }
+    .age-span-cell { border: 0; margin: 0; padding: 6px 0; border-radius: 6px; font-size: 11px; background: #f3f4f6; color: #6b7280; }
+    .age-span-cell.accepted, .age-span-cell.ready { background: #d1fae5; color: #065f46; }
+    .age-span-cell.pending { background: #fef3c7; color: #92400e; }
+    .age-span-cell.failed { background: #fee2e2; color: #991b1b; }
+    .age-span-cell.current { outline: 2px solid #2563eb; }
+    .age-span-hint { font-size: 12px; color: #6b7280; margin: 8px 0 0; }
+    .queue-advanced summary { cursor: pointer; font-weight: 700; margin: 8px 0; }
     .queue-table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; max-height: 360px; }
     table.queue-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     table.queue-table th, table.queue-table td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; text-align: left; vertical-align: top; }
@@ -76,6 +98,11 @@ def get_admin_panel() -> str:
     .preview-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px; background: #fff; }
     .preview-card img { width: 100%; height: 160px; object-fit: cover; border-radius: 8px; background: #f3f4f6; }
     .preview-card .caption { margin-top: 6px; font-size: 12px; color: #4b5563; word-break: break-word; }
+    .age-span-banner { margin-bottom: 12px; padding: 12px 14px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe; font-size: 13px; line-height: 1.55; }
+    .age-span-banner.warn { background: #fffbeb; border-color: #fcd34d; }
+    .age-span-banner .progress { margin-top: 8px; height: 8px; background: #dbeafe; border-radius: 999px; overflow: hidden; }
+    .age-span-banner .progress > span { display: block; height: 100%; background: #2563eb; border-radius: 999px; }
+    tr.queue-blocking td { background: #fffbeb !important; }
     @media (max-width: 960px) {
       .grid { grid-template-columns: 1fr; }
       .queue-toolbar { grid-template-columns: 1fr 1fr; }
@@ -193,15 +220,13 @@ def get_admin_panel() -> str:
 
     <section class="card">
       <h2>變體／生圖</h2>
-      <p class="section-desc">依選中角色請求演化變體，並把第三方生圖工作排入同一個佇列，交由下方任務面板實際執行。</p>
+      <p class="section-desc">依選中角色排入生圖任務。新人物請用年齡軸：系統會自動逐步向 AI 請求，一次一張，完成後直接入庫。</p>
       <div class="steps">
         <strong>建議流程</strong>
         <ol>
           <li>左側清單點選角色（ID 自動帶入）</li>
-          <li>（可選）填寫變體參數 → 按「請求變體」</li>
-          <li>選擇生圖用途 → 可填額外風格 → 按「生成圖片」排入任務</li>
-          <li>到下方佇列任務面板按「執行」或「處理全部 pending」</li>
-          <li>任務完成後可直接在面板預覽圖片，並用「複製最後提示詞」備份 prompt</li>
+          <li>按「建立 1–80 歲年齡軸並自動開始」</li>
+          <li>系統會先跑面部細緻 1–80 歲，再跑 T 型外觀 1–80 歲；不必逐個按執行</li>
         </ol>
       </div>
       <label>目前選擇的角色 ID（與編輯器同步，唯讀）</label>
@@ -221,9 +246,12 @@ def get_admin_panel() -> str:
       <button id="btnVariant" class="secondary" onclick="requestVariant()" disabled>請求變體（排入佇列）</button>
 
       <label>生圖用途 Purpose</label>
-      <div class="field-hint">identity＝身份參考；outfit＝服裝；expression＝表情；thumb＝縮圖。每次生圖預設產出<strong>多視角</strong>（正／背／左／右／四分之三／頂／底），其中 identity 會額外補 1 張面部細節圖。</div>
+      <div class="field-hint">新人物請選 <strong>age_span</strong>。identity 會產出多視角參考圖；face_detail / tpose 為單張用途。</div>
       <select id="purpose">
+        <option value="age_span">age_span（新人物 1–80 歲面部 + T 型）</option>
         <option value="identity">identity（身份／臉部參考）</option>
+        <option value="face_detail">face_detail（面部細緻）</option>
+        <option value="tpose">tpose（T 型外觀）</option>
         <option value="outfit">outfit（服裝造型）</option>
         <option value="expression">expression（表情特寫）</option>
         <option value="thumb">thumb（縮圖預覽）</option>
@@ -234,9 +262,10 @@ def get_admin_panel() -> str:
       <textarea id="extra" rows="3" placeholder="例如：賽博龐克霓虹、電影級側光、油畫筆觸、8K 細節、霧面膚質"></textarea>
 
       <div class="inline">
-        <button id="btnGenerate" onclick="generateImages()" disabled>生成圖片（排入佇列）</button>
-        <button id="btnCopyPrompt" class="secondary" onclick="copyPrompt()" disabled>複製最後提示詞</button>
+        <button id="btnGenerateAgeSpan" onclick="generateAgeSpanAndRun()" disabled>建立 1–80 歲年齡軸並自動開始</button>
+        <button id="btnGenerate" class="secondary" onclick="generateImages()" disabled>排入目前用途</button>
       </div>
+      <button id="btnCopyPrompt" class="secondary" onclick="copyPrompt()" disabled>複製最後提示詞</button>
       <label>變體 API 回應</label>
       <pre id="variantOutput">{}</pre>
       <label>生圖 API 回應</label>
@@ -247,52 +276,64 @@ def get_admin_panel() -> str:
     <section class="card full-span">
       <h2>佇列任務面板</h2>
       <p class="section-desc">
-        檢視變體生成佇列（pending／ready／failed）。
+        一次只向 AI 請求一張圖，完成後<strong>自動入庫並接下一筆</strong>。不必在列表裡逐個按執行。
         PostgreSQL 未啟動時，任務寫入本機 <code>data/charpasses/.characteros-queue.json</code>。
       </p>
 
+      <div id="ageSpanBanner" class="age-span-banner" style="display:none;"></div>
       <div id="queueStats" class="stat-row"></div>
-
-      <div class="queue-toolbar">
-        <div>
-          <label>狀態篩選</label>
-          <select id="queueStatusFilter">
-            <option value="">全部狀態</option>
-            <option value="pending">pending（等待中）</option>
-            <option value="ready">ready（已完成）</option>
-            <option value="failed">failed（失敗）</option>
-          </select>
-        </div>
-        <div>
-          <label>角色 ID（可留空）</label>
-          <input id="queueCoreFilter" type="number" min="1" placeholder="例如：1" />
-        </div>
-        <button onclick="loadQueueTasks()">重新載入佇列</button>
-        <button onclick="processNextQueueTask()">處理下一筆</button>
-        <button onclick="processAllQueueTasks()">處理全部 pending</button>
-        <button class="secondary" onclick="toggleQueueAutoRefresh()">自動刷新：關</button>
-        <button class="secondary" onclick="filterQueueBySelected()" id="btnQueueSelected" disabled>只看目前角色</button>
+      <div class="queue-cta-row">
+        <button id="btnAutoPipeline" onclick="startAutoPipeline()">繼續後端生圖</button>
+        <button class="secondary" id="btnStopAutoPipeline" onclick="stopAutoPipeline()" style="display:none;">暫停後端生圖</button>
+        <button class="secondary" onclick="startAutoPipeline({ resetFailed: true })">重設失敗並繼續</button>
+        <button class="secondary" onclick="clearQueueTasks()">清空佇列</button>
+        <button class="secondary" onclick="loadQueueTasks()">重新載入</button>
       </div>
+      <div id="queueCurrentStep" class="current-step-card"></div>
+      <div id="ageSpanGrid" class="age-span-grid-wrap"></div>
 
-      <div class="queue-table-wrap">
-        <table class="queue-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>角色</th>
-              <th>狀態</th>
-              <th>優先級</th>
-              <th>演化參數</th>
-              <th>Hash</th>
-              <th>建立時間</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="queueTaskBody">
-            <tr><td colspan="8" class="queue-empty">載入中…</td></tr>
-          </tbody>
-        </table>
-      </div>
+      <details class="queue-advanced">
+        <summary>進階：篩選與技術紀錄</summary>
+        <div class="queue-toolbar">
+          <div>
+            <label>狀態篩選</label>
+            <select id="queueStatusFilter">
+              <option value="">全部狀態</option>
+              <option value="pending">pending（等待中）</option>
+              <option value="ready">ready（已完成）</option>
+              <option value="failed">failed（失敗）</option>
+            </select>
+          </div>
+          <div>
+            <label>角色 ID（可留空）</label>
+            <input id="queueCoreFilter" type="number" min="1" placeholder="例如：1" />
+          </div>
+          <div>
+            <label>重設 from_id（可留空）</label>
+            <input id="queueFromIdFilter" type="number" min="1" placeholder="例如：2" />
+          </div>
+          <button class="secondary" onclick="toggleQueueAutoRefresh()">自動刷新：關</button>
+          <button class="secondary" onclick="filterQueueBySelected()" id="btnQueueSelected" disabled>只看目前角色</button>
+        </div>
+        <div class="queue-table-wrap">
+          <table class="queue-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>角色</th>
+                <th>狀態</th>
+                <th>用途</th>
+                <th>摘要</th>
+                <th>建立時間</th>
+                <th>結果</th>
+              </tr>
+            </thead>
+            <tbody id="queueTaskBody">
+              <tr><td colspan="7" class="queue-empty">載入中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
       <div id="queuePreview" class="preview-grid"></div>
       <div id="queueStatus" class="status"></div>
     </section>
@@ -302,6 +343,9 @@ def get_admin_panel() -> str:
     let lastPrompt = "";
     let selectedCharacterId = "";
     let queueAutoRefreshTimer = null;
+    let lastAgeSpanStatus = null;
+    let queueAutoRun = false;
+    let lastAgeSpanPhaseTab = "face_detail";
 
     // 角色視覺預設：當 manifest 尚未填入 _style.character_style.visual 時，自動補齊
     const DEFAULT_STYLE_PRESET = "3D建模風格, T型體";
@@ -414,8 +458,13 @@ def get_admin_panel() -> str:
       document.getElementById("btnSaveEditor").disabled = !hasId;
       document.getElementById("btnVariant").disabled = !hasId;
       document.getElementById("btnGenerate").disabled = !hasId;
+      const btnAgeSpan = document.getElementById("btnGenerateAgeSpan");
+      if (btnAgeSpan) btnAgeSpan.disabled = !hasId;
       document.getElementById("btnCopyPrompt").disabled = !lastPrompt;
       document.getElementById("btnQueueSelected").disabled = !hasId;
+      if (selectedCharacterId) {
+        document.getElementById("queueCoreFilter").value = selectedCharacterId;
+      }
 
       document.querySelectorAll("#characterList .item").forEach((node) => {
         node.classList.toggle("active", node.dataset.id === selectedCharacterId);
@@ -452,6 +501,7 @@ def get_admin_panel() -> str:
           div.onclick = () => {
             updateCharacterSelection(item.id, item.name || "");
             loadCharacterEditor();
+            loadQueueTasks();
           };
           list.appendChild(div);
         });
@@ -682,7 +732,7 @@ def get_admin_panel() -> str:
           emotion: document.getElementById("emotion").value.trim() || null,
           scene: document.getElementById("scene").value.trim() || null,
           injury: document.getElementById("injury").value ? Number(document.getElementById("injury").value) : null,
-          multi_angle: true,
+          multi_angle: !["age_span", "tpose", "face_detail"].includes(document.getElementById("purpose").value),
           persist: true
         };
         const apiKey = document.getElementById("apiKey").value.trim();
@@ -702,14 +752,85 @@ def get_admin_panel() -> str:
         setJson("imageOutput", data);
         lastPrompt = "";
         document.getElementById("btnCopyPrompt").disabled = true;
+        const queuedId = data.task && data.task.id
+          ? `#${data.task.id}`
+          : (data.pipeline === "age_span" ? `${data.created ?? data.total ?? 0} 筆年齡軸任務` : "");
         setStatus(
           "imgStatus",
-          `生圖任務已排入佇列 #${data.task && data.task.id ? data.task.id : "?"}，請在下方任務面板執行`,
+          `生圖任務已排入佇列 ${queuedId}，開始自動逐步執行`,
           "ok"
         );
         await loadQueueTasks();
+        await startAutoPipeline();
       } catch (err) {
         setStatus("imgStatus", `生圖失敗：${err.message}`, "err");
+      }
+    }
+
+    async function generateAgeSpanAndRun() {
+      document.getElementById("purpose").value = "age_span";
+      await generateImages();
+    }
+
+    function taskAgeSpanMeta(task) {
+      const imageRequest = task && task.evolution_params && task.evolution_params._image_request;
+      if (!imageRequest || imageRequest.pipeline !== "age_span") return null;
+      return {
+        phase: imageRequest.phase || imageRequest.purpose || "",
+        age: imageRequest.age,
+        step: imageRequest.step_index,
+        total: imageRequest.total_steps,
+      };
+    }
+
+    function renderAgeSpanBanner(status) {
+      const box = document.getElementById("ageSpanBanner");
+      if (!box) return;
+      if (!status || !status.has_open_pipeline) {
+        box.style.display = "none";
+        box.innerHTML = "";
+        return;
+      }
+      const pct = status.total_steps
+        ? Math.round((status.accepted_count / status.total_steps) * 100)
+        : 0;
+      const blocked = Boolean(status.blocking_task_id);
+      box.className = "age-span-banner" + (blocked ? " warn" : "");
+      box.style.display = "block";
+      const nextHint = status.next_runnable_task_id
+        ? `下一步：任務 #${status.next_runnable_task_id}（${status.next_phase || "?"} ${status.next_age ?? "?"} 歲）· 自動執行中不必再按按鈕`
+        : "目前沒有待處理的 pending 任務";
+      box.innerHTML = `
+        <strong>年齡軸 pipeline</strong> · ${status.character_name || ("角色 #" + (status.core_id || "?"))}
+        · 已接受 ${status.accepted_count}/${status.total_steps}
+        · 待接受 ${status.ready_pending_review_count}
+        · 等待中 ${status.pending_count}
+        · 失敗 ${status.failed_count}
+        <div class="progress" title="${pct}%"><span style="width:${pct}%"></span></div>
+        <div>${blocked ? status.blocking_reason : nextHint}</div>
+      `;
+    }
+
+    async function loadAgeSpanStatus() {
+      const coreId = document.getElementById("queueCoreFilter").value.trim();
+      const params = new URLSearchParams();
+      if (coreId) params.set("core_id", coreId);
+      try {
+        const resp = await fetch(`/api/v1/admin/queue-tasks/age-span-status?${params.toString()}`);
+        if (resp.status === 404) {
+          lastAgeSpanStatus = null;
+          renderAgeSpanBanner(null);
+          return null;
+        }
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "載入年齡軸狀態失敗"));
+        lastAgeSpanStatus = data;
+        renderAgeSpanBanner(data);
+        return data;
+      } catch {
+        lastAgeSpanStatus = null;
+        renderAgeSpanBanner(null);
+        return null;
       }
     }
 
@@ -738,6 +859,81 @@ def get_admin_panel() -> str:
       `;
     }
 
+    function taskPreviewSrc(task) {
+      const cards = imagePreviewCards(task);
+      const match = cards && cards[0] && cards[0].match(/src="([^"]+)"/);
+      return match ? match[1] : "";
+    }
+
+    function renderCurrentStep(tasks) {
+      const box = document.getElementById("queueCurrentStep");
+      if (!box) return;
+      const focusId = lastAgeSpanStatus && (lastAgeSpanStatus.next_runnable_task_id || lastAgeSpanStatus.blocking_task_id);
+      const focus = (tasks || []).find((task) => Number(task.id) === Number(focusId))
+        || (tasks || []).find((task) => task.status === "pending")
+        || (tasks || []).find((task) => task.status === "failed")
+        || (tasks || [])[0];
+      if (!focus) {
+        box.className = "current-step-card";
+        box.innerHTML = "";
+        return;
+      }
+      const ageMeta = taskAgeSpanMeta(focus);
+      const src = taskPreviewSrc(focus);
+      const title = ageMeta
+        ? `目前步驟 · #${focus.id} · ${ageMeta.phase || "age_span"} · ${ageMeta.age ?? "?"} 歲`
+        : `目前步驟 · #${focus.id}`;
+      const hint = queueAutoRun
+        ? "自動生圖中：完成後會直接入庫並接下一筆。"
+        : (focus.status === "pending"
+          ? "按「開始自動流程」即可連續執行，不必逐筆按執行。"
+          : (focus.error_message || STATUS_LABELS[focus.status] || focus.status));
+      box.className = "current-step-card visible";
+      box.innerHTML = `
+        ${src ? `<img src="${src}" alt="目前步驟預覽" />` : `<div class="preview-empty">${focus.status === "pending" ? "等待生圖…" : "尚無預覽"}</div>`}
+        <div>
+          <strong>${title}</strong>
+          <p>${hint}</p>
+          <span class="badge ${focus.status || "pending"}">${STATUS_LABELS[focus.status] || focus.status}</span>
+          ${focus.result_url ? ` <a href="${focus.result_url}" target="_blank" rel="noopener noreferrer">查看結果</a>` : ""}
+        </div>
+      `;
+    }
+
+    function setAgeSpanPhaseTab(phase) {
+      lastAgeSpanPhaseTab = phase;
+      renderAgeSpanGrid(lastAgeSpanStatus);
+    }
+
+    function renderAgeSpanGrid(status) {
+      const box = document.getElementById("ageSpanGrid");
+      if (!box) return;
+      const steps = (status && Array.isArray(status.steps) ? status.steps : []);
+      if (!steps.length) {
+        box.innerHTML = "";
+        return;
+      }
+      const phase = lastAgeSpanPhaseTab === "tpose" ? "tpose" : "face_detail";
+      const filtered = steps.filter((step) => String(step.phase || "") === phase);
+      const currentId = status.next_runnable_task_id || status.blocking_task_id;
+      box.innerHTML = `
+        <div class="age-span-grid-header">
+          <strong>年齡軸時間軸</strong>
+          <div class="age-span-tabs">
+            <button class="${phase === "face_detail" ? "active" : ""}" onclick="setAgeSpanPhaseTab('face_detail')">面部細緻</button>
+            <button class="${phase === "tpose" ? "active" : ""}" onclick="setAgeSpanPhaseTab('tpose')">T 型外觀</button>
+          </div>
+        </div>
+        <div class="age-span-grid">
+          ${filtered.map((step) => {
+            const isCurrent = currentId && Number(step.task_id) === Number(currentId);
+            return `<button class="age-span-cell ${step.status || "missing"}${isCurrent ? " current" : ""}" title="${step.age} 歲 · ${step.status}">${step.age ?? "?"}</button>`;
+          }).join("")}
+        </div>
+        <p class="age-span-hint">綠色＝已入庫，黃色＝排隊中，紅色＝失敗。系統會依序自動跑完，不必逐格按執行。</p>
+      `;
+    }
+
     function renderQueueTasks(data) {
       renderQueueStats(data);
       const body = document.getElementById("queueTaskBody");
@@ -751,40 +947,34 @@ def get_admin_panel() -> str:
         lastPrompt = latestReadyWithPrompt.result_metadata.image_generation.prompt || lastPrompt;
         document.getElementById("btnCopyPrompt").disabled = !lastPrompt;
       }
+      renderCurrentStep(tasks);
+      renderAgeSpanGrid(lastAgeSpanStatus);
       if (!tasks.length) {
-        body.innerHTML = '<tr><td colspan="8" class="queue-empty">目前沒有符合條件的佇列任務。可按「請求變體」新增一筆。</td></tr>';
+        body.innerHTML = '<tr><td colspan="7" class="queue-empty">目前沒有佇列任務。選擇角色後按「建立 1–80 歲年齡軸並自動開始」。</td></tr>';
         preview.innerHTML = "";
         return;
       }
       body.innerHTML = tasks.map((task) => {
         const status = task.status || "pending";
         const statusLabel = STATUS_LABELS[status] || status;
-        const reviewLabel = reviewStatusLabel(task);
-        const reviewStatus = task.result_metadata && task.result_metadata.image_generation && task.result_metadata.image_generation.review
-          ? String(task.result_metadata.image_generation.review.status || "")
-          : "";
-        const params = JSON.stringify(task.evolution_params || {});
+        const ageMeta = taskAgeSpanMeta(task);
+        const purpose = ageMeta
+          ? `${ageMeta.phase || "age_span"} ${ageMeta.age ?? "?"} 歲`
+          : (task.purpose || "—");
         const name = task.character_name ? `#${task.core_id} · ${task.character_name}` : `#${task.core_id}`;
-        const actionHtml = status === "pending"
-          ? `<div class="queue-actions"><button class="secondary" onclick="processQueueTask(${task.id})">執行</button></div>`
-          : status === "ready" && task.result_url
-            ? `<div class="queue-actions">
-                <a href="${task.result_url}" target="_blank" rel="noopener noreferrer">查看結果</a>
-                ${reviewStatus === "pending" ? `<button onclick="acceptQueueTask(${task.id})">接受入庫</button><button class="secondary" onclick="rejectQueueTask(${task.id})">拒絕</button>` : ``}
-              </div>`
-            : task.error_message
-              ? `<div class="queue-actions"><span title="${task.error_message.replace(/"/g, "&quot;")}">失敗</span></div>`
-              : `<div class="queue-actions"><span>—</span></div>`;
+        const isBlocking = lastAgeSpanStatus && Number(lastAgeSpanStatus.blocking_task_id) === Number(task.id);
+        const resultHtml = task.result_url
+          ? `<a href="${task.result_url}" target="_blank" rel="noopener noreferrer">查看</a>`
+          : (task.error_message ? `<span title="${String(task.error_message).replace(/"/g, "&quot;")}">失敗</span>` : "—");
         return `
-          <tr>
-            <td>${task.id}</td>
+          <tr class="${isBlocking ? "queue-blocking" : ""}">
+            <td>${task.id}${isBlocking ? " ⚠" : ""}</td>
             <td>${name}</td>
-            <td><span class="badge ${status}">${statusLabel}</span>${reviewLabel ? `<div class="status">${reviewLabel}</div>` : ""}</td>
-            <td>${task.priority ?? 0}</td>
-            <td class="mono">${params}</td>
-            <td class="mono">${(task.variant_hash || "").slice(0, 16)}…</td>
+            <td><span class="badge ${status}">${statusLabel}</span></td>
+            <td>${purpose}</td>
+            <td class="mono">${ageMeta ? `${ageMeta.step ?? 0}/${ageMeta.total ?? 0}` : (task.variant_hash || "").slice(0, 12)}</td>
             <td>${formatDateTime(task.created_at)}</td>
-            <td>${actionHtml}</td>
+            <td>${resultHtml}</td>
           </tr>
         `;
       }).join("");
@@ -822,26 +1012,141 @@ def get_admin_panel() -> str:
       }
     }
 
-    async function processNextQueueTask() {
-      setStatus("queueStatus", "正在處理下一筆 pending 任務…");
+    function setAutoPipelineUi(active) {
+      queueAutoRun = active;
+      const startBtn = document.getElementById("btnAutoPipeline");
+      const stopBtn = document.getElementById("btnStopAutoPipeline");
+      if (startBtn) startBtn.style.display = active ? "none" : "";
+      if (stopBtn) stopBtn.style.display = active ? "" : "none";
+    }
+
+    async function runPipelineStep() {
+      const coreId = document.getElementById("queueCoreFilter").value.trim();
+      const statusParams = new URLSearchParams();
+      if (coreId) statusParams.set("core_id", coreId);
       try {
-        const resp = await fetch("/api/v1/admin/queue-tasks/process-next", {
-          method: "POST",
-        });
-        const data = await parseResponseJson(resp);
-        if (!resp.ok) {
-          throw new Error(apiErrorDetail(data, "處理下一筆任務失敗"));
-        }
-        if (!data.task) {
-          setStatus("queueStatus", "目前沒有 pending 任務可處理", "ok");
-        } else {
-          const imageGen = data.task.result_metadata && data.task.result_metadata.image_generation;
-          if (imageGen && imageGen.prompt) {
-            lastPrompt = imageGen.prompt;
-            document.getElementById("btnCopyPrompt").disabled = false;
-            setJson("imageOutput", imageGen);
+        const statusResp = await fetch(`/api/v1/admin/queue-tasks/age-span-status?${statusParams.toString()}`);
+        if (statusResp.ok) {
+          lastAgeSpanStatus = await parseResponseJson(statusResp);
+          renderAgeSpanBanner(lastAgeSpanStatus);
+          if (lastAgeSpanStatus && lastAgeSpanStatus.blocking_task_id) {
+            setStatus("queueStatus", lastAgeSpanStatus.blocking_reason || "請先接受待審任務後再繼續", "err");
+            return "blocked";
           }
-          setStatus("queueStatus", `已處理任務 #${data.task.id}，狀態：${data.task.status}`, data.task.status === "failed" ? "err" : "ok");
+        } else if (statusResp.status === 404) {
+          lastAgeSpanStatus = null;
+          renderAgeSpanBanner(null);
+        }
+      } catch {
+        /* age-span status is optional */
+      }
+
+      const params = new URLSearchParams();
+      if (coreId) params.set("core_id", coreId);
+      const resp = await fetch(`/api/v1/admin/queue-tasks/process-next?${params.toString()}`, {
+        method: "POST",
+      });
+      const data = await parseResponseJson(resp);
+      if (!resp.ok) {
+        throw new Error(apiErrorDetail(data, "處理下一筆任務失敗"));
+      }
+      if (data.age_span) {
+        lastAgeSpanStatus = data.age_span;
+        renderAgeSpanBanner(data.age_span);
+      }
+      if (data.blocked) {
+        setStatus(
+          "queueStatus",
+          data.age_span && data.age_span.blocking_reason
+            ? data.age_span.blocking_reason
+            : "目前有任務待接受，請先接受後再繼續",
+          "err"
+        );
+        return "blocked";
+      }
+      if (!data.task) {
+        setStatus("queueStatus", "目前沒有 pending 任務可處理", "ok");
+        return "idle";
+      }
+      const imageGen = data.task.result_metadata && data.task.result_metadata.image_generation;
+      if (imageGen && imageGen.prompt) {
+        lastPrompt = imageGen.prompt;
+        document.getElementById("btnCopyPrompt").disabled = false;
+        setJson("imageOutput", imageGen);
+      }
+      const review = imageGen && imageGen.review ? String(imageGen.review.status || "") : "";
+      if (data.task.status === "failed") {
+        setStatus("queueStatus", `任務 #${data.task.id} 失敗：${data.task.error_message || "未知錯誤"}`, "err");
+        return "failed";
+      }
+      if (data.task.status === "ready" && (!review || review === "pending")) {
+        setStatus(
+          "queueStatus",
+          `任務 #${data.task.id} 已生成。請檢視預覽並按「接受入庫」；接受後會自動處理下一筆。`,
+          "ok"
+        );
+        return "await_review";
+      }
+      setStatus("queueStatus", `任務 #${data.task.id} 已處理，狀態：${data.task.status}`, "ok");
+      return "processed";
+    }
+
+    async function startAutoPipeline(options) {
+      const opts = options || {};
+      try {
+        if (opts.resetFailed) {
+          const coreId = document.getElementById("queueCoreFilter").value.trim();
+          const fromId = document.getElementById("queueFromIdFilter").value.trim();
+          const resetParams = new URLSearchParams();
+          if (coreId) resetParams.set("core_id", coreId);
+          if (fromId) resetParams.set("from_id", fromId);
+          const resetResp = await fetch(`/api/v1/admin/queue-tasks/reset-failed?${resetParams.toString()}`, {
+            method: "POST",
+          });
+          const resetData = await parseResponseJson(resetResp);
+          if (!resetResp.ok) throw new Error(apiErrorDetail(resetData, "重設 failed 任務失敗"));
+          setStatus("queueStatus", `已重設 ${resetData.reset ?? 0} 筆失敗任務`, "ok");
+        }
+        const resp = await fetch("/api/v1/admin/queue-worker/start", { method: "POST" });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "啟動後端生圖失敗"));
+        setAutoPipelineUi(true);
+        setStatus("queueStatus", "後端正在逐步生圖：一次一張，完成後自動入庫並接下一筆。", "ok");
+        await loadQueueTasks();
+      } catch (err) {
+        setAutoPipelineUi(false);
+        setStatus("queueStatus", `自動逐步執行失敗：${err.message}`, "err");
+      }
+    }
+
+    async function stopAutoPipeline() {
+      try {
+        await fetch("/api/v1/admin/queue-worker/pause", { method: "POST" });
+      } catch (err) {}
+      setAutoPipelineUi(false);
+      setStatus("queueStatus", "已暫停後端 worker。目前那一張仍會跑完。", "ok");
+    }
+
+    async function continueAutoPipelineIfActive() {
+      if (!queueAutoRun) return;
+      try {
+        const result = await runPipelineStep();
+        if (result === "idle" || result === "failed") {
+          setAutoPipelineUi(false);
+        }
+        await loadQueueTasks();
+      } catch (err) {
+        setAutoPipelineUi(false);
+        setStatus("queueStatus", `自動繼續失敗：${err.message}`, "err");
+      }
+    }
+
+    async function processNextQueueTask() {
+      setStatus("queueStatus", "正在逐步處理下一筆任務…");
+      try {
+        const result = await runPipelineStep();
+        if (result === "idle" || result === "blocked") {
+          /* message already set */
         }
         await loadQueueTasks();
       } catch (err) {
@@ -860,6 +1165,7 @@ def get_admin_panel() -> str:
         if (selectedCharacterId && String(data.task && data.task.core_id || "") === String(selectedCharacterId)) {
           await loadCharacterEditor();
         }
+        await continueAutoPipelineIfActive();
       } catch (err) {
         setStatus("queueStatus", `接受失敗：${err.message}`, "err");
       }
@@ -878,10 +1184,76 @@ def get_admin_panel() -> str:
       }
     }
 
+    async function resetQueueTask(taskId) {
+      setStatus("queueStatus", `正在重設任務 #${taskId}…`);
+      try {
+        const resp = await fetch(`/api/v1/admin/queue-tasks/${taskId}/reset`, { method: "POST" });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "重設任務失敗"));
+        setStatus("queueStatus", `任務 #${taskId} 已重設為 pending`, "ok");
+        await loadQueueTasks();
+      } catch (err) {
+        setStatus("queueStatus", `重設失敗：${err.message}`, "err");
+      }
+    }
+
+    async function resetFailedQueueTasks() {
+      const coreId = document.getElementById("queueCoreFilter").value.trim();
+      const fromId = document.getElementById("queueFromIdFilter").value.trim();
+      const params = new URLSearchParams();
+      if (coreId) params.set("core_id", coreId);
+      if (fromId) params.set("from_id", fromId);
+      setStatus("queueStatus", "正在重設 failed 任務…");
+      try {
+        const resp = await fetch(`/api/v1/admin/queue-tasks/reset-failed?${params.toString()}`, {
+          method: "POST",
+        });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "重設 failed 任務失敗"));
+        setStatus("queueStatus", `已重設 ${data.reset ?? 0} 筆 failed 任務為 pending。系統將自動逐步執行。`, "ok");
+        await loadQueueTasks();
+      } catch (err) {
+        setStatus("queueStatus", `重設失敗：${err.message}`, "err");
+      }
+    }
+
+    async function clearQueueTasks() {
+      const coreId = document.getElementById("queueCoreFilter").value.trim();
+      const label = coreId ? `角色 #${coreId}` : "全部角色";
+      if (!window.confirm(`確定清空 ${label} 的佇列任務？此操作無法復原。`)) {
+        return;
+      }
+      setStatus("queueStatus", "正在清空佇列…");
+      try {
+        const params = new URLSearchParams();
+        if (coreId) params.set("core_id", coreId);
+        const resp = await fetch(`/api/v1/admin/queue-tasks/clear?${params.toString()}`, {
+          method: "POST",
+        });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "清空佇列失敗"));
+        lastAgeSpanStatus = null;
+        renderAgeSpanBanner(null);
+        renderAgeSpanGrid(null);
+        setStatus("queueStatus", `已清空 ${data.cleared ?? 0} 筆任務。`, "ok");
+        await loadQueueTasks();
+      } catch (err) {
+        setStatus("queueStatus", `清空失敗：${err.message}`, "err");
+      }
+    }
+
     async function processAllQueueTasks() {
+      const ok = window.confirm(
+        "年齡軸任務必須逐步完成並接受後才能繼續。批次處理在年齡軸存在時最多只會執行 1 筆。確定要繼續嗎？"
+      );
+      if (!ok) return;
       setStatus("queueStatus", "正在批次處理 pending 任務…");
       try {
-        const resp = await fetch("/api/v1/admin/queue-tasks/process-all?limit=100", {
+        const coreId = document.getElementById("queueCoreFilter").value.trim();
+        const params = new URLSearchParams();
+        params.set("limit", "1");
+        if (coreId) params.set("core_id", coreId);
+        const resp = await fetch(`/api/v1/admin/queue-tasks/process-all?${params.toString()}`, {
           method: "POST",
         });
         const data = await parseResponseJson(resp);
@@ -912,17 +1284,18 @@ def get_admin_panel() -> str:
         const coreId = document.getElementById("queueCoreFilter").value.trim();
         if (status) params.set("status", status);
         if (coreId) params.set("core_id", coreId);
-        params.set("limit", "100");
+        params.set("limit", "200");
         const resp = await fetch(`/api/v1/admin/queue-tasks?${params.toString()}`);
         const data = await parseResponseJson(resp);
         if (!resp.ok) {
           throw new Error(apiErrorDetail(data, "載入佇列失敗"));
         }
+        await loadAgeSpanStatus();
         renderQueueTasks(data);
         setStatus("queueStatus", `共 ${data.total ?? 0} 筆任務`, "ok");
       } catch (err) {
         document.getElementById("queueTaskBody").innerHTML =
-          `<tr><td colspan="8" class="queue-empty">${err.message}</td></tr>`;
+          `<tr><td colspan="7" class="queue-empty">${err.message}</td></tr>`;
         setStatus("queueStatus", `載入失敗：${err.message}`, "err");
       }
     }

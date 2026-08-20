@@ -1,23 +1,45 @@
 {
-  "next_id": 4,
+  "next_id": 2,
   "tasks": [
     {
       "id": 1,
       "core_id": 1,
-      "character_name": "test",
+      "character_name": "卡爾",
       "profile_version": 1,
-      "variant_hash": "2cd80efa83d8b8edea08033123d7430f1801229783e6e960e287eb374d29144b",
+      "variant_hash": "12b8710339c22c8dc60342d304c1300f5f36f463b54a1456f94115b535b24a0f",
       "evolution_params": {
-        "emotion_state": "neutral"
+        "age_override": 1,
+        "_queue_nonce": "age-span-884e9f48-6a41-4f09-baea-93b7a81908c2-face_detail-age-001",
+        "_image_request": {
+          "purpose": "face_detail",
+          "provider": "wan",
+          "model": "wan2.7-image-pro",
+          "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+          "api_key": null,
+          "extra": "exactly 1 years old, age 1, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+          "user_extra": "",
+          "n": 1,
+          "multi_angle": false,
+          "persist": true,
+          "entity_id": null,
+          "pipeline": "age_span",
+          "pipeline_id": "age-span-884e9f48-6a41-4f09-baea-93b7a81908c2",
+          "phase": "face_detail",
+          "age": 1,
+          "age_start": 1,
+          "age_end": 80,
+          "step_index": 0,
+          "total_steps": 160,
+          "depends_on": null,
+          "angle": "face_detail",
+          "asset_dir": "assets/face_detail/age_001",
+          "filename_prefix": "ref_face_detail_age_001"
+        }
       },
       "status": "ready",
-      "priority": 2,
-      "result_url": "/api/v1/characters/1/assets/causal/variants/1/evolved-manifest.json",
+      "priority": 160,
+      "result_url": "/api/v1/characters/1/assets/assets/face_detail/ref_face_detail_age_001_001.png",
       "result_metadata": {
-        "entity_id": "character-卡爾",
-        "output_dir": "causal/variants/1",
-        "record_path": "causal/variants/1/record.json",
-        "evolved_manifest_path": "causal/variants/1/evolved-manifest.json",
         "evolved_manifest": {
           "schema": "https://narratron.dev/schemas/charpass/v1.json",
           "_mode": "full",
@@ -25,18 +47,18 @@
           "_meta": {
             "format": "charpass",
             "format_version": "1.0.0",
-            "charpass_id": "57698391-0b6c-4a86-bd6a-4635dc203dc9",
+            "charpass_id": "6544b07a-4764-4f9c-a66c-5b8c46e9b063",
             "character_name": "卡爾",
             "character_alias": [],
-            "created_at": "2026-08-19T08:07:53.757742Z",
-            "updated_at": "2026-08-19T08:51:27.212726Z",
-            "created_by": "",
+            "created_at": "2026-08-20T06:16:03.386090Z",
+            "updated_at": "2026-08-20T08:31:14.118908Z",
+            "created_by": "3D建模風格, T型體",
             "project_id": null,
             "tags": [],
             "description": "",
             "thumbnail": "thumb/thumb_256.png",
             "license": "project_internal",
-            "checksum": "sha256:bc4a89dda388891ea2fdddf4b5048e048fe8cbfc3078e4af66e3293f9f8c50ec",
+            "checksum": "sha256:14c991cd993f6b68416abbce42d36f42f6e052703ff771c229e70e4fd8abf746",
             "parent_charpass_id": null,
             "generation_count": 0,
             "encryption": null,
@@ -67,7 +89,7 @@
               "ethnicity_bias": 0.0,
               "gender_spectrum": 0.5,
               "age_offset": 0,
-              "age_visual": null
+              "age_visual": 1
             },
             "lock_rules": {
               "face_consistency_threshold": 0.88,
@@ -79,12 +101,13 @@
             "aliases": [],
             "species": "human",
             "gender_spectrum": 0.5,
-            "age_appearance": null,
+            "age_appearance": "1 years old",
             "face_id": null,
             "face_threshold": 0.7,
             "note": null,
             "project_id": null,
-            "entity_id": ""
+            "entity_id": "",
+            "age_visual": 1
           },
           "_body": {
             "template": "",
@@ -138,8 +161,8 @@
             "reference_images": [],
             "character_style": {
               "visual": {
-                "medium": "",
-                "aesthetic": "",
+                "medium": "3D建模風格",
+                "aesthetic": "T型體",
                 "color_palette": [],
                 "lighting": "",
                 "camera": "",
@@ -163,7 +186,9 @@
               },
               "consistency_notes": ""
             },
-            "additional_descriptors": []
+            "additional_descriptors": [
+              "youthful features, smooth skin, innocent expression"
+            ]
           },
           "_expression": {
             "base_emotion": "neutral",
@@ -195,11 +220,7 @@
             },
             "default": "neutral",
             "range": [],
-            "intensity": 0.5,
-            "au_intensity": 0.1,
-            "micro_expressions": [
-              "relaxed"
-            ]
+            "intensity": 0.5
           },
           "_pose": {
             "default_pose": {
@@ -311,9 +332,9 @@
             "evolution_log": [
               {
                 "type": "queue_variant_processed",
-                "created_at": "2026-08-19T08:51:27.212726Z",
+                "created_at": "2026-08-20T08:31:14.118908Z",
                 "params": {
-                  "emotion_state": "neutral"
+                  "age_override": 1
                 }
               }
             ],
@@ -352,48 +373,202 @@
             }
           }
         },
-        "processed_at": "2026-08-19T08:51:27.221727+00:00",
         "evolution_params": {
-          "emotion_state": "neutral"
-        }
+          "age_override": 1
+        },
+        "entity_id": "character-卡爾",
+        "output_dir": "causal/variants/1",
+        "record_path": "causal/variants/1/record.json",
+        "evolved_manifest_path": "causal/variants/1/evolved-manifest.json",
+        "processed_at": "2026-08-20T08:31:32.765107+00:00",
+        "persist_entity_id": "character-卡爾",
+        "thumbnail_asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+        "face_detail_asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+        "face_detail_count": 1,
+        "has_face_detail": true,
+        "representative_asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+        "representative_angle": "face_detail",
+        "provider": "wan",
+        "model": "wan2.7-image-pro",
+        "purpose": "face_detail",
+        "angles": [
+          "face_detail"
+        ],
+        "image_count": 1,
+        "image_request": {
+          "purpose": "face_detail",
+          "provider": "wan",
+          "model": "wan2.7-image-pro",
+          "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+          "api_key": null,
+          "extra": "exactly 1 years old, age 1, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+          "user_extra": "",
+          "n": 1,
+          "multi_angle": false,
+          "persist": true,
+          "entity_id": null,
+          "pipeline": "age_span",
+          "pipeline_id": "age-span-884e9f48-6a41-4f09-baea-93b7a81908c2",
+          "phase": "face_detail",
+          "age": 1,
+          "age_start": 1,
+          "age_end": 80,
+          "step_index": 0,
+          "total_steps": 160,
+          "depends_on": null,
+          "angle": "face_detail",
+          "asset_dir": "assets/face_detail/age_001",
+          "filename_prefix": "ref_face_detail_age_001"
+        },
+        "image_generation": {
+          "provider": "wan",
+          "model": "wan2.7-image-pro",
+          "purpose": "face_detail",
+          "prompt": "卡爾, human, exactly 1 years old, age 1, 3D建模風格, T型體, youthful features, smooth skin, innocent expression, face detail, single character extreme facial close-up, one face only, one subject per image, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character only, one person only, no extra people, no duplicate body, no second face, one face only, one head only, no split-screen, no collage, no multi-panel composition, close-up portrait of only the same single character, not a lineup, not a contact sheet, not multiple crops, use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure, the face must match the same character from the identity turnaround set, no redesign, no face variation, no alternate person, keep the same visual style rendering, medium, aesthetic treatment, lighting language and material response as the character style profile, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, no hands covering face, no accessories blocking facial features, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, exactly 1 years old, age 1, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+          "negative_prompt": "multiple characters, extra person, duplicate figure, identity drift, different face, face swap, split face, double head, extra limbs, two people, group shot, lineup, contact sheet, diptych, triptych, mirrored subject, identity mismatch, alternate hairstyle, alternate costume, inconsistent facial structure",
+          "multi_angle": false,
+          "angles": [
+            "face_detail"
+          ],
+          "images": [
+            {
+              "filename": "ref_face_detail_age_001_001.png",
+              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/89/20260820/d689c36f/fe97eec6-8a73-4bc8-8151-3c46f8f2f33b_0.png?Expires=1787301090&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Xy4wS5%2BxMOxrp3PJxBpBp7xxbdk%3D",
+              "has_bytes": false,
+              "mime_type": "image/png",
+              "angle": "face_detail",
+              "requested_angle": "face_detail",
+              "requested_purpose": "face_detail",
+              "prompt": "卡爾, human, exactly 1 years old, age 1, 3D建模風格, T型體, youthful features, smooth skin, innocent expression, face detail, single character extreme facial close-up, one face only, one subject per image, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character only, one person only, no extra people, no duplicate body, no second face, one face only, one head only, no split-screen, no collage, no multi-panel composition, close-up portrait of only the same single character, not a lineup, not a contact sheet, not multiple crops, use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure, the face must match the same character from the identity turnaround set, no redesign, no face variation, no alternate person, keep the same visual style rendering, medium, aesthetic treatment, lighting language and material response as the character style profile, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, no hands covering face, no accessories blocking facial features, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, exactly 1 years old, age 1, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+              "asset_path": "assets/face_detail/ref_face_detail_age_001_001.png"
+            }
+          ],
+          "image_urls": [
+            "/api/v1/characters/1/assets/assets/face_detail/ref_face_detail_age_001_001.png"
+          ],
+          "images_by_angle": {
+            "face_detail": [
+              {
+                "filename": "ref_face_detail_age_001_001.png",
+                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/89/20260820/d689c36f/fe97eec6-8a73-4bc8-8151-3c46f8f2f33b_0.png?Expires=1787301090&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Xy4wS5%2BxMOxrp3PJxBpBp7xxbdk%3D",
+                "has_bytes": false,
+                "mime_type": "image/png",
+                "angle": "face_detail",
+                "requested_angle": "face_detail",
+                "requested_purpose": "face_detail",
+                "prompt": "卡爾, human, exactly 1 years old, age 1, 3D建模風格, T型體, youthful features, smooth skin, innocent expression, face detail, single character extreme facial close-up, one face only, one subject per image, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character only, one person only, no extra people, no duplicate body, no second face, one face only, one head only, no split-screen, no collage, no multi-panel composition, close-up portrait of only the same single character, not a lineup, not a contact sheet, not multiple crops, use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure, the face must match the same character from the identity turnaround set, no redesign, no face variation, no alternate person, keep the same visual style rendering, medium, aesthetic treatment, lighting language and material response as the character style profile, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, no hands covering face, no accessories blocking facial features, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, exactly 1 years old, age 1, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+                "asset_path": "assets/face_detail/ref_face_detail_age_001_001.png"
+              }
+            ]
+          },
+          "face_detail_images": [
+            {
+              "filename": "ref_face_detail_age_001_001.png",
+              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/89/20260820/d689c36f/fe97eec6-8a73-4bc8-8151-3c46f8f2f33b_0.png?Expires=1787301090&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Xy4wS5%2BxMOxrp3PJxBpBp7xxbdk%3D",
+              "has_bytes": false,
+              "mime_type": "image/png",
+              "angle": "face_detail",
+              "requested_angle": "face_detail",
+              "requested_purpose": "face_detail",
+              "prompt": "卡爾, human, exactly 1 years old, age 1, 3D建模風格, T型體, youthful features, smooth skin, innocent expression, face detail, single character extreme facial close-up, one face only, one subject per image, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character only, one person only, no extra people, no duplicate body, no second face, one face only, one head only, no split-screen, no collage, no multi-panel composition, close-up portrait of only the same single character, not a lineup, not a contact sheet, not multiple crops, use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure, the face must match the same character from the identity turnaround set, no redesign, no face variation, no alternate person, keep the same visual style rendering, medium, aesthetic treatment, lighting language and material response as the character style profile, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, no hands covering face, no accessories blocking facial features, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, exactly 1 years old, age 1, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+              "asset_path": "assets/face_detail/ref_face_detail_age_001_001.png"
+            }
+          ],
+          "face_detail_asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+          "face_detail_count": 1,
+          "thumbnail_image": {
+            "filename": "ref_face_detail_age_001_001.png",
+            "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/89/20260820/d689c36f/fe97eec6-8a73-4bc8-8151-3c46f8f2f33b_0.png?Expires=1787301090&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Xy4wS5%2BxMOxrp3PJxBpBp7xxbdk%3D",
+            "has_bytes": false,
+            "mime_type": "image/png",
+            "angle": "face_detail",
+            "requested_angle": "face_detail",
+            "requested_purpose": "face_detail",
+            "prompt": "卡爾, human, exactly 1 years old, age 1, 3D建模風格, T型體, youthful features, smooth skin, innocent expression, face detail, single character extreme facial close-up, one face only, one subject per image, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character only, one person only, no extra people, no duplicate body, no second face, one face only, one head only, no split-screen, no collage, no multi-panel composition, close-up portrait of only the same single character, not a lineup, not a contact sheet, not multiple crops, use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure, the face must match the same character from the identity turnaround set, no redesign, no face variation, no alternate person, keep the same visual style rendering, medium, aesthetic treatment, lighting language and material response as the character style profile, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, no hands covering face, no accessories blocking facial features, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, exactly 1 years old, age 1, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+            "asset_path": "assets/face_detail/ref_face_detail_age_001_001.png"
+          },
+          "thumbnail_asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+          "review": {
+            "status": "accepted",
+            "auto_accept": true,
+            "job_id": "1b26d019-b28c-4666-bf55-f52dcdc4db6b",
+            "entity_id": "character-卡爾",
+            "purpose": "face_detail",
+            "staged_at": null,
+            "manifest_candidate": null,
+            "request_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/request.json",
+            "response_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/response.json",
+            "full_response_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/full-response.json",
+            "raw_response_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/raw-response.json",
+            "record_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/record.json",
+            "images_index_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/images-index.json"
+          },
+          "review_status": "accepted",
+          "has_face_detail": true,
+          "representative_asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+          "representative_angle": "face_detail",
+          "image_count": 1,
+          "ref_image_uris": [],
+          "lock_url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/89/20260820/d689c36f/fe97eec6-8a73-4bc8-8151-3c46f8f2f33b_0.png?Expires=1787301090&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Xy4wS5%2BxMOxrp3PJxBpBp7xxbdk%3D"
+        },
+        "review_status": "accepted",
+        "lock_url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/89/20260820/d689c36f/fe97eec6-8a73-4bc8-8151-3c46f8f2f33b_0.png?Expires=1787301090&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Xy4wS5%2BxMOxrp3PJxBpBp7xxbdk%3D",
+        "effective_status": "accepted"
       },
       "error_message": null,
       "retry_count": 0,
       "max_retries": 3,
-      "queue_wait_ms": 4799569,
-      "generation_duration_ms": 20,
-      "created_at": "2026-08-19T07:31:27.631585+00:00",
-      "updated_at": "2026-08-19T08:51:27.221727+00:00"
+      "queue_wait_ms": 20,
+      "generation_duration_ms": 18648,
+      "created_at": "2026-08-20T08:31:14.095913+00:00",
+      "updated_at": "2026-08-20T08:31:32.766105+00:00",
+      "review_status": "accepted",
+      "effective_status": "accepted",
+      "provider": "wan",
+      "model": "wan2.7-image-pro"
     },
     {
       "id": 2,
       "core_id": 1,
       "character_name": "卡爾",
       "profile_version": 1,
-      "variant_hash": "ba0863b0d0ffa884180ef70a7d7958c14911e7554de36980e60459158a334c78",
+      "variant_hash": "70c3805a568aea91666f798d8018b919379d5ce9456265b45bff1a872c4cdd95",
       "evolution_params": {
-        "_queue_nonce": "img-0cd37c14-811a-43b7-8ce1-55c9d0879c81",
+        "age_override": 2,
+        "_queue_nonce": "age-span-884e9f48-6a41-4f09-baea-93b7a81908c2-face_detail-age-002",
         "_image_request": {
-          "purpose": "identity",
+          "purpose": "face_detail",
           "provider": "wan",
           "model": "wan2.7-image-pro",
           "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
           "api_key": null,
-          "extra": "",
+          "extra": "exactly 2 years old, age 2, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+          "user_extra": "",
           "n": 1,
-          "multi_angle": true,
+          "multi_angle": false,
           "persist": true,
-          "entity_id": null
+          "entity_id": null,
+          "pipeline": "age_span",
+          "pipeline_id": "age-span-884e9f48-6a41-4f09-baea-93b7a81908c2",
+          "phase": "face_detail",
+          "age": 2,
+          "age_start": 1,
+          "age_end": 80,
+          "step_index": 1,
+          "total_steps": 160,
+          "depends_on": {
+            "phase": "face_detail",
+            "age": 1
+          },
+          "angle": "face_detail",
+          "asset_dir": "assets/face_detail/age_002",
+          "filename_prefix": "ref_face_detail_age_002"
         }
       },
       "status": "ready",
-      "priority": 0,
-      "result_url": "/api/v1/characters/1/assets/assets/identity/ref_face_front_001.png",
+      "priority": 159,
+      "result_url": "/api/v1/characters/1/assets/assets/face_detail/ref_face_detail_age_002_001.png",
       "result_metadata": {
-        "entity_id": "character-卡爾",
-        "output_dir": "causal/variants/2",
-        "record_path": "causal/variants/2/record.json",
-        "evolved_manifest_path": "causal/variants/2/evolved-manifest.json",
         "evolved_manifest": {
           "schema": "https://narratron.dev/schemas/charpass/v1.json",
           "_mode": "full",
@@ -401,18 +576,18 @@
           "_meta": {
             "format": "charpass",
             "format_version": "1.0.0",
-            "charpass_id": "57698391-0b6c-4a86-bd6a-4635dc203dc9",
+            "charpass_id": "6544b07a-4764-4f9c-a66c-5b8c46e9b063",
             "character_name": "卡爾",
             "character_alias": [],
-            "created_at": "2026-08-19T08:07:53.757742Z",
-            "updated_at": "2026-08-19T08:57:05.778210Z",
+            "created_at": "2026-08-20T06:16:03.386090Z",
+            "updated_at": "2026-08-20T08:31:32.795121Z",
             "created_by": "3D建模風格, T型體",
             "project_id": null,
             "tags": [],
             "description": "",
-            "thumbnail": "thumb/thumb_256.png",
+            "thumbnail": "assets/face_detail/ref_face_detail_age_001_001.png",
             "license": "project_internal",
-            "checksum": "sha256:bc4a89dda388891ea2fdddf4b5048e048fe8cbfc3078e4af66e3293f9f8c50ec",
+            "checksum": "sha256:14c991cd993f6b68416abbce42d36f42f6e052703ff771c229e70e4fd8abf746",
             "parent_charpass_id": null,
             "generation_count": 0,
             "encryption": null,
@@ -420,7 +595,7 @@
             "mode": "full",
             "size_bytes": 0,
             "parser_version": "1.0.0",
-            "entity_id": "",
+            "entity_id": "character-卡爾",
             "archived": false
           },
           "_identity": {
@@ -443,7 +618,7 @@
               "ethnicity_bias": 0.0,
               "gender_spectrum": 0.5,
               "age_offset": 0,
-              "age_visual": null
+              "age_visual": 2
             },
             "lock_rules": {
               "face_consistency_threshold": 0.88,
@@ -455,12 +630,13 @@
             "aliases": [],
             "species": "human",
             "gender_spectrum": 0.5,
-            "age_appearance": null,
+            "age_appearance": "2 years old",
             "face_id": null,
             "face_threshold": 0.7,
             "note": null,
             "project_id": null,
-            "entity_id": ""
+            "entity_id": "character-卡爾",
+            "age_visual": 2
           },
           "_body": {
             "template": "",
@@ -539,7 +715,10 @@
               },
               "consistency_notes": ""
             },
-            "additional_descriptors": []
+            "additional_descriptors": [
+              "youthful features, smooth skin, innocent expression",
+              "youthful features, smooth skin, innocent expression"
+            ]
           },
           "_expression": {
             "base_emotion": "neutral",
@@ -682,9 +861,31 @@
           "_causal": {
             "evolution_log": [
               {
+                "scene": null,
+                "scene_index": null,
+                "event": "",
+                "changes": {},
+                "description": "",
+                "note": "",
+                "permanent": null,
+                "heal_scene": null,
+                "revert_scene": null,
+                "at": null,
+                "shot_id": null,
+                "cause": "",
+                "effect": "",
                 "type": "queue_variant_processed",
-                "created_at": "2026-08-19T08:57:05.778210Z",
-                "params": {}
+                "created_at": "2026-08-20T08:31:14.118908Z",
+                "params": {
+                  "age_override": 1
+                }
+              },
+              {
+                "type": "queue_variant_processed",
+                "created_at": "2026-08-20T08:31:32.795121Z",
+                "params": {
+                  "age_override": 2
+                }
               }
             ],
             "current_state_snapshot": {}
@@ -712,1412 +913,309 @@
               "version": ""
             },
             "image_gen": {
-              "provider": "",
-              "model": "",
+              "provider": "wan",
+              "model": "wan2.7-image-pro",
               "endpoint": "",
               "size": "1024x1024",
-              "last_job_id": "",
-              "last_asset_paths": [],
-              "note": ""
-            }
-          }
-        },
-        "processed_at": "2026-08-19T08:57:05.784227+00:00",
-        "evolution_params": {},
-        "image_request": {
-          "purpose": "identity",
-          "provider": "wan",
-          "model": "wan2.7-image-pro",
-          "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-          "api_key": null,
-          "extra": "",
-          "n": 1,
-          "multi_angle": true,
-          "persist": true,
-          "entity_id": null
-        },
-        "image_generation": {
-          "provider": "wan",
-          "model": "wan2.7-image-pro",
-          "purpose": "identity",
-          "prompt": "[front] 卡爾, human, 3D建模風格, T型體, front view, facing camera directly, full body, neutral standing pose, arms relaxed at sides, character turnaround reference sheet, multi-view seven-angle layout, consistent identity outfit hair and body proportions across all views, clean neutral studio background, even soft lighting, model sheet quality, no text labels\n[back] 卡爾, human, 3D建模風格, T型體, back view, facing away from camera, full body, neutral standing pose, character turnaround reference sheet, multi-view seven-angle layout, consistent identity outfit hair and body proportions across all views, clean neutral studio background, even soft lighting, model sheet quality, no text labels\n[left] 卡爾, human, 3D建模風格, T型體, left side profile, 90-degree angle, full body, neutral standing pose, character turnaround reference sheet, multi-view seven-angle layout, consistent identity outfit hair and body proportions across all views, clean neutral studio background, even soft lighting, model sheet quality, no text labels\n[right] 卡爾, human, 3D建模風格, T型體, right side profile, 90-degree angle, full body, neutral standing pose, character turnaround reference sheet, multi-view seven-angle layout, consistent identity outfit hair and body proportions across all views, clean neutral studio background, even soft lighting, model sheet quality, no text labels\n[three_quarter] 卡爾, human, 3D建模風格, T型體, three-quarter view, 45-degree angle, full body, neutral standing pose, character turnaround reference sheet, multi-view seven-angle layout, consistent identity outfit hair and body proportions across all views, clean neutral studio background, even soft lighting, model sheet quality, no text labels\n[top] 卡爾, human, 3D建模風格, T型體, top-down view from above, full body, neutral standing pose, body silhouette clearly readable, character turnaround reference sheet, multi-view seven-angle layout, consistent identity outfit hair and body proportions across all views, clean neutral studio background, even soft lighting, model sheet quality, no text labels\n[bottom] 卡爾, human, 3D建模風格, T型體, bottom-up view from below, full body, neutral standing pose, body silhouette clearly readable, character turnaround reference sheet, multi-view seven-angle layout, consistent identity outfit hair and body proportions across all views, clean neutral studio background, even soft lighting, model sheet quality, no text labels\n[face_detail] 卡爾, human, 3D建模風格, T型體, extreme facial close-up, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as turnaround sheet, preserve exact facial identity from the turnaround reference, skin detail readable, no hands covering face",
-          "negative_prompt": "inconsistent design, different character, wrong angle, cropped body, cut off limbs, duplicate poses, blurry, low quality, watermark, text overlay, multiple characters, collage errors, deformed face, asymmetric eyes, broken facial features",
-          "multi_angle": true,
-          "angles": [
-            "front",
-            "back",
-            "left",
-            "right",
-            "three_quarter",
-            "top",
-            "bottom",
-            "face_detail"
-          ],
-          "images": [
-            {
-              "filename": "ref_face_front_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/47/20260819/d689c36f/a985a013-1b3e-47a7-a338-2b4cf15e97a6_0.png?Expires=1787216248&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=ycLMKkb%2FvXrJoMug3l32d9OHSmg%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "front",
-              "asset_path": "assets/identity/ref_face_front_001.png"
-            },
-            {
-              "filename": "ref_face_back_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/a1/20260819/d689c36f/5f70d7f2-5de7-43c8-9b9f-167e6be892cf_0.png?Expires=1787216271&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=6aU48wx2GhuE5Dkg%2FK41DQr7T%2Fw%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "back",
-              "asset_path": "assets/identity/ref_face_back_001.png"
-            },
-            {
-              "filename": "ref_face_left_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/df/20260819/d689c36f/7a0135ee-e875-46f4-bc6f-f7d141772a2a_0.png?Expires=1787216299&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=9l31FagTQhkFj8RE5OExd3JHObU%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "left",
-              "asset_path": "assets/identity/ref_face_left_001.png"
-            },
-            {
-              "filename": "ref_face_right_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/c9/20260819/d689c36f/9470521f-4f45-4c78-80d0-e5ef3694adea_0.png?Expires=1787216402&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=uucF3vJIOcm2cNSvf10iAIoEP1o%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "right",
-              "asset_path": "assets/identity/ref_face_right_001.png"
-            },
-            {
-              "filename": "ref_face_three_quarter_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/f2/20260819/d689c36f/3f5ba225-dbc9-4d94-b4e3-591ea141539b_0.png?Expires=1787216426&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=ZswGOAHee4hWrOCrCFsx5VnUZ%2Fs%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "three_quarter",
-              "asset_path": "assets/identity/ref_face_three_quarter_001.png"
-            },
-            {
-              "filename": "ref_face_top_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/e3/20260819/d689c36f/b4681ab2-2b1c-4df9-a17e-cfa128a4aee4_0.png?Expires=1787216449&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=XzdSJ7lW3txEUf7iadr1Izftz%2FE%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "top",
-              "asset_path": "assets/identity/ref_face_top_001.png"
-            },
-            {
-              "filename": "ref_face_bottom_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/03/20260819/d689c36f/065e48e6-b2ee-455c-a261-c8a659e7a3d0_0.png?Expires=1787216472&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Y7PRvR2QnL0l9W6KPLVzO7S8xGw%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "bottom",
-              "asset_path": "assets/identity/ref_face_bottom_001.png"
-            },
-            {
-              "filename": "ref_face_face_detail_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/54/20260819/d689c36f/4f83d4aa-8114-4970-939b-97a2c0435a98_0.png?Expires=1787216496&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=zIfhF05FBlEDPgEZ%2FFLu%2BXEncUY%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "face_detail",
-              "asset_path": "assets/face_detail/ref_face_face_detail_001.png"
-            }
-          ],
-          "image_urls": [
-            "/api/v1/characters/1/assets/assets/identity/ref_face_front_001.png",
-            "/api/v1/characters/1/assets/assets/identity/ref_face_back_001.png",
-            "/api/v1/characters/1/assets/assets/identity/ref_face_left_001.png",
-            "/api/v1/characters/1/assets/assets/identity/ref_face_right_001.png",
-            "/api/v1/characters/1/assets/assets/identity/ref_face_three_quarter_001.png",
-            "/api/v1/characters/1/assets/assets/identity/ref_face_top_001.png",
-            "/api/v1/characters/1/assets/assets/identity/ref_face_bottom_001.png",
-            "/api/v1/characters/1/assets/assets/face_detail/ref_face_face_detail_001.png"
-          ],
-          "images_by_angle": {
-            "front": [
-              {
-                "filename": "ref_face_front_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/47/20260819/d689c36f/a985a013-1b3e-47a7-a338-2b4cf15e97a6_0.png?Expires=1787216248&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=ycLMKkb%2FvXrJoMug3l32d9OHSmg%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "front",
-                "asset_path": "assets/identity/ref_face_front_001.png"
-              }
-            ],
-            "back": [
-              {
-                "filename": "ref_face_back_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/a1/20260819/d689c36f/5f70d7f2-5de7-43c8-9b9f-167e6be892cf_0.png?Expires=1787216271&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=6aU48wx2GhuE5Dkg%2FK41DQr7T%2Fw%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "back",
-                "asset_path": "assets/identity/ref_face_back_001.png"
-              }
-            ],
-            "left": [
-              {
-                "filename": "ref_face_left_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/df/20260819/d689c36f/7a0135ee-e875-46f4-bc6f-f7d141772a2a_0.png?Expires=1787216299&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=9l31FagTQhkFj8RE5OExd3JHObU%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "left",
-                "asset_path": "assets/identity/ref_face_left_001.png"
-              }
-            ],
-            "right": [
-              {
-                "filename": "ref_face_right_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/c9/20260819/d689c36f/9470521f-4f45-4c78-80d0-e5ef3694adea_0.png?Expires=1787216402&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=uucF3vJIOcm2cNSvf10iAIoEP1o%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "right",
-                "asset_path": "assets/identity/ref_face_right_001.png"
-              }
-            ],
-            "three_quarter": [
-              {
-                "filename": "ref_face_three_quarter_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/f2/20260819/d689c36f/3f5ba225-dbc9-4d94-b4e3-591ea141539b_0.png?Expires=1787216426&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=ZswGOAHee4hWrOCrCFsx5VnUZ%2Fs%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "three_quarter",
-                "asset_path": "assets/identity/ref_face_three_quarter_001.png"
-              }
-            ],
-            "top": [
-              {
-                "filename": "ref_face_top_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/e3/20260819/d689c36f/b4681ab2-2b1c-4df9-a17e-cfa128a4aee4_0.png?Expires=1787216449&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=XzdSJ7lW3txEUf7iadr1Izftz%2FE%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "top",
-                "asset_path": "assets/identity/ref_face_top_001.png"
-              }
-            ],
-            "bottom": [
-              {
-                "filename": "ref_face_bottom_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/03/20260819/d689c36f/065e48e6-b2ee-455c-a261-c8a659e7a3d0_0.png?Expires=1787216472&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Y7PRvR2QnL0l9W6KPLVzO7S8xGw%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "bottom",
-                "asset_path": "assets/identity/ref_face_bottom_001.png"
-              }
-            ],
-            "face_detail": [
-              {
-                "filename": "ref_face_face_detail_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/54/20260819/d689c36f/4f83d4aa-8114-4970-939b-97a2c0435a98_0.png?Expires=1787216496&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=zIfhF05FBlEDPgEZ%2FFLu%2BXEncUY%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "face_detail",
-                "asset_path": "assets/face_detail/ref_face_face_detail_001.png"
-              }
-            ]
-          }
-        }
-      },
-      "error_message": null,
-      "retry_count": 0,
-      "max_retries": 3,
-      "queue_wait_ms": 122551,
-      "generation_duration_ms": 13,
-      "created_at": "2026-08-19T08:55:03.219313+00:00",
-      "updated_at": "2026-08-19T08:57:05.784227+00:00"
-    },
-    {
-      "id": 3,
-      "core_id": 2,
-      "character_name": "莉娜",
-      "profile_version": 1,
-      "variant_hash": "bc77cb4f2999389c3180487916133d9c561ac1d2d12685cccbe380e4c6ba3da6",
-      "evolution_params": {
-        "_queue_nonce": "img-37609670-8629-4da4-9972-a359c6dbcdff",
-        "_image_request": {
-          "purpose": "identity",
-          "provider": "wan",
-          "model": "wan2.7-image-pro",
-          "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-          "api_key": null,
-          "extra": "",
-          "n": 1,
-          "multi_angle": true,
-          "persist": true,
-          "entity_id": null
-        }
-      },
-      "status": "ready",
-      "priority": 0,
-      "result_url": "/api/v1/characters/2/assets/causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_face_detail_001.png",
-      "result_metadata": {
-        "entity_id": "character-莉娜",
-        "output_dir": "causal/variants/3",
-        "record_path": "causal/variants/3/record.json",
-        "evolved_manifest_path": "causal/variants/3/evolved-manifest.json",
-        "evolved_manifest": {
-          "schema": "https://narratron.dev/schemas/charpass/v1.json",
-          "_mode": "lite",
-          "_asset_base_url": null,
-          "_meta": {
-            "format": "charpass",
-            "format_version": "1.0.0",
-            "charpass_id": "f9c31fe4-5fc4-45ec-a648-1f0cd7e4d65f",
-            "character_name": "莉娜",
-            "character_alias": [],
-            "created_at": "2026-08-19T08:07:53.671738Z",
-            "updated_at": "2026-08-19T09:36:44.969393Z",
-            "created_by": "3D建模風格, T型體",
-            "project_id": null,
-            "tags": [],
-            "description": "",
-            "thumbnail": "thumb/thumb_256.png",
-            "license": "project_internal",
-            "checksum": "sha256:405b8e13e0350b6b634a1cda6c0e45ebba6b52e9f62513243e4fe5a7324210ec",
-            "parent_charpass_id": null,
-            "generation_count": 0,
-            "encryption": null,
-            "encryption_level": "L0",
-            "mode": "lite",
-            "size_bytes": 0,
-            "parser_version": "1.0.0",
-            "entity_id": "character-莉娜",
-            "archived": false
-          },
-          "_identity": {
-            "ref_images": [],
-            "face_embedding": {
-              "path": "",
-              "model": "",
-              "dimension": 512,
-              "dtype": "float32"
-            },
-            "ip_adapter": {
-              "enabled": true,
-              "model": "ip-adapter-faceid-plusv2",
-              "weight": 0.85,
-              "noise_aug": 0.02
-            },
-            "blend": {
-              "mode": "single",
-              "sources": [],
-              "ethnicity_bias": 0.0,
-              "gender_spectrum": 0.5,
-              "age_offset": 0,
-              "age_visual": null
-            },
-            "lock_rules": {
-              "face_consistency_threshold": 0.88,
-              "allow_expression_change": true,
-              "allow_aging_progression": true,
-              "forbidden_regions": []
-            },
-            "name": "莉娜",
-            "aliases": [],
-            "species": "human",
-            "gender_spectrum": 0.5,
-            "age_appearance": null,
-            "face_id": null,
-            "face_threshold": 0.7,
-            "note": "傷痕",
-            "project_id": null,
-            "entity_id": "character-莉娜"
-          },
-          "_body": {
-            "template": "",
-            "skeleton": {
-              "path": "",
-              "format": "openpose_18",
-              "head_ratio": null,
-              "height_cm": null,
-              "weight_kg": null
-            },
-            "proportions": {},
-            "limb_thickness": {},
-            "posture_defaults": {
-              "spine_curve": "",
-              "shoulder_state": "",
-              "head_tilt": 0.0,
-              "note": ""
-            },
-            "mesh": {
-              "path": "",
-              "format": "glTF_2.0",
-              "polycount": null
-            },
-            "skin_tone": {
-              "base_hex": "",
-              "undertone": "",
-              "freckle_density": 0.0,
-              "tan_lines": []
-            },
-            "height_cm": null,
-            "build": null,
-            "skin": null
-          },
-          "_style": {
-            "outfit": {
-              "description": "",
-              "ref_images": [],
-              "items": []
-            },
-            "hair": null,
-            "makeup": {
-              "type": "none",
-              "intensity": 0.0,
-              "regions": []
-            },
-            "damage_regions": [
-              {
-                "id": "",
-                "token": "scar",
-                "area": "",
-                "region": "skin",
-                "type": "",
-                "intensity": null,
-                "since_scene": null,
-                "description": "",
-                "note": "",
-                "source": "parser"
-              }
-            ],
-            "accessories": [],
-            "clothing": [],
-            "colors": {},
-            "ip_adapter_weight": 0.7,
-            "reference_images": [],
-            "character_style": {
-              "visual": {
-                "medium": "3D建模風格",
-                "aesthetic": "T型體",
-                "color_palette": [],
-                "lighting": "",
-                "camera": "",
-                "keywords": [],
-                "note": ""
-              },
-              "art_prompt": {
-                "positive": "",
-                "negative": "",
-                "strength": 1.0,
-                "template": "",
-                "note": ""
-              },
-              "narrative": {
-                "tone": "",
-                "speech_pattern": "",
-                "diction": "",
-                "register": "",
-                "sample_lines": [],
-                "note": ""
-              },
-              "consistency_notes": ""
-            },
-            "additional_descriptors": []
-          },
-          "_expression": {
-            "base_emotion": "neutral",
-            "micro_asymmetry": 0.0,
-            "resting_face": {
-              "brow_position": 0.0,
-              "eye_openness": 1.0,
-              "gaze_direction": "",
-              "mouth_state": "",
-              "jaw_tension": 0.0
-            },
-            "au_library": {
-              "default_set": [],
-              "custom_presets": []
-            },
-            "gaze": {
-              "default_target": "",
-              "tracking_mode": "fixed",
-              "saccade_frequency": 0.0,
-              "blink_rate_per_min": null
-            },
-            "lip_sync": {
-              "neutral_mouth_shape": "rest_closed",
-              "openness_range": [
-                0.0,
-                1.0
+              "last_job_id": "1b26d019-b28c-4666-bf55-f52dcdc4db6b",
+              "last_asset_paths": [
+                "assets/face_detail/ref_face_detail_age_001_001.png"
               ],
-              "dental_visibility": 0.0
-            },
-            "default": "neutral",
-            "range": [],
-            "intensity": 0.5
-          },
-          "_pose": {
-            "default_pose": {
-              "skeleton_path": "",
-              "format": "openpose_18",
-              "description": ""
-            },
-            "pose_library": [],
-            "movement_style": {
-              "speed_factor": 1.0,
-              "fluidity": 0.5,
-              "weight_shift": "",
-              "note": ""
-            },
-            "interaction_constraints": {
-              "personal_space_radius_cm": null,
-              "touch_aversion": [],
-              "note": ""
-            },
-            "default": "standing",
-            "head_tilt": 0.0,
-            "constraints": []
-          },
-          "_physics": {
-            "skin": {
-              "detail_level": 0.5,
-              "pore_visibility": 0.5,
-              "subsurface_scattering": 0.5,
-              "wrinkle_depth": 0.5,
-              "elasticity": 0.5,
-              "note": ""
-            },
-            "cloth": {
-              "simulation_mode": "auto_by_material",
-              "wind_sensitivity": 0.5,
-              "gravity_response": 0.5,
-              "collision_with_body": true,
-              "wrinkle_memory": 0.5
-            },
-            "hair": {
-              "simulation_mode": "strand_based",
-              "strand_count_hint": "medium",
-              "static_electricity": 0.0,
-              "wet_behavior": {
-                "clump_factor": 0.0,
-                "darkening": 0.0,
-                "weight_increase": 0.0
-              }
-            },
-            "fluids": {
-              "sweat": {
-                "enabled": false,
-                "trigger": "",
-                "regions": [],
-                "flow_speed": 0.0
+              "note": "",
+              "last_purpose": "face_detail",
+              "last_angles": [
+                "face_detail"
+              ],
+              "last_face_detail_paths": [
+                "assets/face_detail/ref_face_detail_age_001_001.png"
+              ],
+              "age_span": {
+                "faces": {
+                  "1": [
+                    {
+                      "path": "assets/face_detail/ref_face_detail_age_001_001.png",
+                      "uri": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/89/20260820/d689c36f/fe97eec6-8a73-4bc8-8151-3c46f8f2f33b_0.png?Expires=1787301090&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Xy4wS5%2BxMOxrp3PJxBpBp7xxbdk%3D",
+                      "kind": "reference_image",
+                      "angle": "face_detail",
+                      "note": "generated:wan:face_detail:face_detail",
+                      "age": 1
+                    }
+                  ]
+                },
+                "tposes": {}
               },
-              "tears": {
-                "enabled": false,
-                "trigger": "",
-                "flow_path": "",
-                "volume": ""
+              "latest_by_purpose": {
+                "face_detail": {
+                  "job_id": "1b26d019-b28c-4666-bf55-f52dcdc4db6b",
+                  "provider": "wan",
+                  "model": "wan2.7-image-pro",
+                  "asset_paths": [
+                    "assets/face_detail/ref_face_detail_age_001_001.png"
+                  ],
+                  "angles": [
+                    "face_detail"
+                  ],
+                  "images_by_angle": {
+                    "face_detail": [
+                      {
+                        "angle": "face_detail",
+                        "asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+                        "filename": "assets/face_detail/ref_face_detail_age_001_001.png"
+                      }
+                    ]
+                  },
+                  "thumbnail_asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+                  "face_detail_asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+                  "face_detail_count": 1,
+                  "face_detail_images": [
+                    {
+                      "angle": "face_detail",
+                      "asset_path": "assets/face_detail/ref_face_detail_age_001_001.png",
+                      "filename": "assets/face_detail/ref_face_detail_age_001_001.png"
+                    }
+                  ],
+                  "updated_at": "2026-08-20T08:31:31.417096Z"
+                }
               },
-              "blood": {
-                "enabled": false,
-                "trigger": "",
-                "color_hex": "#8B0000",
-                "viscosity": 0.5
-              }
-            },
-            "lighting_response": {
-              "skin_specular": 0.3,
-              "eye_reflection": true,
-              "shadow_softness": 0.5
-            },
-            "mass_kg": null,
-            "rigidity": 0.5,
-            "cloth_sim": false
-          },
-          "_voice": {
-            "enabled": false,
-            "ref_audio": {
-              "path": "",
-              "duration_sec": null,
-              "sample_rate": null,
-              "channels": null
-            },
-            "voice_embedding": {
-              "path": "",
-              "model": "",
-              "dimension": 256
-            },
-            "characteristics": {
-              "pitch": null,
-              "speed_factor": 1.0,
-              "breathiness": 0.0,
-              "roughness": 0.0,
-              "accent": "",
-              "habitual_pause_ms": null,
-              "note": ""
-            },
-            "emotional_range": {},
-            "timbre": null,
-            "pitch": 0.5,
-            "sample_uri": null,
-            "language": "zh-Hant",
-            "samples": []
-          },
-          "_causal": {
-            "evolution_log": [
-              {
-                "at": "2026-08-19T08:07:53.666737+00:00",
-                "shot_id": null,
-                "cause": "劇本揭示",
-                "effect": "莉娜 進入 State Vault",
-                "changes": [
-                  {
-                    "op": "+",
-                    "path": "_style.damage_regions",
-                    "value": "scar"
-                  }
-                ]
-              },
-              {
-                "type": "queue_variant_processed",
-                "created_at": "2026-08-19T09:36:44.969393Z",
-                "params": {}
-              }
-            ],
-            "current_state_snapshot": {
-              "_style": {
-                "damage_regions": [
-                  "scar"
-                ]
-              }
-            }
-          },
-          "_constraints": {
-            "must_always": [],
-            "must_never": [],
-            "conditional": [],
-            "quality_floor": {
-              "face_consistency_min": 0.88,
-              "body_proportion_tolerance": 0.05,
-              "outfit_color_delta_e_max": 4.0
-            },
-            "forbidden": [],
-            "required": [],
-            "continuity": [
-              "scar"
-            ]
-          },
-          "_extensions": {
-            "comfyui_workflow": {
-              "path": "",
-              "version": ""
-            },
-            "comfyui": {
-              "path": "",
-              "version": ""
-            },
-            "image_gen": {
-              "provider": "",
-              "model": "",
-              "endpoint": "",
-              "size": "1024x1024",
-              "last_job_id": "",
-              "last_asset_paths": [],
-              "note": ""
+              "last_api_response_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/full-response.json",
+              "last_request_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/request.json",
+              "last_raw_response_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/raw-response.json",
+              "last_record_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/record.json",
+              "last_images_index_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/images-index.json",
+              "history": [
+                {
+                  "job_id": "1b26d019-b28c-4666-bf55-f52dcdc4db6b",
+                  "purpose": "face_detail",
+                  "provider": "wan",
+                  "model": "wan2.7-image-pro",
+                  "created_at": "2026-08-20T08:31:32.692103Z",
+                  "request_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/request.json",
+                  "response_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/full-response.json",
+                  "raw_response_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/raw-response.json",
+                  "record_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/record.json",
+                  "images_index_path": "causal/image_gen/face_detail/1b26d019-b28c-4666-bf55-f52dcdc4db6b/images-index.json",
+                  "asset_paths": [
+                    "assets/face_detail/ref_face_detail_age_001_001.png"
+                  ],
+                  "angles": [
+                    "face_detail"
+                  ]
+                }
+              ]
             }
           }
         },
-        "processed_at": "2026-08-19T09:36:44.979396+00:00",
-        "evolution_params": {},
-        "persist_entity_id": "character-莉娜",
-        "thumbnail_asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_face_detail_001.png",
-        "face_detail_asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_face_detail_001.png",
+        "evolution_params": {
+          "age_override": 2
+        },
+        "entity_id": "character-卡爾",
+        "output_dir": "causal/variants/2",
+        "record_path": "causal/variants/2/record.json",
+        "evolved_manifest_path": "causal/variants/2/evolved-manifest.json",
+        "processed_at": "2026-08-20T08:31:42.399270+00:00",
+        "persist_entity_id": "character-卡爾",
+        "thumbnail_asset_path": "assets/face_detail/ref_face_detail_age_002_001.png",
+        "face_detail_asset_path": "assets/face_detail/ref_face_detail_age_002_001.png",
         "face_detail_count": 1,
+        "has_face_detail": true,
+        "representative_asset_path": "assets/face_detail/ref_face_detail_age_002_001.png",
+        "representative_angle": "face_detail",
+        "provider": "wan",
+        "model": "wan2.7-image-pro",
+        "purpose": "face_detail",
+        "angles": [
+          "face_detail"
+        ],
+        "image_count": 1,
         "image_request": {
-          "purpose": "identity",
+          "purpose": "face_detail",
           "provider": "wan",
           "model": "wan2.7-image-pro",
           "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
           "api_key": null,
-          "extra": "",
+          "extra": "exactly 2 years old, age 2, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+          "user_extra": "",
           "n": 1,
-          "multi_angle": true,
+          "multi_angle": false,
           "persist": true,
-          "entity_id": null
+          "entity_id": null,
+          "pipeline": "age_span",
+          "pipeline_id": "age-span-884e9f48-6a41-4f09-baea-93b7a81908c2",
+          "phase": "face_detail",
+          "age": 2,
+          "age_start": 1,
+          "age_end": 80,
+          "step_index": 1,
+          "total_steps": 160,
+          "depends_on": {
+            "phase": "face_detail",
+            "age": 1
+          },
+          "angle": "face_detail",
+          "asset_dir": "assets/face_detail/age_002",
+          "filename_prefix": "ref_face_detail_age_002"
         },
         "image_generation": {
           "provider": "wan",
           "model": "wan2.7-image-pro",
-          "purpose": "identity",
-          "prompt": "[front] 莉娜, human, 3D建模風格, T型體, head-and-shoulders portrait, face clearly visible, neutral expression, front view, facing camera directly, full body, neutral standing pose, arms relaxed at sides, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, preserve the same character identity, same face, same hairstyle, same body proportions, same outfit language, single character only, one person only, full body isolated subject, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage\n[back] 莉娜, human, 3D建模風格, T型體, head-and-shoulders portrait, face clearly visible, neutral expression, back view, facing away from camera, full body, neutral standing pose, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, preserve the same character identity, same face, same hairstyle, same body proportions, same outfit language, single character only, one person only, full body isolated subject, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage\n[left] 莉娜, human, 3D建模風格, T型體, head-and-shoulders portrait, face clearly visible, neutral expression, left side profile, 90-degree angle, full body, neutral standing pose, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, preserve the same character identity, same face, same hairstyle, same body proportions, same outfit language, single character only, one person only, full body isolated subject, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage\n[right] 莉娜, human, 3D建模風格, T型體, head-and-shoulders portrait, face clearly visible, neutral expression, right side profile, 90-degree angle, full body, neutral standing pose, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, preserve the same character identity, same face, same hairstyle, same body proportions, same outfit language, single character only, one person only, full body isolated subject, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage\n[three_quarter] 莉娜, human, 3D建模風格, T型體, head-and-shoulders portrait, face clearly visible, neutral expression, three-quarter view, 45-degree angle, full body, neutral standing pose, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, preserve the same character identity, same face, same hairstyle, same body proportions, same outfit language, single character only, one person only, full body isolated subject, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage\n[top] 莉娜, human, 3D建模風格, T型體, head-and-shoulders portrait, face clearly visible, neutral expression, top-down view from above, full body, neutral standing pose, body silhouette clearly readable, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, preserve the same character identity, same face, same hairstyle, same body proportions, same outfit language, single character only, one person only, full body isolated subject, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage\n[bottom] 莉娜, human, 3D建模風格, T型體, head-and-shoulders portrait, face clearly visible, neutral expression, bottom-up view from below, full body, neutral standing pose, body silhouette clearly readable, single character only, one person only, no extra people, no duplicate body, no second face, exactly one character, one pose, one camera angle, no crowd, no partner, no background character, preserve the same character identity, same face, same hairstyle, same body proportions, same outfit language, single character only, one person only, full body isolated subject, consistent identity outfit hair and body proportions, clean neutral studio background, even soft lighting, model sheet quality, no text labels, no duplicate figure, no collage\n[face_detail] 莉娜, human, 3D建模風格, T型體, head-and-shoulders portrait, face clearly visible, neutral expression, extreme facial close-up, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as turnaround sheet, single character only, one person only, no extra people, no duplicate body, no second face, one face only, one head only, no split-screen, no collage, no multi-panel composition, use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure, same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, no hands covering face, no accessories blocking facial features",
-          "negative_prompt": "inconsistent design, different character, wrong angle, cropped body, cut off limbs, duplicate poses, blurry, low quality, watermark, text overlay, multiple characters, collage errors, deformed face, asymmetric eyes, broken facial features, extra person, duplicate figure, identity drift, different face, face swap, split face, double head, extra limbs",
-          "multi_angle": true,
+          "purpose": "face_detail",
+          "prompt": "卡爾, human, exactly 2 years old, age 2, 3D建模風格, T型體, youthful features, smooth skin, innocent expression, face detail, single character extreme facial close-up, one face only, one subject per image, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character only, one person only, no extra people, no duplicate body, no second face, one face only, one head only, no split-screen, no collage, no multi-panel composition, close-up portrait of only the same single character, not a lineup, not a contact sheet, not multiple crops, use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure, the face must match the same character from the identity turnaround set, no redesign, no face variation, no alternate person, keep the same visual style rendering, medium, aesthetic treatment, lighting language and material response as the character style profile, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, no hands covering face, no accessories blocking facial features, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, exactly 2 years old, age 2, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+          "negative_prompt": "multiple characters, extra person, duplicate figure, identity drift, different face, face swap, split face, double head, extra limbs, two people, group shot, lineup, contact sheet, diptych, triptych, mirrored subject, identity mismatch, alternate hairstyle, alternate costume, inconsistent facial structure",
+          "multi_angle": false,
           "angles": [
-            "front",
-            "back",
-            "left",
-            "right",
-            "three_quarter",
-            "top",
-            "bottom",
             "face_detail"
           ],
           "images": [
             {
-              "filename": "ref_face_front_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/3b/20260819/d689c36f/8a8cc613-dd3b-47c3-afba-48a143beefd0_0.png?Expires=1787218652&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=pKrCcNE8s9wgLfPcTmlsrvanD60%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "front",
-              "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_front_001.png",
-              "final_asset_path": "assets/identity/ref_face_front_001.png"
-            },
-            {
-              "filename": "ref_face_back_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/be/20260819/d689c36f/37a9b11c-6685-4843-84f9-fba7c3d76414_0.png?Expires=1787218677&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Z256usfpI0zbQqXs0W2NusGw2H4%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "back",
-              "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_back_001.png",
-              "final_asset_path": "assets/identity/ref_face_back_001.png"
-            },
-            {
-              "filename": "ref_face_left_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/51/20260819/d689c36f/e90b34e9-ee0e-40ca-9011-347f15737958_0.png?Expires=1787218703&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=mP1F5Z7hYFw4GMDIchh1J6%2F0bGY%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "left",
-              "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_left_001.png",
-              "final_asset_path": "assets/identity/ref_face_left_001.png"
-            },
-            {
-              "filename": "ref_face_right_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/4d/20260819/d689c36f/42a76dce-0e49-4b4f-8d94-de6cae79a569_0.png?Expires=1787218728&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=HdezeadJH0p7b1qbyliBNyqyw3Q%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "right",
-              "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_right_001.png",
-              "final_asset_path": "assets/identity/ref_face_right_001.png"
-            },
-            {
-              "filename": "ref_face_three_quarter_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/4e/20260819/d689c36f/e3ad3c6b-f451-4b3c-b8f8-924c1fe42376_0.png?Expires=1787218753&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=WorWzcSCm9x88POdMO1wGF%2FVclY%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "three_quarter",
-              "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_three_quarter_001.png",
-              "final_asset_path": "assets/identity/ref_face_three_quarter_001.png"
-            },
-            {
-              "filename": "ref_face_top_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/70/20260819/d689c36f/703d7740-bacf-4863-9a4d-f16d523ad7e5_0.png?Expires=1787218777&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=8BfqlOsjXjfRqBKF76v73O0xUco%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "top",
-              "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_top_001.png",
-              "final_asset_path": "assets/identity/ref_face_top_001.png"
-            },
-            {
-              "filename": "ref_face_bottom_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/ed/20260819/d689c36f/86f294f8-0fd1-4a22-bddd-27ba7a889010_0.png?Expires=1787218803&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=kKdU3JWSQkOIma3rCqOcONW0WUA%3D",
-              "has_bytes": false,
-              "mime_type": "image/png",
-              "angle": "bottom",
-              "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_bottom_001.png",
-              "final_asset_path": "assets/identity/ref_face_bottom_001.png"
-            },
-            {
-              "filename": "ref_face_face_detail_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/0d/20260819/d689c36f/7113ceae-089b-4971-ba94-ef62194a00b4_0.png?Expires=1787218827&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=pSF6Su5GW4jpgQR5l4Rrvglfpuk%3D",
+              "filename": "ref_face_detail_age_002_001.png",
+              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/10/20260820/727717a8/06c6106b-b47a-4bf4-a304-eff905ece7bd_0.png?Expires=1787301100&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=qvZBfzYxCtgbPO4CQz2LDHUC3fg%3D",
               "has_bytes": false,
               "mime_type": "image/png",
               "angle": "face_detail",
-              "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_face_detail_001.png",
-              "final_asset_path": "assets/face_detail/ref_face_face_detail_001.png"
+              "requested_angle": "face_detail",
+              "requested_purpose": "face_detail",
+              "prompt": "卡爾, human, exactly 2 years old, age 2, 3D建模風格, T型體, youthful features, smooth skin, innocent expression, face detail, single character extreme facial close-up, one face only, one subject per image, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character only, one person only, no extra people, no duplicate body, no second face, one face only, one head only, no split-screen, no collage, no multi-panel composition, close-up portrait of only the same single character, not a lineup, not a contact sheet, not multiple crops, use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure, the face must match the same character from the identity turnaround set, no redesign, no face variation, no alternate person, keep the same visual style rendering, medium, aesthetic treatment, lighting language and material response as the character style profile, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, no hands covering face, no accessories blocking facial features, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, exactly 2 years old, age 2, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+              "asset_path": "assets/face_detail/ref_face_detail_age_002_001.png"
             }
           ],
           "image_urls": [
-            "/api/v1/characters/2/assets/causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_front_001.png",
-            "/api/v1/characters/2/assets/causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_back_001.png",
-            "/api/v1/characters/2/assets/causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_left_001.png",
-            "/api/v1/characters/2/assets/causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_right_001.png",
-            "/api/v1/characters/2/assets/causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_three_quarter_001.png",
-            "/api/v1/characters/2/assets/causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_top_001.png",
-            "/api/v1/characters/2/assets/causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_bottom_001.png",
-            "/api/v1/characters/2/assets/causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_face_detail_001.png"
+            "/api/v1/characters/1/assets/assets/face_detail/ref_face_detail_age_002_001.png"
           ],
           "images_by_angle": {
             "face_detail": [
               {
-                "filename": "ref_face_face_detail_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/0d/20260819/d689c36f/7113ceae-089b-4971-ba94-ef62194a00b4_0.png?Expires=1787218827&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=pSF6Su5GW4jpgQR5l4Rrvglfpuk%3D",
+                "filename": "ref_face_detail_age_002_001.png",
+                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/10/20260820/727717a8/06c6106b-b47a-4bf4-a304-eff905ece7bd_0.png?Expires=1787301100&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=qvZBfzYxCtgbPO4CQz2LDHUC3fg%3D",
                 "has_bytes": false,
                 "mime_type": "image/png",
                 "angle": "face_detail",
-                "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_face_detail_001.png",
-                "final_asset_path": "assets/face_detail/ref_face_face_detail_001.png"
-              }
-            ],
-            "front": [
-              {
-                "filename": "ref_face_front_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/3b/20260819/d689c36f/8a8cc613-dd3b-47c3-afba-48a143beefd0_0.png?Expires=1787218652&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=pKrCcNE8s9wgLfPcTmlsrvanD60%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "front",
-                "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_front_001.png",
-                "final_asset_path": "assets/identity/ref_face_front_001.png"
-              }
-            ],
-            "three_quarter": [
-              {
-                "filename": "ref_face_three_quarter_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/4e/20260819/d689c36f/e3ad3c6b-f451-4b3c-b8f8-924c1fe42376_0.png?Expires=1787218753&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=WorWzcSCm9x88POdMO1wGF%2FVclY%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "three_quarter",
-                "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_three_quarter_001.png",
-                "final_asset_path": "assets/identity/ref_face_three_quarter_001.png"
-              }
-            ],
-            "left": [
-              {
-                "filename": "ref_face_left_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/51/20260819/d689c36f/e90b34e9-ee0e-40ca-9011-347f15737958_0.png?Expires=1787218703&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=mP1F5Z7hYFw4GMDIchh1J6%2F0bGY%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "left",
-                "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_left_001.png",
-                "final_asset_path": "assets/identity/ref_face_left_001.png"
-              }
-            ],
-            "right": [
-              {
-                "filename": "ref_face_right_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/4d/20260819/d689c36f/42a76dce-0e49-4b4f-8d94-de6cae79a569_0.png?Expires=1787218728&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=HdezeadJH0p7b1qbyliBNyqyw3Q%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "right",
-                "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_right_001.png",
-                "final_asset_path": "assets/identity/ref_face_right_001.png"
-              }
-            ],
-            "back": [
-              {
-                "filename": "ref_face_back_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/be/20260819/d689c36f/37a9b11c-6685-4843-84f9-fba7c3d76414_0.png?Expires=1787218677&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Z256usfpI0zbQqXs0W2NusGw2H4%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "back",
-                "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_back_001.png",
-                "final_asset_path": "assets/identity/ref_face_back_001.png"
-              }
-            ],
-            "top": [
-              {
-                "filename": "ref_face_top_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/70/20260819/d689c36f/703d7740-bacf-4863-9a4d-f16d523ad7e5_0.png?Expires=1787218777&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=8BfqlOsjXjfRqBKF76v73O0xUco%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "top",
-                "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_top_001.png",
-                "final_asset_path": "assets/identity/ref_face_top_001.png"
-              }
-            ],
-            "bottom": [
-              {
-                "filename": "ref_face_bottom_001.png",
-                "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/ed/20260819/d689c36f/86f294f8-0fd1-4a22-bddd-27ba7a889010_0.png?Expires=1787218803&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=kKdU3JWSQkOIma3rCqOcONW0WUA%3D",
-                "has_bytes": false,
-                "mime_type": "image/png",
-                "angle": "bottom",
-                "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_bottom_001.png",
-                "final_asset_path": "assets/identity/ref_face_bottom_001.png"
+                "requested_angle": "face_detail",
+                "requested_purpose": "face_detail",
+                "prompt": "卡爾, human, exactly 2 years old, age 2, 3D建模風格, T型體, youthful features, smooth skin, innocent expression, face detail, single character extreme facial close-up, one face only, one subject per image, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character only, one person only, no extra people, no duplicate body, no second face, one face only, one head only, no split-screen, no collage, no multi-panel composition, close-up portrait of only the same single character, not a lineup, not a contact sheet, not multiple crops, use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure, the face must match the same character from the identity turnaround set, no redesign, no face variation, no alternate person, keep the same visual style rendering, medium, aesthetic treatment, lighting language and material response as the character style profile, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, no hands covering face, no accessories blocking facial features, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, exactly 2 years old, age 2, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+                "asset_path": "assets/face_detail/ref_face_detail_age_002_001.png"
               }
             ]
           },
           "face_detail_images": [
             {
-              "filename": "ref_face_face_detail_001.png",
-              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/0d/20260819/d689c36f/7113ceae-089b-4971-ba94-ef62194a00b4_0.png?Expires=1787218827&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=pSF6Su5GW4jpgQR5l4Rrvglfpuk%3D",
+              "filename": "ref_face_detail_age_002_001.png",
+              "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/10/20260820/727717a8/06c6106b-b47a-4bf4-a304-eff905ece7bd_0.png?Expires=1787301100&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=qvZBfzYxCtgbPO4CQz2LDHUC3fg%3D",
               "has_bytes": false,
               "mime_type": "image/png",
               "angle": "face_detail",
-              "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_face_detail_001.png",
-              "final_asset_path": "assets/face_detail/ref_face_face_detail_001.png"
+              "requested_angle": "face_detail",
+              "requested_purpose": "face_detail",
+              "prompt": "卡爾, human, exactly 2 years old, age 2, 3D建模風格, T型體, youthful features, smooth skin, innocent expression, face detail, single character extreme facial close-up, one face only, one subject per image, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character only, one person only, no extra people, no duplicate body, no second face, one face only, one head only, no split-screen, no collage, no multi-panel composition, close-up portrait of only the same single character, not a lineup, not a contact sheet, not multiple crops, use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure, the face must match the same character from the identity turnaround set, no redesign, no face variation, no alternate person, keep the same visual style rendering, medium, aesthetic treatment, lighting language and material response as the character style profile, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, no hands covering face, no accessories blocking facial features, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, exactly 2 years old, age 2, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+              "asset_path": "assets/face_detail/ref_face_detail_age_002_001.png"
             }
           ],
-          "face_detail_asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_face_detail_001.png",
+          "face_detail_asset_path": "assets/face_detail/ref_face_detail_age_002_001.png",
           "face_detail_count": 1,
           "thumbnail_image": {
-            "filename": "ref_face_face_detail_001.png",
-            "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/0d/20260819/d689c36f/7113ceae-089b-4971-ba94-ef62194a00b4_0.png?Expires=1787218827&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=pSF6Su5GW4jpgQR5l4Rrvglfpuk%3D",
+            "filename": "ref_face_detail_age_002_001.png",
+            "url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/10/20260820/727717a8/06c6106b-b47a-4bf4-a304-eff905ece7bd_0.png?Expires=1787301100&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=qvZBfzYxCtgbPO4CQz2LDHUC3fg%3D",
             "has_bytes": false,
             "mime_type": "image/png",
             "angle": "face_detail",
-            "asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_face_detail_001.png",
-            "final_asset_path": "assets/face_detail/ref_face_face_detail_001.png"
+            "requested_angle": "face_detail",
+            "requested_purpose": "face_detail",
+            "prompt": "卡爾, human, exactly 2 years old, age 2, 3D建模風格, T型體, youthful features, smooth skin, innocent expression, face detail, single character extreme facial close-up, one face only, one subject per image, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character extreme facial close-up, one face only, straight-on face crop, highly detailed eyes skin nose lips and facial structure, neutral expression, same identity as the turnaround reference, single character only, one person only, no extra people, no duplicate body, no second face, one face only, one head only, no split-screen, no collage, no multi-panel composition, close-up portrait of only the same single character, not a lineup, not a contact sheet, not multiple crops, use the same person as all identity reference images, preserve ethnicity, age appearance, skin tone and facial structure, the face must match the same character from the identity turnaround set, no redesign, no face variation, no alternate person, keep the same visual style rendering, medium, aesthetic treatment, lighting language and material response as the character style profile, preserve the same character identity across every image, same face, same hairstyle, same body proportions, same outfit language, same character identity as the turnaround references, preserve exact face shape, eyes, eyebrows, nose, lips, skin texture, hairline and facial proportions, facial landmarks and micro details clearly readable, no hands covering face, no accessories blocking facial features, render this angle as the same single subject from the identity turnaround set, preserve the exact same face, hair silhouette, skin tone, outfit design cues and body proportions, keep exactly one character in frame, exactly 2 years old, age 2, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+            "asset_path": "assets/face_detail/ref_face_detail_age_002_001.png"
           },
-          "thumbnail_asset_path": "causal/review/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/ref_face_face_detail_001.png",
+          "thumbnail_asset_path": "assets/face_detail/ref_face_detail_age_002_001.png",
           "review": {
-            "status": "pending",
-            "auto_accept": false,
-            "job_id": "c8dc06a8-c7e9-491c-aaf3-0b82986cd175",
-            "entity_id": "character-莉娜",
-            "purpose": "identity",
-            "manifest_candidate": {
-              "schema": "https://narratron.dev/schemas/charpass/v1.json",
-              "_mode": "lite",
-              "_asset_base_url": null,
-              "_meta": {
-                "format": "charpass",
-                "format_version": "1.0.0",
-                "charpass_id": "f9c31fe4-5fc4-45ec-a648-1f0cd7e4d65f",
-                "character_name": "莉娜",
-                "character_alias": [],
-                "created_at": "2026-08-19T08:07:53.671738Z",
-                "updated_at": "2026-08-19T09:40:27.829213Z",
-                "created_by": "3D建模風格, T型體",
-                "project_id": null,
-                "tags": [],
-                "description": "",
-                "thumbnail": "assets/face_detail/ref_face_face_detail_001.png",
-                "license": "project_internal",
-                "checksum": "sha256:405b8e13e0350b6b634a1cda6c0e45ebba6b52e9f62513243e4fe5a7324210ec",
-                "parent_charpass_id": null,
-                "generation_count": 0,
-                "encryption": null,
-                "encryption_level": "L0",
-                "mode": "lite",
-                "size_bytes": 0,
-                "parser_version": "1.0.0",
-                "entity_id": "character-莉娜",
-                "archived": false
-              },
-              "_identity": {
-                "ref_images": [
-                  {
-                    "path": "assets/identity/ref_face_front_001.png",
-                    "uri": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/3b/20260819/d689c36f/8a8cc613-dd3b-47c3-afba-48a143beefd0_0.png?Expires=1787218652&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=pKrCcNE8s9wgLfPcTmlsrvanD60%3D",
-                    "kind": "reference_image",
-                    "angle": "front",
-                    "note": "generated:wan:identity:front"
-                  },
-                  {
-                    "path": "assets/identity/ref_face_back_001.png",
-                    "uri": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/be/20260819/d689c36f/37a9b11c-6685-4843-84f9-fba7c3d76414_0.png?Expires=1787218677&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Z256usfpI0zbQqXs0W2NusGw2H4%3D",
-                    "kind": "reference_image",
-                    "angle": "back",
-                    "note": "generated:wan:identity:back"
-                  },
-                  {
-                    "path": "assets/identity/ref_face_left_001.png",
-                    "uri": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/51/20260819/d689c36f/e90b34e9-ee0e-40ca-9011-347f15737958_0.png?Expires=1787218703&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=mP1F5Z7hYFw4GMDIchh1J6%2F0bGY%3D",
-                    "kind": "reference_image",
-                    "angle": "left",
-                    "note": "generated:wan:identity:left"
-                  },
-                  {
-                    "path": "assets/identity/ref_face_right_001.png",
-                    "uri": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/4d/20260819/d689c36f/42a76dce-0e49-4b4f-8d94-de6cae79a569_0.png?Expires=1787218728&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=HdezeadJH0p7b1qbyliBNyqyw3Q%3D",
-                    "kind": "reference_image",
-                    "angle": "right",
-                    "note": "generated:wan:identity:right"
-                  },
-                  {
-                    "path": "assets/identity/ref_face_three_quarter_001.png",
-                    "uri": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/4e/20260819/d689c36f/e3ad3c6b-f451-4b3c-b8f8-924c1fe42376_0.png?Expires=1787218753&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=WorWzcSCm9x88POdMO1wGF%2FVclY%3D",
-                    "kind": "reference_image",
-                    "angle": "three_quarter",
-                    "note": "generated:wan:identity:three_quarter"
-                  },
-                  {
-                    "path": "assets/identity/ref_face_top_001.png",
-                    "uri": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/70/20260819/d689c36f/703d7740-bacf-4863-9a4d-f16d523ad7e5_0.png?Expires=1787218777&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=8BfqlOsjXjfRqBKF76v73O0xUco%3D",
-                    "kind": "reference_image",
-                    "angle": "top",
-                    "note": "generated:wan:identity:top"
-                  },
-                  {
-                    "path": "assets/identity/ref_face_bottom_001.png",
-                    "uri": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/ed/20260819/d689c36f/86f294f8-0fd1-4a22-bddd-27ba7a889010_0.png?Expires=1787218803&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=kKdU3JWSQkOIma3rCqOcONW0WUA%3D",
-                    "kind": "reference_image",
-                    "angle": "bottom",
-                    "note": "generated:wan:identity:bottom"
-                  },
-                  {
-                    "path": "assets/face_detail/ref_face_face_detail_001.png",
-                    "uri": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/0d/20260819/d689c36f/7113ceae-089b-4971-ba94-ef62194a00b4_0.png?Expires=1787218827&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=pSF6Su5GW4jpgQR5l4Rrvglfpuk%3D",
-                    "kind": "reference_image",
-                    "angle": "face_detail",
-                    "note": "generated:wan:identity:face_detail"
-                  }
-                ],
-                "face_embedding": {
-                  "path": "",
-                  "model": "",
-                  "dimension": 512,
-                  "dtype": "float32"
-                },
-                "ip_adapter": {
-                  "enabled": true,
-                  "model": "ip-adapter-faceid-plusv2",
-                  "weight": 0.85,
-                  "noise_aug": 0.02
-                },
-                "blend": {
-                  "mode": "single",
-                  "sources": [],
-                  "ethnicity_bias": 0.0,
-                  "gender_spectrum": 0.5,
-                  "age_offset": 0,
-                  "age_visual": null
-                },
-                "lock_rules": {
-                  "face_consistency_threshold": 0.88,
-                  "allow_expression_change": true,
-                  "allow_aging_progression": true,
-                  "forbidden_regions": []
-                },
-                "name": "莉娜",
-                "aliases": [],
-                "species": "human",
-                "gender_spectrum": 0.5,
-                "age_appearance": null,
-                "face_id": null,
-                "face_threshold": 0.7,
-                "note": "傷痕",
-                "project_id": null,
-                "entity_id": "character-莉娜"
-              },
-              "_body": {
-                "template": "",
-                "skeleton": {
-                  "path": "",
-                  "format": "openpose_18",
-                  "head_ratio": null,
-                  "height_cm": null,
-                  "weight_kg": null
-                },
-                "proportions": {},
-                "limb_thickness": {},
-                "posture_defaults": {
-                  "spine_curve": "",
-                  "shoulder_state": "",
-                  "head_tilt": 0.0,
-                  "note": ""
-                },
-                "mesh": {
-                  "path": "",
-                  "format": "glTF_2.0",
-                  "polycount": null
-                },
-                "skin_tone": {
-                  "base_hex": "",
-                  "undertone": "",
-                  "freckle_density": 0.0,
-                  "tan_lines": []
-                },
-                "height_cm": null,
-                "build": null,
-                "skin": null
-              },
-              "_style": {
-                "outfit": {
-                  "description": "",
-                  "ref_images": [],
-                  "items": []
-                },
-                "hair": null,
-                "makeup": {
-                  "type": "none",
-                  "intensity": 0.0,
-                  "regions": []
-                },
-                "damage_regions": [
-                  {
-                    "id": "",
-                    "token": "scar",
-                    "area": "",
-                    "region": "skin",
-                    "type": "",
-                    "intensity": null,
-                    "since_scene": null,
-                    "description": "",
-                    "note": "",
-                    "source": "parser"
-                  }
-                ],
-                "accessories": [],
-                "clothing": [],
-                "colors": {},
-                "ip_adapter_weight": 0.7,
-                "reference_images": [],
-                "character_style": {
-                  "visual": {
-                    "medium": "3D建模風格",
-                    "aesthetic": "T型體",
-                    "color_palette": [],
-                    "lighting": "",
-                    "camera": "",
-                    "keywords": [],
-                    "note": ""
-                  },
-                  "art_prompt": {
-                    "positive": "",
-                    "negative": "",
-                    "strength": 1.0,
-                    "template": "",
-                    "note": ""
-                  },
-                  "narrative": {
-                    "tone": "",
-                    "speech_pattern": "",
-                    "diction": "",
-                    "register": "",
-                    "sample_lines": [],
-                    "note": ""
-                  },
-                  "consistency_notes": ""
-                },
-                "additional_descriptors": []
-              },
-              "_expression": {
-                "base_emotion": "neutral",
-                "micro_asymmetry": 0.0,
-                "resting_face": {
-                  "brow_position": 0.0,
-                  "eye_openness": 1.0,
-                  "gaze_direction": "",
-                  "mouth_state": "",
-                  "jaw_tension": 0.0
-                },
-                "au_library": {
-                  "default_set": [],
-                  "custom_presets": []
-                },
-                "gaze": {
-                  "default_target": "",
-                  "tracking_mode": "fixed",
-                  "saccade_frequency": 0.0,
-                  "blink_rate_per_min": null
-                },
-                "lip_sync": {
-                  "neutral_mouth_shape": "rest_closed",
-                  "openness_range": [
-                    0.0,
-                    1.0
-                  ],
-                  "dental_visibility": 0.0
-                },
-                "default": "neutral",
-                "range": [],
-                "intensity": 0.5
-              },
-              "_pose": {
-                "default_pose": {
-                  "skeleton_path": "",
-                  "format": "openpose_18",
-                  "description": ""
-                },
-                "pose_library": [],
-                "movement_style": {
-                  "speed_factor": 1.0,
-                  "fluidity": 0.5,
-                  "weight_shift": "",
-                  "note": ""
-                },
-                "interaction_constraints": {
-                  "personal_space_radius_cm": null,
-                  "touch_aversion": [],
-                  "note": ""
-                },
-                "default": "standing",
-                "head_tilt": 0.0,
-                "constraints": []
-              },
-              "_physics": {
-                "skin": {
-                  "detail_level": 0.5,
-                  "pore_visibility": 0.5,
-                  "subsurface_scattering": 0.5,
-                  "wrinkle_depth": 0.5,
-                  "elasticity": 0.5,
-                  "note": ""
-                },
-                "cloth": {
-                  "simulation_mode": "auto_by_material",
-                  "wind_sensitivity": 0.5,
-                  "gravity_response": 0.5,
-                  "collision_with_body": true,
-                  "wrinkle_memory": 0.5
-                },
-                "hair": {
-                  "simulation_mode": "strand_based",
-                  "strand_count_hint": "medium",
-                  "static_electricity": 0.0,
-                  "wet_behavior": {
-                    "clump_factor": 0.0,
-                    "darkening": 0.0,
-                    "weight_increase": 0.0
-                  }
-                },
-                "fluids": {
-                  "sweat": {
-                    "enabled": false,
-                    "trigger": "",
-                    "regions": [],
-                    "flow_speed": 0.0
-                  },
-                  "tears": {
-                    "enabled": false,
-                    "trigger": "",
-                    "flow_path": "",
-                    "volume": ""
-                  },
-                  "blood": {
-                    "enabled": false,
-                    "trigger": "",
-                    "color_hex": "#8B0000",
-                    "viscosity": 0.5
-                  }
-                },
-                "lighting_response": {
-                  "skin_specular": 0.3,
-                  "eye_reflection": true,
-                  "shadow_softness": 0.5
-                },
-                "mass_kg": null,
-                "rigidity": 0.5,
-                "cloth_sim": false
-              },
-              "_voice": {
-                "enabled": false,
-                "ref_audio": {
-                  "path": "",
-                  "duration_sec": null,
-                  "sample_rate": null,
-                  "channels": null
-                },
-                "voice_embedding": {
-                  "path": "",
-                  "model": "",
-                  "dimension": 256
-                },
-                "characteristics": {
-                  "pitch": null,
-                  "speed_factor": 1.0,
-                  "breathiness": 0.0,
-                  "roughness": 0.0,
-                  "accent": "",
-                  "habitual_pause_ms": null,
-                  "note": ""
-                },
-                "emotional_range": {},
-                "timbre": null,
-                "pitch": 0.5,
-                "sample_uri": null,
-                "language": "zh-Hant",
-                "samples": []
-              },
-              "_causal": {
-                "evolution_log": [
-                  {
-                    "at": "2026-08-19T08:07:53.666737+00:00",
-                    "shot_id": null,
-                    "cause": "劇本揭示",
-                    "effect": "莉娜 進入 State Vault",
-                    "changes": [
-                      {
-                        "op": "+",
-                        "path": "_style.damage_regions",
-                        "value": "scar"
-                      }
-                    ]
-                  },
-                  {
-                    "scene": null,
-                    "scene_index": null,
-                    "event": "",
-                    "changes": {},
-                    "description": "",
-                    "note": "",
-                    "permanent": null,
-                    "heal_scene": null,
-                    "revert_scene": null,
-                    "at": null,
-                    "shot_id": null,
-                    "cause": "",
-                    "effect": "",
-                    "type": "queue_variant_processed",
-                    "created_at": "2026-08-19T09:36:44.969393Z",
-                    "params": {}
-                  }
-                ],
-                "current_state_snapshot": {
-                  "_style": {
-                    "damage_regions": [
-                      "scar"
-                    ]
-                  }
-                }
-              },
-              "_constraints": {
-                "must_always": [],
-                "must_never": [],
-                "conditional": [],
-                "quality_floor": {
-                  "face_consistency_min": 0.88,
-                  "body_proportion_tolerance": 0.05,
-                  "outfit_color_delta_e_max": 4.0
-                },
-                "forbidden": [],
-                "required": [],
-                "continuity": [
-                  "scar"
-                ]
-              },
-              "_extensions": {
-                "comfyui_workflow": {
-                  "path": "",
-                  "version": ""
-                },
-                "comfyui": {
-                  "path": "",
-                  "version": ""
-                },
-                "image_gen": {
-                  "provider": "wan",
-                  "model": "wan2.7-image-pro",
-                  "endpoint": "",
-                  "size": "1024x1024",
-                  "last_job_id": "c8dc06a8-c7e9-491c-aaf3-0b82986cd175",
-                  "last_asset_paths": [
-                    "assets/face_detail/ref_face_face_detail_001.png",
-                    "assets/identity/ref_face_front_001.png",
-                    "assets/identity/ref_face_three_quarter_001.png",
-                    "assets/identity/ref_face_left_001.png",
-                    "assets/identity/ref_face_right_001.png",
-                    "assets/identity/ref_face_back_001.png",
-                    "assets/identity/ref_face_top_001.png",
-                    "assets/identity/ref_face_bottom_001.png"
-                  ],
-                  "note": "",
-                  "last_purpose": "identity",
-                  "last_angles": [
-                    "face_detail",
-                    "front",
-                    "three_quarter",
-                    "left",
-                    "right",
-                    "back",
-                    "top",
-                    "bottom"
-                  ],
-                  "last_face_detail_paths": [
-                    "assets/face_detail/ref_face_face_detail_001.png"
-                  ],
-                  "latest_by_purpose": {
-                    "identity": {
-                      "job_id": "c8dc06a8-c7e9-491c-aaf3-0b82986cd175",
-                      "provider": "wan",
-                      "model": "wan2.7-image-pro",
-                      "asset_paths": [
-                        "assets/face_detail/ref_face_face_detail_001.png",
-                        "assets/identity/ref_face_front_001.png",
-                        "assets/identity/ref_face_three_quarter_001.png",
-                        "assets/identity/ref_face_left_001.png",
-                        "assets/identity/ref_face_right_001.png",
-                        "assets/identity/ref_face_back_001.png",
-                        "assets/identity/ref_face_top_001.png",
-                        "assets/identity/ref_face_bottom_001.png"
-                      ],
-                      "angles": [
-                        "face_detail",
-                        "front",
-                        "three_quarter",
-                        "left",
-                        "right",
-                        "back",
-                        "top",
-                        "bottom"
-                      ],
-                      "images_by_angle": {
-                        "face_detail": [
-                          {
-                            "angle": "face_detail",
-                            "asset_path": "assets/face_detail/ref_face_face_detail_001.png",
-                            "filename": "assets/face_detail/ref_face_face_detail_001.png"
-                          }
-                        ],
-                        "front": [
-                          {
-                            "angle": "front",
-                            "asset_path": "assets/identity/ref_face_front_001.png",
-                            "filename": "assets/identity/ref_face_front_001.png"
-                          }
-                        ],
-                        "three_quarter": [
-                          {
-                            "angle": "three_quarter",
-                            "asset_path": "assets/identity/ref_face_three_quarter_001.png",
-                            "filename": "assets/identity/ref_face_three_quarter_001.png"
-                          }
-                        ],
-                        "left": [
-                          {
-                            "angle": "left",
-                            "asset_path": "assets/identity/ref_face_left_001.png",
-                            "filename": "assets/identity/ref_face_left_001.png"
-                          }
-                        ],
-                        "right": [
-                          {
-                            "angle": "right",
-                            "asset_path": "assets/identity/ref_face_right_001.png",
-                            "filename": "assets/identity/ref_face_right_001.png"
-                          }
-                        ],
-                        "back": [
-                          {
-                            "angle": "back",
-                            "asset_path": "assets/identity/ref_face_back_001.png",
-                            "filename": "assets/identity/ref_face_back_001.png"
-                          }
-                        ],
-                        "top": [
-                          {
-                            "angle": "top",
-                            "asset_path": "assets/identity/ref_face_top_001.png",
-                            "filename": "assets/identity/ref_face_top_001.png"
-                          }
-                        ],
-                        "bottom": [
-                          {
-                            "angle": "bottom",
-                            "asset_path": "assets/identity/ref_face_bottom_001.png",
-                            "filename": "assets/identity/ref_face_bottom_001.png"
-                          }
-                        ]
-                      },
-                      "thumbnail_asset_path": "assets/face_detail/ref_face_face_detail_001.png",
-                      "face_detail_asset_path": "assets/face_detail/ref_face_face_detail_001.png",
-                      "face_detail_count": 1,
-                      "face_detail_images": [
-                        {
-                          "angle": "face_detail",
-                          "asset_path": "assets/face_detail/ref_face_face_detail_001.png",
-                          "filename": "assets/face_detail/ref_face_face_detail_001.png"
-                        }
-                      ],
-                      "updated_at": "2026-08-19T09:40:27.829213Z"
-                    }
-                  }
-                }
-              }
-            },
-            "request_path": "causal/image_gen/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/request.json",
-            "response_path": "causal/image_gen/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/response.json",
-            "full_response_path": "causal/image_gen/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/full-response.json",
-            "raw_response_path": "causal/image_gen/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/raw-response.json",
-            "record_path": "causal/image_gen/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/record.json",
-            "images_index_path": "causal/image_gen/identity/c8dc06a8-c7e9-491c-aaf3-0b82986cd175/images-index.json"
-          }
+            "status": "accepted",
+            "auto_accept": true,
+            "job_id": "cf8cfcb7-e35b-4e95-8de0-48576def45dc",
+            "entity_id": "character-卡爾",
+            "purpose": "face_detail",
+            "staged_at": null,
+            "manifest_candidate": null,
+            "request_path": "causal/image_gen/face_detail/cf8cfcb7-e35b-4e95-8de0-48576def45dc/request.json",
+            "response_path": "causal/image_gen/face_detail/cf8cfcb7-e35b-4e95-8de0-48576def45dc/response.json",
+            "full_response_path": "causal/image_gen/face_detail/cf8cfcb7-e35b-4e95-8de0-48576def45dc/full-response.json",
+            "raw_response_path": "causal/image_gen/face_detail/cf8cfcb7-e35b-4e95-8de0-48576def45dc/raw-response.json",
+            "record_path": "causal/image_gen/face_detail/cf8cfcb7-e35b-4e95-8de0-48576def45dc/record.json",
+            "images_index_path": "causal/image_gen/face_detail/cf8cfcb7-e35b-4e95-8de0-48576def45dc/images-index.json"
+          },
+          "review_status": "accepted",
+          "has_face_detail": true,
+          "representative_asset_path": "assets/face_detail/ref_face_detail_age_002_001.png",
+          "representative_angle": "face_detail",
+          "image_count": 1,
+          "ref_image_uris": [
+            "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/89/20260820/d689c36f/fe97eec6-8a73-4bc8-8151-3c46f8f2f33b_0.png?Expires=1787301090&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=Xy4wS5%2BxMOxrp3PJxBpBp7xxbdk%3D"
+          ],
+          "lock_url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/10/20260820/727717a8/06c6106b-b47a-4bf4-a304-eff905ece7bd_0.png?Expires=1787301100&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=qvZBfzYxCtgbPO4CQz2LDHUC3fg%3D"
         },
-        "review_status": "pending"
+        "review_status": "accepted",
+        "lock_url": "https://dashscope-7c2c.oss-accelerate.aliyuncs.com/1d/10/20260820/727717a8/06c6106b-b47a-4bf4-a304-eff905ece7bd_0.png?Expires=1787301100&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=qvZBfzYxCtgbPO4CQz2LDHUC3fg%3D",
+        "effective_status": "accepted"
       },
       "error_message": null,
       "retry_count": 0,
       "max_retries": 3,
-      "queue_wait_ms": 1019848,
-      "generation_duration_ms": 23,
-      "created_at": "2026-08-19T09:19:45.107585+00:00",
-      "updated_at": "2026-08-19T09:36:44.979396+00:00"
+      "queue_wait_ms": 23,
+      "generation_duration_ms": 9604,
+      "created_at": "2026-08-20T08:31:32.772106+00:00",
+      "updated_at": "2026-08-20T08:31:42.401270+00:00",
+      "review_status": "accepted",
+      "effective_status": "accepted",
+      "provider": "wan",
+      "model": "wan2.7-image-pro"
+    },
+    {
+      "id": 2,
+      "core_id": 1,
+      "character_name": "卡爾",
+      "profile_version": 1,
+      "variant_hash": "d1940f47defd4dc6fbba723fbad94482537e10ffeaa927d2d918cad610bbdeb2",
+      "evolution_params": {
+        "age_override": 3,
+        "_queue_nonce": "age-span-884e9f48-6a41-4f09-baea-93b7a81908c2-face_detail-age-003",
+        "_image_request": {
+          "purpose": "face_detail",
+          "provider": "wan",
+          "model": "wan2.7-image-pro",
+          "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+          "api_key": null,
+          "extra": "exactly 3 years old, age 3, same named person as the reference images, year-by-year lifespan continuity, biologically plausible aging only, no redesign, no different person, extreme facial close-up, highly detailed face, one face only, identity lock to the previous age face",
+          "user_extra": "",
+          "n": 1,
+          "multi_angle": false,
+          "persist": true,
+          "entity_id": null,
+          "pipeline": "age_span",
+          "pipeline_id": "age-span-884e9f48-6a41-4f09-baea-93b7a81908c2",
+          "phase": "face_detail",
+          "age": 3,
+          "age_start": 1,
+          "age_end": 80,
+          "step_index": 2,
+          "total_steps": 160,
+          "depends_on": {
+            "phase": "face_detail",
+            "age": 2
+          },
+          "angle": "face_detail",
+          "asset_dir": "assets/face_detail/age_003",
+          "filename_prefix": "ref_face_detail_age_003"
+        }
+      },
+      "status": "pending",
+      "priority": 158,
+      "result_url": null,
+      "result_metadata": {},
+      "error_message": null,
+      "retry_count": 0,
+      "max_retries": 3,
+      "queue_wait_ms": null,
+      "generation_duration_ms": null,
+      "created_at": "2026-08-20T08:31:42.407307+00:00",
+      "updated_at": "2026-08-20T08:31:42.407307+00:00"
     }
-  ]
+  ],
+  "worker": {
+    "paused": false
+  }
 }

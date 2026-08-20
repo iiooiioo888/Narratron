@@ -25,6 +25,7 @@ from characteros.services.queue import QueueManager
 from characteros.storage.db_availability import is_database_available
 from characteros.storage.local_characters import LocalCharacterService
 from characteros.storage.local_queue import LocalQueueManager
+from characteros.services.image_pipeline import enqueue_character_images
 from narratron.charpass.store import CharpassStore
 
 router = APIRouter(prefix="/api/v1/characters", tags=["Characters"])
@@ -323,60 +324,13 @@ def queue_character_image_generation(
     service: CharacterBackend = Depends(get_character_backend),
     db: Session = Depends(get_db),
 ):
-    """把生圖工作排入 CharacterOS 任務佇列，由面板手動或批次處理。"""
-    evolution_params: dict = {}
-    if body.age is not None:
-        evolution_params["age_override"] = body.age
-    if body.emotion is not None:
-        evolution_params["emotion_state"] = body.emotion
-    if body.scene is not None:
-        evolution_params["scene_context"] = body.scene
-    if body.injury is not None:
-        evolution_params["injury_level"] = body.injury
-
-    from uuid import uuid4
-
-    evolution_params["_queue_nonce"] = f"img-{uuid4()}"
-    evolution_params["_image_request"] = {
-        "purpose": body.purpose,
-        "provider": body.provider,
-        "model": body.model,
-        "base_url": body.base_url,
-        "api_key": body.api_key,
-        "extra": body.extra,
-        "n": body.n,
-        "multi_angle": body.multi_angle,
-        "persist": body.persist,
-        "entity_id": body.entity_id,
-    }
-
-    if isinstance(service, LocalCharacterService) or not is_database_available():
-        full = service.get_character_by_id(character_id)
-        char_name = full.core.name if full and full.core else None
-        task, is_new = LocalQueueManager().request_variant_generation(
-            core_id=character_id,
-            evolution_params=evolution_params,
-            priority=body.priority,
-            character_name=char_name,
-        )
-        return {
-            "storage_mode": "local",
-            "queued": True,
-            "is_new": is_new,
-            "task": task,
-        }
-
-    variant, is_new = QueueManager(db).request_variant_generation(
-        core_id=character_id,
-        evolution_params=evolution_params,
-        priority=body.priority,
+    """把生圖工作排入佇列；年齡軸一次只開放下一步，後端 worker 自動銜接。"""
+    return enqueue_character_images(
+        character_id=character_id,
+        body=body,
+        service=service,
+        db=db,
     )
-    return {
-        "storage_mode": "database",
-        "queued": True,
-        "is_new": is_new,
-        "task": variant.to_dict(),
-    }
 
 
 @router.get("/{character_id}/editor", response_model=CharacterEditorResponse)

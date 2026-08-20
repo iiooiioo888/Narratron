@@ -250,6 +250,7 @@ class CharacterVersionSummaryResponse(BaseModel):
 class QueueStatsResponse(BaseModel):
     """佇列統計資訊"""
     total_pending: int
+    total_waiting: int = 0
     total_ready: int
     total_failed: int
     average_wait_time_ms: float
@@ -293,6 +294,46 @@ class QueueTaskListResponse(BaseModel):
     total: int
 
 
+class AgeSpanStepStatus(BaseModel):
+    """年齡軸單一步驟狀態（供 UI 時間軸顯示）"""
+    task_id: Optional[int] = None
+    step_index: int = 0
+    phase: str = ""
+    age: Optional[int] = None
+    status: str = "missing"
+    error_message: Optional[str] = None
+
+
+class QueueWorkerStatusResponse(BaseModel):
+    """後端逐步生圖 worker 狀態。"""
+    paused: bool = False
+    busy: bool = False
+    auto_run: bool = False
+    last_task_id: Optional[int] = None
+    last_status: Optional[str] = None
+    last_error: Optional[str] = None
+
+
+class AgeSpanPipelineStatusResponse(BaseModel):
+    """年齡軸 pipeline 進度（1–80 面部 + 1–80 T 型，完成即自動入庫）"""
+    pipeline_id: Optional[str] = None
+    core_id: Optional[int] = None
+    character_name: Optional[str] = None
+    total_steps: int = 0
+    accepted_count: int = 0
+    ready_pending_review_count: int = 0
+    pending_count: int = 0
+    waiting_count: int = 0
+    failed_count: int = 0
+    blocking_task_id: Optional[int] = None
+    blocking_reason: Optional[str] = None
+    next_runnable_task_id: Optional[int] = None
+    next_phase: Optional[str] = None
+    next_age: Optional[int] = None
+    has_open_pipeline: bool = False
+    steps: List[AgeSpanStepStatus] = Field(default_factory=list)
+
+
 class SystemMetricsResponse(BaseModel):
     """系統效能指標"""
     database_connections: int
@@ -332,7 +373,7 @@ class GeneratedImageInfo(BaseModel):
 class ImageGenerateRequest(BaseModel):
     """第三方生圖請求。不傳 provider 時走環境變數 CHARACTEROS_IMAGE_GEN_PROVIDER（預設 null）。"""
 
-    purpose: str = Field("identity", description="identity / face_detail / outfit / expression / thumb")
+    purpose: str = Field("identity", description="identity / face_detail / outfit / expression / thumb / tpose / age_span")
     provider: Optional[str] = Field(None, description="null | http | openai | wan")
     model: Optional[str] = Field(None, description="覆蓋本次生圖模型，例如 wan2.7-image-pro")
     base_url: Optional[str] = Field(
@@ -357,7 +398,7 @@ class ImageGenerateRequest(BaseModel):
 class ImageQueueRequest(BaseModel):
     """把生圖請求包成可由佇列處理的任務。"""
 
-    purpose: str = Field("identity", description="identity / face_detail / outfit / expression / thumb")
+    purpose: str = Field("identity", description="identity / face_detail / outfit / expression / thumb / tpose / age_span")
     provider: Optional[str] = Field(None, description="null | http | openai | wan")
     model: Optional[str] = Field(None, description="覆蓋本次生圖模型")
     base_url: Optional[str] = Field(None, description="覆蓋本次生圖端點")
@@ -368,6 +409,8 @@ class ImageQueueRequest(BaseModel):
     persist: bool = Field(True, description="是否將圖片與完整回應寫回角色資料夾")
     entity_id: Optional[str] = Field(None, description="指定持久化 entity_id")
     age: Optional[int] = Field(None, ge=0, le=150, description="目標年齡")
+    age_start: int = Field(1, ge=1, le=80, description="年齡軸起始歲數")
+    age_end: int = Field(80, ge=1, le=80, description="年齡軸結束歲數")
     emotion: Optional[str] = Field(None, description="情緒狀態")
     scene: Optional[str] = Field(None, description="場景描述")
     injury: Optional[float] = Field(None, ge=0.0, le=1.0, description="受傷程度")

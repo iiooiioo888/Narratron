@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.exc import SQLAlchemyError
@@ -12,22 +13,51 @@ from sqlalchemy.orm import Session
 from characteros.imaging.settings import settings
 from characteros.models.database import get_db
 from characteros.models.schema import (
+    AgeSpanPipelineStatusResponse,
     ImagingConfigResponse,
     ImagingConfigUpdateRequest,
     QueueStatsResponse,
     QueueTaskItem,
     QueueTaskListResponse,
+    QueueWorkerStatusResponse,
     SystemMetricsResponse,
 )
+from characteros.services.queue_worker import (
+    resume_and_wake_queue_worker,
+    set_worker_paused,
+    worker_status,
+)
+from characteros.services.age_span import summarize_age_span_pipeline
+from characteros.services.branch_summary import strip_final_asset_path_from_image_generation
 from characteros.services.queue import QueueManager
 from characteros.storage.db_availability import (
     is_database_available,
     mark_database_unavailable,
 )
 from characteros.storage.local_characters import LocalCharacterService
+from characteros.services.queue_task_utils import effective_task_status
 from characteros.storage.local_queue import LocalQueueManager
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
+
+
+def _raw_task_dict(task: Any) -> dict | None:
+    if task is None:
+        return None
+    if isinstance(task, dict):
+        return task
+    to_dict = getattr(task, "to_dict", None)
+    if callable(to_dict):
+        return to_dict()
+    return dict(task)
+
+
+def _normalized_task_payload(raw: Any, storage_mode: str) -> dict:
+    """process / accept / reject 回傳與 list 端點一致的正規化 task 結構。"""
+    payload = _raw_task_dict(raw)
+    if not payload:
+        raise ValueError("queue task payload is empty")
+    return _task_item_from_dict(payload, storage_mode).model_dump(mode="json")
 
 
 def _task_item_from_dict(raw: dict, storage_mode: str) -> QueueTaskItem:
@@ -45,7 +75,9 @@ def _task_item_from_dict(raw: dict, storage_mode: str) -> QueueTaskItem:
         created = created.replace(tzinfo=timezone.utc)
     if updated.tzinfo is None:
         updated = updated.replace(tzinfo=timezone.utc)
-    result_metadata = raw.get("result_metadata") if isinstance(raw.get("result_metadata"), dict) else {}
+    result_metadata = copy.deepcopy(
+        raw.get("result_metadata") if isinstance(raw.get("result_metadata"), dict) else {}
+    )
     image_generation = (
         result_metadata.get("image_generation")
         if isinstance(result_metadata.get("image_generation"), dict)
@@ -54,6 +86,24 @@ def _task_item_from_dict(raw: dict, storage_mode: str) -> QueueTaskItem:
     angles = result_metadata.get("angles") if isinstance(result_metadata.get("angles"), list) else image_generation.get("angles")
     if not isinstance(angles, list):
         angles = []
+
+    computed_review_status = (
+        str(raw.get("review_status") or "").strip()
+        or str(result_metadata.get("review_status") or "").strip()
+        or str(image_generation.get("review_status") or "").strip()
+        or str((image_generation.get("review") or {}).get("status") or "").strip()
+    )
+    task_status = str(raw.get("status") or "").strip().lower()
+    effective_status = effective_task_status(task_status, result_metadata)
+    if effective_status == "accepted":
+        computed_review_status = "accepted"
+    elif not computed_review_status:
+        computed_review_status = effective_status
+
+    if computed_review_status == "rejected":
+        strip_final_asset_path_from_image_generation(image_generation)
+    elif computed_review_status == "pending":
+        strip_final_asset_path_from_image_generation(image_generation)
 
     return QueueTaskItem(
         id=int(raw["id"]),
@@ -68,20 +118,8 @@ def _task_item_from_dict(raw: dict, storage_mode: str) -> QueueTaskItem:
         max_retries=int(raw.get("max_retries") or 3),
         result_url=raw.get("result_url"),
         result_metadata=result_metadata,
-        review_status=(
-            str(raw.get("review_status") or "").strip()
-            or str(result_metadata.get("review_status") or "").strip()
-            or str(image_generation.get("review_status") or "").strip()
-            or None
-        ),
-        effective_status=(
-            str(raw.get("review_status") or "").strip()
-            or str(result_metadata.get("review_status") or "").strip()
-            or str(image_generation.get("review_status") or "").strip()
-            or str(raw.get("effective_status") or "").strip()
-            or str(result_metadata.get("effective_status") or "").strip()
-            or str(raw.get("status") or "pending").strip()
-        ),
+        review_status=computed_review_status or None,
+        effective_status=effective_status,
         purpose=(
             str(raw.get("purpose") or "").strip()
             or str(result_metadata.get("purpose") or "").strip()
@@ -165,7 +203,7 @@ def get_queue_stats(db: Session = Depends(get_db)):
 def list_queue_tasks(
     status: Optional[str] = Query(None, description="pending / ready / failed"),
     core_id: Optional[int] = Query(None, description="依角色 ID 過濾"),
-    limit: int = Query(50, ge=1, le=200, description="最多回傳筆數"),
+    limit: int = Query(200, ge=1, le=400, description="最多回傳筆數"),
     db: Session = Depends(get_db),
 ):
     """列出佇列任務明細，供 GUI 面板顯示。"""
@@ -188,6 +226,172 @@ def list_queue_tasks(
         return _local_queue_payload(status=status, core_id=core_id, limit=limit)
 
 
+def _local_age_span_status(
+    *,
+    core_id: int | None,
+    pipeline_id: str | None,
+) -> AgeSpanPipelineStatusResponse | None:
+    summary = summarize_age_span_pipeline(
+        LocalQueueManager().list_tasks(limit=400),
+        core_id=core_id,
+        pipeline_id=pipeline_id,
+    )
+    if not summary:
+        return None
+    return AgeSpanPipelineStatusResponse(**summary)
+
+
+@router.get("/queue-tasks/age-span-status", response_model=AgeSpanPipelineStatusResponse)
+def get_age_span_pipeline_status(
+    core_id: Optional[int] = Query(None, description="依角色 ID 過濾"),
+    pipeline_id: Optional[str] = Query(None, description="依 pipeline_id 過濾"),
+    db: Session = Depends(get_db),
+):
+    """取得年齡軸 pipeline 進度與阻擋原因（需逐步接受後才能繼續）。"""
+    if not is_database_available():
+        summary = _local_age_span_status(core_id=core_id, pipeline_id=pipeline_id)
+        if summary is None:
+            from fastapi import HTTPException, status
+
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No age-span pipeline tasks found",
+            )
+        return summary
+
+    try:
+        from characteros.models.orm import CharacterVariant
+
+        variants = db.query(CharacterVariant).all()
+        task_dicts = [
+            {
+                "id": variant.id,
+                "core_id": variant.core_id,
+                "character_name": None,
+                "status": variant.status,
+                "priority": variant.priority,
+                "evolution_params": variant.evolution_params or {},
+                "result_metadata": variant.result_metadata or {},
+                "created_at": variant.created_at.isoformat() if variant.created_at else "",
+            }
+            for variant in variants
+        ]
+        summary = summarize_age_span_pipeline(task_dicts, core_id=core_id, pipeline_id=pipeline_id)
+        if summary is None:
+            from fastapi import HTTPException, status
+
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No age-span pipeline tasks found",
+            )
+        return AgeSpanPipelineStatusResponse(**summary)
+    except SQLAlchemyError:
+        mark_database_unavailable()
+        summary = _local_age_span_status(core_id=core_id, pipeline_id=pipeline_id)
+        if summary is None:
+            from fastapi import HTTPException, status
+
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No age-span pipeline tasks found",
+            )
+        return summary
+
+
+@router.post("/queue-tasks/{task_id}/reset")
+def reset_queue_task(task_id: int, db: Session = Depends(get_db)):
+    """將 failed 任務重設為 pending，以便逐筆重試。"""
+    if not is_database_available():
+        task = LocalQueueManager().reset_task_to_pending(task_id)
+        return {
+            "storage_mode": "local",
+            "reset": 1,
+            "task": _normalized_task_payload(task, "local"),
+        }
+
+    try:
+        task = QueueManager(db).reset_variant_to_pending(task_id)
+        return {
+            "storage_mode": "database",
+            "reset": 1,
+            "task": _normalized_task_payload(task, "database"),
+        }
+    except SQLAlchemyError:
+        mark_database_unavailable()
+        task = LocalQueueManager().reset_task_to_pending(task_id)
+        return {
+            "storage_mode": "local",
+            "reset": 1,
+            "task": _normalized_task_payload(task, "local"),
+        }
+
+
+@router.post("/queue-tasks/clear")
+def clear_queue_tasks(
+    core_id: Optional[int] = Query(None, description="僅清除指定角色的任務；省略則清空全部"),
+    db: Session = Depends(get_db),
+):
+    """清空佇列任務列表。"""
+    if not is_database_available():
+        removed = LocalQueueManager().clear_tasks(core_id=core_id)
+        return {
+            "storage_mode": "local",
+            "cleared": removed,
+            "stats": QueueStatsResponse(**LocalQueueManager().get_queue_stats()),
+        }
+
+    try:
+        removed = QueueManager(db).clear_tasks(core_id=core_id)
+        return {
+            "storage_mode": "database",
+            "cleared": removed,
+            "stats": QueueStatsResponse(**QueueManager(db).get_queue_stats()),
+        }
+    except SQLAlchemyError:
+        mark_database_unavailable()
+        removed = LocalQueueManager().clear_tasks(core_id=core_id)
+        return {
+            "storage_mode": "local",
+            "cleared": removed,
+            "stats": QueueStatsResponse(**LocalQueueManager().get_queue_stats()),
+        }
+
+
+@router.post("/queue-tasks/reset-failed")
+def reset_failed_queue_tasks(
+    core_id: Optional[int] = Query(None, description="僅重設指定角色的 failed 任務"),
+    from_id: Optional[int] = Query(None, ge=1, description="僅重設 id >= from_id 的 failed 任務"),
+    db: Session = Depends(get_db),
+):
+    """批次將 failed 任務重設為 waiting/pending。"""
+    if not is_database_available():
+        tasks = LocalQueueManager().reset_failed_tasks(core_id=core_id, from_id=from_id)
+        resume_and_wake_queue_worker()
+        return {
+            "storage_mode": "local",
+            "reset": len(tasks),
+            "tasks": [_normalized_task_payload(task, "local") for task in tasks],
+        }
+
+    try:
+        tasks = QueueManager(db).reset_failed_tasks(core_id=core_id, from_id=from_id)
+        resume_and_wake_queue_worker()
+        return {
+            "storage_mode": "database",
+            "reset": len(tasks),
+            "tasks": [_normalized_task_payload(task, "database") for task in tasks],
+        }
+    except SQLAlchemyError:
+        mark_database_unavailable()
+        tasks = LocalQueueManager().reset_failed_tasks(core_id=core_id, from_id=from_id)
+        resume_and_wake_queue_worker()
+        return {
+            "storage_mode": "local",
+            "reset": len(tasks),
+            "tasks": [_normalized_task_payload(task, "local") for task in tasks],
+        }
+
+
 @router.post("/queue-tasks/{task_id}/process")
 def process_queue_task(task_id: int, db: Session = Depends(get_db)):
     """手動處理單一佇列任務，讓面板任務不只停留在 pending。"""
@@ -197,7 +401,7 @@ def process_queue_task(task_id: int, db: Session = Depends(get_db)):
         return {
             "storage_mode": "local",
             "processed": 1,
-            "task": task,
+            "task": _normalized_task_payload(task, "local"),
         }
 
     try:
@@ -205,7 +409,7 @@ def process_queue_task(task_id: int, db: Session = Depends(get_db)):
         return {
             "storage_mode": "database",
             "processed": 1,
-            "task": task.to_dict(),
+            "task": _normalized_task_payload(task, "database"),
         }
     except SQLAlchemyError:
         mark_database_unavailable()
@@ -214,7 +418,7 @@ def process_queue_task(task_id: int, db: Session = Depends(get_db)):
         return {
             "storage_mode": "local",
             "processed": 1,
-            "task": task,
+            "task": _normalized_task_payload(task, "local"),
         }
 
 
@@ -227,7 +431,7 @@ def accept_queue_task(task_id: int, db: Session = Depends(get_db)):
         return {
             "storage_mode": "local",
             "reviewed": 1,
-            "task": task,
+            "task": _normalized_task_payload(task, "local"),
         }
 
     try:
@@ -235,7 +439,7 @@ def accept_queue_task(task_id: int, db: Session = Depends(get_db)):
         return {
             "storage_mode": "database",
             "reviewed": 1,
-            "task": task.to_dict(),
+            "task": _normalized_task_payload(task, "database"),
         }
     except SQLAlchemyError:
         mark_database_unavailable()
@@ -244,7 +448,7 @@ def accept_queue_task(task_id: int, db: Session = Depends(get_db)):
         return {
             "storage_mode": "local",
             "reviewed": 1,
-            "task": task,
+            "task": _normalized_task_payload(task, "local"),
         }
 
 
@@ -257,7 +461,7 @@ def reject_queue_task(task_id: int, db: Session = Depends(get_db)):
         return {
             "storage_mode": "local",
             "reviewed": 1,
-            "task": task,
+            "task": _normalized_task_payload(task, "local"),
         }
 
     try:
@@ -265,7 +469,7 @@ def reject_queue_task(task_id: int, db: Session = Depends(get_db)):
         return {
             "storage_mode": "database",
             "reviewed": 1,
-            "task": task.to_dict(),
+            "task": _normalized_task_payload(task, "database"),
         }
     except SQLAlchemyError:
         mark_database_unavailable()
@@ -274,70 +478,162 @@ def reject_queue_task(task_id: int, db: Session = Depends(get_db)):
         return {
             "storage_mode": "local",
             "reviewed": 1,
-            "task": task,
+            "task": _normalized_task_payload(task, "local"),
         }
+
+
+@router.get("/queue-worker", response_model=QueueWorkerStatusResponse)
+def get_queue_worker_status():
+    """取得後端逐步生圖 worker 狀態。"""
+    return QueueWorkerStatusResponse(**worker_status())
+
+
+@router.post("/queue-worker/start", response_model=QueueWorkerStatusResponse)
+def start_queue_worker_endpoint():
+    """恢復並喚醒後端 worker，自動一次處理下一步。"""
+    resume_and_wake_queue_worker()
+    return QueueWorkerStatusResponse(**worker_status())
+
+
+@router.post("/queue-worker/pause", response_model=QueueWorkerStatusResponse)
+def pause_queue_worker_endpoint():
+    """暫停後端 worker；目前進行中的那一筆仍會跑完。"""
+    set_worker_paused(True)
+    return QueueWorkerStatusResponse(**worker_status())
 
 
 @router.post("/queue-tasks/process-next")
-def process_next_queue_task(db: Session = Depends(get_db)):
+def process_next_queue_task(
+    core_id: Optional[int] = Query(None, description="僅處理指定角色的下一筆任務"),
+    db: Session = Depends(get_db),
+):
     """處理下一筆 pending 任務。"""
     if not is_database_available():
         service = LocalCharacterService()
-        task = LocalQueueManager().process_next(character_service=service)
+        mgr = LocalQueueManager()
+        task = mgr.process_next(character_service=service, core_id=core_id)
+        summary = summarize_age_span_pipeline(mgr.list_tasks(limit=400), core_id=core_id)
         return {
             "storage_mode": "local",
             "processed": 0 if task is None else 1,
-            "task": task,
+            "blocked": False,
+            "age_span": summary,
+            "task": None if task is None else _normalized_task_payload(task, "local"),
         }
 
     try:
-        task = QueueManager(db).process_next_pending()
+        queue_mgr = QueueManager(db)
+        task = queue_mgr.process_next_pending(core_id=core_id)
+        from characteros.models.orm import CharacterVariant
+
+        variants = db.query(CharacterVariant).all()
+        task_dicts = [
+            {
+                "id": variant.id,
+                "core_id": variant.core_id,
+                "status": variant.status,
+                "priority": variant.priority,
+                "evolution_params": variant.evolution_params or {},
+                "result_metadata": variant.result_metadata or {},
+                "created_at": variant.created_at.isoformat() if variant.created_at else "",
+            }
+            for variant in variants
+        ]
+        if core_id is not None:
+            task_dicts = [task for task in task_dicts if int(task.get("core_id", 0)) == int(core_id)]
+        summary = summarize_age_span_pipeline(task_dicts, core_id=core_id)
         return {
             "storage_mode": "database",
             "processed": 0 if task is None else 1,
-            "task": None if task is None else task.to_dict(),
+            "blocked": False,
+            "age_span": summary,
+            "task": None if task is None else _normalized_task_payload(task, "database"),
         }
     except SQLAlchemyError:
         mark_database_unavailable()
         service = LocalCharacterService()
-        task = LocalQueueManager().process_next(character_service=service)
+        mgr = LocalQueueManager()
+        task = mgr.process_next(character_service=service, core_id=core_id)
+        summary = summarize_age_span_pipeline(mgr.list_tasks(limit=400), core_id=core_id)
         return {
             "storage_mode": "local",
             "processed": 0 if task is None else 1,
-            "task": task,
+            "blocked": False,
+            "age_span": summary,
+            "task": None if task is None else _normalized_task_payload(task, "local"),
         }
 
 
 @router.post("/queue-tasks/process-all")
 def process_all_queue_tasks(
-    limit: int = Query(20, ge=1, le=200, description="本次最多處理幾筆 pending 任務"),
+    limit: int = Query(1, ge=1, le=200, description="本次最多處理幾筆 pending 任務（年齡軸固定為 1）"),
+    core_id: Optional[int] = Query(None, description="僅處理指定角色"),
     db: Session = Depends(get_db),
 ):
-    """批次處理多筆 pending 任務。"""
+    """批次處理 pending 任務。年齡軸 pipeline 存在時強制一次只處理 1 筆。"""
+    effective_limit = limit
     if not is_database_available():
+        tasks = LocalQueueManager().list_tasks(limit=400)
+        if core_id is not None:
+            tasks = [task for task in tasks if int(task.get("core_id", 0)) == int(core_id)]
+        if summarize_age_span_pipeline(tasks, core_id=core_id):
+            effective_limit = 1
         service = LocalCharacterService()
-        tasks = LocalQueueManager().process_all(limit=limit, character_service=service)
+        processed_tasks = LocalQueueManager().process_all(
+            limit=effective_limit,
+            character_service=service,
+        )
         return {
             "storage_mode": "local",
-            "processed": len(tasks),
-            "tasks": tasks,
+            "processed": len(processed_tasks),
+            "limit_applied": effective_limit,
+            "tasks": [_normalized_task_payload(task, "local") for task in processed_tasks],
         }
 
     try:
-        tasks = QueueManager(db).process_all_pending(limit=limit)
+        from characteros.models.orm import CharacterVariant
+
+        variants = db.query(CharacterVariant).all()
+        task_dicts = [
+            {
+                "id": variant.id,
+                "core_id": variant.core_id,
+                "status": variant.status,
+                "priority": variant.priority,
+                "evolution_params": variant.evolution_params or {},
+                "result_metadata": variant.result_metadata or {},
+                "created_at": variant.created_at.isoformat() if variant.created_at else "",
+            }
+            for variant in variants
+        ]
+        if core_id is not None:
+            task_dicts = [task for task in task_dicts if int(task.get("core_id", 0)) == int(core_id)]
+        if summarize_age_span_pipeline(task_dicts, core_id=core_id):
+            effective_limit = 1
+        tasks = QueueManager(db).process_all_pending(limit=effective_limit)
         return {
             "storage_mode": "database",
             "processed": len(tasks),
-            "tasks": [task.to_dict() for task in tasks],
+            "limit_applied": effective_limit,
+            "tasks": [_normalized_task_payload(task, "database") for task in tasks],
         }
     except SQLAlchemyError:
         mark_database_unavailable()
+        tasks = LocalQueueManager().list_tasks(limit=400)
+        if core_id is not None:
+            tasks = [task for task in tasks if int(task.get("core_id", 0)) == int(core_id)]
+        if summarize_age_span_pipeline(tasks, core_id=core_id):
+            effective_limit = 1
         service = LocalCharacterService()
-        tasks = LocalQueueManager().process_all(limit=limit, character_service=service)
+        processed_tasks = LocalQueueManager().process_all(
+            limit=effective_limit,
+            character_service=service,
+        )
         return {
             "storage_mode": "local",
-            "processed": len(tasks),
-            "tasks": tasks,
+            "processed": len(processed_tasks),
+            "limit_applied": effective_limit,
+            "tasks": [_normalized_task_payload(task, "local") for task in processed_tasks],
         }
 
 
@@ -356,7 +652,7 @@ def get_system_metrics(db: Session = Depends(get_db)):
             total_characters=total,
             total_profiles=total,
             total_variants=(
-                qstats["total_pending"] + qstats["total_ready"] + qstats["total_failed"]
+                qstats["total_pending"] + qstats.get("total_waiting", 0) + qstats["total_ready"] + qstats["total_failed"]
             ),
         )
 
@@ -380,7 +676,7 @@ def get_system_metrics(db: Session = Depends(get_db)):
             total_characters=total,
             total_profiles=total,
             total_variants=(
-                qstats["total_pending"] + qstats["total_ready"] + qstats["total_failed"]
+                qstats["total_pending"] + qstats.get("total_waiting", 0) + qstats["total_ready"] + qstats["total_failed"]
             ),
         )
 

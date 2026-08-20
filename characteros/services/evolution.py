@@ -93,6 +93,10 @@ class EvolutionEngine:
         # 更新視覺年齡
         if '_identity' in manifest:
             manifest['_identity']['age_visual'] = target_age
+            manifest['_identity']['age_appearance'] = f"{target_age} years old"
+            blend = manifest['_identity'].setdefault('blend', {})
+            if isinstance(blend, dict):
+                blend['age_visual'] = target_age
             
             # 根據年齡區間添加描述詞
             age_category = None

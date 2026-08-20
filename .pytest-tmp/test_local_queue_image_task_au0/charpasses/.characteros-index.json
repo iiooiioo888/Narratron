@@ -1,0 +1,9 @@
+{
+  "next_id": 2,
+  "entities": {
+    "1": "character-test"
+  },
+  "reverse": {
+    "character-test": 1
+  }
+}

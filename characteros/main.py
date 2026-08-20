@@ -1,5 +1,4 @@
 """CharacterOS FastAPI 入口：角色資產唯讀查詢與變體佇列。"""
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -100,6 +99,10 @@ async def startup_event():
     # 此處僅做驗證，不自動創建表
     logger.info("Database connection configured (use migrations to create tables)")
     
+    from characteros.services.queue_worker import start_queue_worker, wake_queue_worker
+
+    start_queue_worker()
+    wake_queue_worker()
     logger.info("Startup complete!")
 
 

@@ -1,0 +1,46 @@
+{
+  "_local": {
+    "hint": "本機 L0 可讀 JSON 角色護照，可直接在 IDE 檢視／編輯。匯出或寫入 history/ 時會打包成 ZIP 二進位 .charpass。",
+    "format": "json",
+    "spec": "docs/charpass.md"
+  },
+  "schema": "https://narratron.dev/schemas/charpass/v1.json",
+  "_meta": {
+    "character_name": "測試角色",
+    "tags": [
+      "demo"
+    ],
+    "created_at": "2026-08-20T04:19:06.265356Z",
+    "updated_at": "2026-08-20T04:19:06.265356Z",
+    "entity_id": "character-test"
+  },
+  "_identity": {
+    "name": "測試角色",
+    "gender_spectrum": 0.4,
+    "age_appearance": "30"
+  },
+  "_style": {
+    "character_style": {
+      "visual": {
+        "medium": "cinematic"
+      }
+    }
+  },
+  "_extensions": {
+    "image_gen": {
+      "latest_by_purpose": {
+        "identity": {
+          "job_id": "job-1",
+          "asset_paths": [
+            "assets/identity/ref_face_front_001.png"
+          ],
+          "angles": [
+            "front",
+            "face_detail"
+          ],
+          "updated_at": "2026-08-19T07:47:52Z"
+        }
+      }
+    }
+  }
+}

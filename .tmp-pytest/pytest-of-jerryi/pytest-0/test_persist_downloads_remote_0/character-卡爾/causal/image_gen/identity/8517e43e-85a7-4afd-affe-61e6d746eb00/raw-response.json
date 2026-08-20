@@ -1,0 +1,15 @@
+{
+  "output": {
+    "choices": [
+      {
+        "message": {
+          "content": [
+            {
+              "image": "https://example.com/front.png"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
