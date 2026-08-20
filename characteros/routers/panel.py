@@ -285,6 +285,7 @@ def get_admin_panel() -> str:
       <div class="queue-cta-row">
         <button id="btnAutoPipeline" onclick="startAutoPipeline()">繼續後端生圖</button>
         <button class="secondary" id="btnStopAutoPipeline" onclick="stopAutoPipeline()" style="display:none;">暫停後端生圖</button>
+        <button class="secondary" onclick="acceptAllReadyTasks()">批次接受所有已完成</button>
         <button class="secondary" onclick="startAutoPipeline({ resetFailed: true })">重設失敗並繼續</button>
         <button class="secondary" onclick="clearQueueTasks()">清空佇列</button>
         <button class="secondary" onclick="loadQueueTasks()">重新載入</button>
@@ -1181,6 +1182,27 @@ def get_admin_panel() -> str:
         await loadQueueTasks();
       } catch (err) {
         setStatus("queueStatus", `拒絕失敗：${err.message}`, "err");
+      }
+    }
+
+    async function acceptAllReadyTasks() {
+      const coreId = document.getElementById("queueCoreFilter").value.trim();
+      const label = coreId ? `角色 #${coreId}` : "全部角色";
+      if (!window.confirm(`確定批次接受 ${label} 所有已完成的生圖任務？`)) return;
+      setStatus("queueStatus", "正在批次接受…");
+      try {
+        const params = new URLSearchParams();
+        if (coreId) params.set("core_id", coreId);
+        const resp = await fetch(`/api/v1/admin/queue-tasks/accept-all?${params.toString()}`, { method: "POST" });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "批次接受失敗"));
+        const errMsg = (data.errors || []).length ? `（${data.errors.length} 筆失敗）` : "";
+        setStatus("queueStatus", `已批次接受 ${data.accepted ?? 0} 筆任務${errMsg}`, "ok");
+        await loadQueueTasks();
+        if (selectedCharacterId) await loadCharacterEditor();
+        await continueAutoPipelineIfActive();
+      } catch (err) {
+        setStatus("queueStatus", `批次接受失敗：${err.message}`, "err");
       }
     }
 

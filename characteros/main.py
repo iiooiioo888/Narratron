@@ -5,8 +5,11 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 import logging
+import os
+from pathlib import Path
 
 from sqlalchemy.exc import OperationalError
 
@@ -51,10 +54,22 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
-# CORS 設定（開發階段允許所有來源）
+# CORS 設定
+# 開發階段可設定 CHARACTEROS_CORS_ALLOW_ALL=1 允許所有來源
+# 生產環境請設定 CHARACTEROS_CORS_ORIGINS=https://your-domain.com
+
+_cors_allow_all = os.environ.get("CHARACTEROS_CORS_ALLOW_ALL", "0") == "1"
+_cors_origins_env = os.environ.get("CHARACTEROS_CORS_ORIGINS", "")
+_cors_origins = (
+    ["*"]
+    if _cors_allow_all
+    else [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    or ["http://localhost:8001", "http://localhost:8080", "http://127.0.0.1:8001"]
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生產環境應限制為特定網域
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -66,6 +81,11 @@ app.include_router(imaging.router)
 app.include_router(admin.router)
 app.include_router(health.router)
 app.include_router(panel.router)
+
+# 靜態檔案（CSS/JS/圖片等）
+_static_dir = Path(__file__).parent / "static"
+if _static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 
 @app.on_event("startup")
@@ -114,17 +134,29 @@ async def shutdown_event():
     logger.info("Shutting down CharacterOS...")
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    """
-    根路徑：返回 API 基本資訊
-    """
+    """門面首頁：Narratron 專案介紹與功能入口。"""
+    html_path = Path(__file__).parent / "static" / "index.html"
+    if html_path.is_file():
+        return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    # fallback：若靜態檔不存在，回傳 API 資訊
+    return HTMLResponse(
+        content="<h1>Narratron</h1><p>static/index.html not found. Visit <a href='/docs'>/docs</a> for API.</p>"
+    )
+
+
+@app.get("/api-info")
+async def api_info():
+    """API 基本資訊（原根路徑）。"""
     return {
         "name": "CharacterOS",
         "version": "1.0.0-sprint1",
         "description": "角色控制子系統",
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
+        "panel": "/admin/panel",
+        "home": "/",
     }
 
 

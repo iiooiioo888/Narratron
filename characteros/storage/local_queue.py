@@ -92,11 +92,19 @@ class LocalQueueManager:
         return {"paused": bool(paused)}
 
     def _save(self, data: dict[str, Any]) -> None:
+        """Atomic write：先寫暫存檔再 rename，避免中途 crash 導致 JSON 損壞。"""
         self.root.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        payload = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+        tmp = self._path.with_name(f"{self._path.name}.tmp")
+        try:
+            tmp.write_text(payload, encoding="utf-8")
+            tmp.replace(self._path)
+        except OSError:
+            # fallback: 直接寫入（tmp 可能因跨 filesystem 無法 rename）
+            try:
+                self._path.write_text(payload, encoding="utf-8")
+            finally:
+                tmp.unlink(missing_ok=True)
 
     def _load_index(self) -> dict[str, Any]:
         index_path = self.root / ".characteros-index.json"

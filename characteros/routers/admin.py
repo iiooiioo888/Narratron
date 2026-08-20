@@ -482,6 +482,86 @@ def reject_queue_task(task_id: int, db: Session = Depends(get_db)):
         }
 
 
+@router.post("/queue-tasks/accept-all")
+def accept_all_ready_tasks(
+    core_id: Optional[int] = Query(None, description="僅接受指定角色的任務"),
+    db: Session = Depends(get_db),
+):
+    """批次接受所有 ready + review_status=pending 的任務，大幅減少手動操作。"""
+    accepted_count = 0
+    errors: list[dict[str, Any]] = []
+
+    if not is_database_available():
+        mgr = LocalQueueManager()
+        service = LocalCharacterService()
+        tasks = mgr.list_tasks(status="ready", core_id=core_id, limit=400)
+        for task in tasks:
+            review = (
+                task.get("result_metadata", {}).get("image_generation", {}).get("review", {})
+                if isinstance(task.get("result_metadata"), dict)
+                else {}
+            )
+            review_status = str((review if isinstance(review, dict) else {}).get("status") or "").strip()
+            if review_status in ("", "pending"):
+                try:
+                    mgr.review_task(int(task["id"]), accepted=True, character_service=service)
+                    accepted_count += 1
+                except Exception as exc:
+                    errors.append({"task_id": task.get("id"), "error": str(exc)})
+        return {
+            "storage_mode": "local",
+            "accepted": accepted_count,
+            "errors": errors,
+        }
+
+    try:
+        from characteros.models.orm import CharacterVariant
+
+        query = db.query(CharacterVariant).filter(CharacterVariant.status == "ready")
+        if core_id is not None:
+            query = query.filter(CharacterVariant.core_id == core_id)
+        variants = query.all()
+        queue_mgr = QueueManager(db)
+        for variant in variants:
+            meta = variant.result_metadata or {}
+            review = meta.get("image_generation", {}).get("review", {}) if isinstance(meta, dict) else {}
+            review_status = str((review if isinstance(review, dict) else {}).get("status") or "").strip()
+            if review_status in ("", "pending"):
+                try:
+                    queue_mgr.review_variant(variant.id, accepted=True)
+                    accepted_count += 1
+                except Exception as exc:
+                    errors.append({"task_id": variant.id, "error": str(exc)})
+        return {
+            "storage_mode": "database",
+            "accepted": accepted_count,
+            "errors": errors,
+        }
+    except SQLAlchemyError:
+        mark_database_unavailable()
+        mgr = LocalQueueManager()
+        service = LocalCharacterService()
+        tasks = mgr.list_tasks(status="ready", core_id=core_id, limit=400)
+        for task in tasks:
+            review = (
+                task.get("result_metadata", {}).get("image_generation", {}).get("review", {})
+                if isinstance(task.get("result_metadata"), dict)
+                else {}
+            )
+            review_status = str((review if isinstance(review, dict) else {}).get("status") or "").strip()
+            if review_status in ("", "pending"):
+                try:
+                    mgr.review_task(int(task["id"]), accepted=True, character_service=service)
+                    accepted_count += 1
+                except Exception as exc:
+                    errors.append({"task_id": task.get("id"), "error": str(exc)})
+        return {
+            "storage_mode": "local",
+            "accepted": accepted_count,
+            "errors": errors,
+        }
+
+
 @router.get("/queue-worker", response_model=QueueWorkerStatusResponse)
 def get_queue_worker_status():
     """取得後端逐步生圖 worker 狀態。"""

@@ -58,4 +58,13 @@ Thumbs.db
 .coverage
 htmlcov/
 .coverage.*
+
+# Test artifacts
+.pytest-tmp/
+.tmp-pytest/
+_tmp_*.py
+
+# Runtime data (keep structure, ignore content)
+data/charpasses/.characteros-queue.json
+data/charpasses/.characteros-index.json
 ```

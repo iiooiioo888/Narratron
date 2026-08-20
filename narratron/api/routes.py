@@ -59,10 +59,15 @@ def characteros_panel() -> RedirectResponse:
     return RedirectResponse(url=settings.characteros_panel_url, status_code=307)
 
 
-def _not_implemented(agent: str, quarter: str) -> None:
+def _not_implemented(agent: str, quarter: str, description: str) -> None:
     raise HTTPException(
         status_code=501,
-        detail=f"{agent} 實作待 {quarter}；禁止在本階段跑生成。",
+        detail={
+            "message": f"{agent} 尚未上線",
+            "expected": quarter,
+            "hint": description,
+            "available_now": ["POST /parse（劇本解析）", "POST /direct（分鏡調度）"],
+        },
     )
 
 
@@ -86,16 +91,28 @@ def direct(payload: ScriptPayload) -> dict[str, Any]:
 @router.post("/keep")
 def keep(payload: ScriptPayload) -> None:
     _ = payload
-    _not_implemented("Keeper", "Alpha Q2")
+    _not_implemented(
+        "Keeper",
+        "Alpha Q2（預計 2026-11-18）",
+        "守護器負責因果鏈驗證與連續性檢查，目前請先使用 /parse 和 /direct。",
+    )
 
 
 @router.post("/run")
 def run(payload: ScriptPayload) -> None:
     _ = payload
-    _not_implemented("Runner", "Alpha Q3")
+    _not_implemented(
+        "Runner",
+        "Alpha Q3（預計 2027-02-18）",
+        "執行器負責呼叫影片生成模型（Wan2.1/LTX），目前請先使用 /parse 和 /direct。",
+    )
 
 
 @router.post("/mux")
 def mux(payload: ScriptPayload) -> None:
     _ = payload
-    _not_implemented("Muxer", "Alpha Q4")
+    _not_implemented(
+        "Muxer",
+        "Alpha Q4（預計 2027-05-18）",
+        "合流器負責將多個鏡頭合成為完整影片，目前請先使用 /parse 和 /direct。",
+    )

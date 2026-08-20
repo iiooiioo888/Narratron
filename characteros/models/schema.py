@@ -415,6 +415,7 @@ class ImageQueueRequest(BaseModel):
     scene: Optional[str] = Field(None, description="場景描述")
     injury: Optional[float] = Field(None, ge=0.0, le=1.0, description="受傷程度")
     priority: int = Field(0, ge=0, le=10, description="佇列優先級")
+    auto_accept: bool = Field(True, description="生圖完成後自動接受入庫（年齡軸建議開啟）")
 
 
 class ImageGenerateResponse(BaseModel):
