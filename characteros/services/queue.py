@@ -30,6 +30,7 @@ from characteros.services.variant_processor import (
     sanitize_evolution_params,
 )
 from characteros.utils.hash import compute_variant_hash
+from characteros.services.evolution import EvolutionEngine
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ class QueueManager:
                 detail=f"Character core {core_id} not found"
             )
         
-        # 2. 取得 active profile 的版本號（用於 hash 計算）
+        # 2. 取得 active profile 的版本號與 manifest 內容（用於 hash 計算）
         active_profile = self.db.query(CharacterProfile).filter(
             CharacterProfile.core_id == core_id,
             CharacterProfile.is_active == True
@@ -102,9 +103,10 @@ class QueueManager:
         
         profile_version = active_profile.version if active_profile else 1
         profile_id = active_profile.id if active_profile else None
+        manifest_content = active_profile.manifest if active_profile else None
         
-        # 3. 計算 variant_hash
-        variant_hash = compute_variant_hash(core_id, profile_version, evolution_params)
+        # 3. 計算 variant_hash（含 manifest 內容感知）
+        variant_hash = compute_variant_hash(core_id, profile_version, evolution_params, manifest_content)
         
         # 4. 檢查是否已存在
         existing_variant = self.db.query(CharacterVariant).filter(
@@ -161,6 +163,61 @@ class QueueManager:
                 # 極端情況：仍然找不到，可能是其他錯誤
                 raise
     
+    def process_pending_variant(self, variant_id: int) -> Optional[CharacterVariant]:
+        """處理 pending 變體：透過 EvolutionEngine 演化並標記為 ready。
+        
+        應由背景任務呼叫，不阻塞 API 請求。
+        """
+        variant = self.db.query(CharacterVariant).filter(
+            CharacterVariant.id == variant_id,
+            CharacterVariant.status == 'pending'
+        ).first()
+        
+        if not variant:
+            return None
+        
+        # 取得 active profile 的 manifest
+        profile = self.db.query(CharacterProfile).filter(
+            CharacterProfile.core_id == variant.core_id,
+            CharacterProfile.is_active == True
+        ).order_by(CharacterProfile.version.desc()).first()
+        
+        if not profile or not profile.manifest:
+            variant.status = 'failed'
+            variant.error_message = 'No active profile with manifest found'
+            self.db.commit()
+            return variant
+        
+        # 透過演化引擎產生 evolved manifest
+        try:
+            import time
+            start = time.monotonic()
+            
+            engine = EvolutionEngine()
+            evolved_manifest = engine.apply_evolution(
+                base_manifest=profile.manifest,
+                evolution_params=variant.evolution_params
+            )
+            
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            
+            variant.status = 'ready'
+            variant.result_metadata = {
+                'evolved_manifest': evolved_manifest,
+                'profile_version': profile.version,
+            }
+            variant.generation_duration_ms = elapsed_ms
+            
+        except Exception as exc:
+            logger.error(f"Variant {variant_id} evolution failed: {exc}", exc_info=True)
+            variant.status = 'failed'
+            variant.error_message = str(exc)
+            variant.retry_count = (variant.retry_count or 0) + 1
+        
+        self.db.commit()
+        self.db.refresh(variant)
+        return variant
+
     def get_variant_by_id(self, variant_id: int) -> Optional[CharacterVariant]:
         """
         透過 ID 取得變體記錄
@@ -558,8 +615,11 @@ class QueueManager:
         if oldest_pending:
             from datetime import datetime, timezone
             now = datetime.now(timezone.utc)
-            created = oldest_pending.created_at.replace(tzinfo=timezone.utc)
-            oldest_age_seconds = (now - created).total_seconds()
+            created_at = oldest_pending.created_at
+            # 正確處理時區：如果已是 aware datetime 則直接用，否則補 UTC
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            oldest_age_seconds = (now - created_at).total_seconds()
         
         return {
             "total_pending": pending_count,

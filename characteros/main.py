@@ -3,7 +3,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +23,44 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """應用程式生命週期管理（取代棄用的 on_event）。"""
+    logger.info("Starting up CharacterOS...")
+
+    from characteros.imaging.settings import settings
+    from characteros.models.database import SessionLocal
+    from characteros.storage.db_availability import check_database_available, storage_mode_label
+
+    db = SessionLocal()
+    try:
+        if check_database_available():
+            settings.load_from_db(db)
+            logger.info("Imaging config loaded from database (fallback: .env)")
+        else:
+            logger.warning(
+                "PostgreSQL unavailable — using local charpass storage and .env for imaging config"
+            )
+    except Exception as exc:
+        logger.warning("Could not load imaging config from database: %s", exc)
+    finally:
+        db.close()
+
+    logger.info("Storage mode: %s", storage_mode_label())
+    logger.info("Database connection configured (use migrations to create tables)")
+
+    from characteros.services.queue_worker import start_queue_worker, wake_queue_worker
+
+    start_queue_worker()
+    wake_queue_worker()
+    logger.info("Startup complete!")
+
+    yield
+
+    logger.info("Shutting down CharacterOS...")
+
 
 # 建立 FastAPI 應用
 app = FastAPI(
@@ -51,7 +90,8 @@ app = FastAPI(
     version="1.0.0-sprint1",
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 # CORS 設定
@@ -88,52 +128,6 @@ if _static_dir.is_dir():
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 
-@app.on_event("startup")
-async def startup_event():
-    """
-    應用程式啟動時執行
-    """
-    logger.info("Starting up CharacterOS...")
-
-    from characteros.imaging.settings import settings
-    from characteros.models.database import SessionLocal
-    from characteros.storage.db_availability import check_database_available, storage_mode_label
-
-    db = SessionLocal()
-    try:
-        if check_database_available():
-            settings.load_from_db(db)
-            logger.info("Imaging config loaded from database (fallback: .env)")
-        else:
-            logger.warning(
-                "PostgreSQL unavailable — using local charpass storage and .env for imaging config"
-            )
-    except Exception as exc:
-        logger.warning("Could not load imaging config from database: %s", exc)
-    finally:
-        db.close()
-
-    logger.info("Storage mode: %s", storage_mode_label())
-    
-    # 注意：資料庫表應透過 migration 腳本創建
-    # 此處僅做驗證，不自動創建表
-    logger.info("Database connection configured (use migrations to create tables)")
-    
-    from characteros.services.queue_worker import start_queue_worker, wake_queue_worker
-
-    start_queue_worker()
-    wake_queue_worker()
-    logger.info("Startup complete!")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """
-    應用程式關閉時執行
-    """
-    logger.info("Shutting down CharacterOS...")
-
-
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """門面首頁：Narratron 專案介紹與功能入口。"""
@@ -160,9 +154,9 @@ async def api_info():
     }
 
 
-# 全域例外處理（可選）
+# 全域例外處理
 @app.exception_handler(OperationalError)
-async def database_unavailable_handler(request, exc):
+async def database_unavailable_handler(request: Request, exc: OperationalError):
     """PostgreSQL 未啟動或連線字串錯誤時回傳可解析 JSON。"""
     logger.error("Database unavailable: %s", exc)
     return JSONResponse(
@@ -178,16 +172,10 @@ async def database_unavailable_handler(request, exc):
 
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    """
-    全域例外處理器（必須回傳 JSONResponse，否則 Starlette 會再拋 500 純文字）
-    """
+async def global_exception_handler(request: Request, exc: Exception):
+    """全域例外處理器：回傳 500 而非洩漏內部實作細節。"""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-
     return JSONResponse(
         status_code=500,
-        content={
-            "detail": "Internal server error",
-            "type": type(exc).__name__,
-        },
+        content={"detail": "Internal server error"},
     )

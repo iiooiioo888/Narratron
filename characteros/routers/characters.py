@@ -1,12 +1,10 @@
 """CharacterOS 角色路由：查詢與變體請求。"""
 
-from pathlib import Path
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from characteros.deps import CharacterBackend, get_character_backend
 from characteros.models.database import get_db
 from characteros.models.schema import (
     CharacterFullResponse,
@@ -14,49 +12,14 @@ from characteros.models.schema import (
     CharacterVariantResponse,
     VariantQueueResponse,
     ImageGenerateRequest,
-    ImageQueueRequest,
     ImageGenerateResponse,
     CharacterEditorResponse,
     CharacterEditorUpdateRequest,
-    CharacterVersionSummaryResponse,
 )
 from characteros.services.characters import CharacterService
 from characteros.services.queue import QueueManager
-from characteros.storage.db_availability import is_database_available
-from characteros.storage.local_characters import LocalCharacterService
-from characteros.storage.local_queue import LocalQueueManager
-from characteros.services.image_pipeline import enqueue_character_images
-from narratron.charpass.store import CharpassStore
 
 router = APIRouter(prefix="/api/v1/characters", tags=["Characters"])
-
-
-def _manifest_dict(service: CharacterBackend, character_id: int) -> dict:
-    full = service.get_character_by_id(character_id)
-    if full.profile and full.profile.manifest:
-        return dict(full.profile.manifest)
-    return {}
-
-
-def _resolve_local_asset_path(character_id: int, asset_path: str, service: CharacterBackend) -> Path:
-    manifest = _manifest_dict(service, character_id)
-    meta = manifest.get("_meta") or {}
-    identity = manifest.get("_identity") or {}
-    entity_id = str(meta.get("entity_id") or identity.get("entity_id") or "").strip()
-    if not entity_id:
-        name = str(identity.get("name") or meta.get("character_name") or f"character-{character_id}").strip()
-        entity_id = f"character-{name}"
-
-    rel = Path(str(asset_path).replace("\\", "/"))
-    parts = [part for part in rel.parts if part not in {"", ".", ".."}]
-    if not parts:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
-
-    root = CharpassStore().entity_dir(entity_id)
-    target = root.joinpath(*parts)
-    if not target.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
-    return target
 
 
 @router.get("", response_model=List[CharacterCoreResponse])
@@ -65,7 +28,7 @@ def list_characters(
     limit: int = Query(20, ge=1, le=100, description="返回數量上限"),
     name: Optional[str] = Query(None, description="名稱模糊搜尋"),
     tags: Optional[List[str]] = Query(None, description="標籤過濾"),
-    service: CharacterBackend = Depends(get_character_backend),
+    db: Session = Depends(get_db)
 ):
     """
     列出所有角色（摘要資訊）
@@ -75,6 +38,7 @@ def list_characters(
     - **name**: 名稱模糊搜尋
     - **tags**: 標籤過濾（包含任一標籤即可）
     """
+    service = CharacterService(db)
     result = service.list_characters(
         skip=skip,
         limit=limit,
@@ -88,7 +52,7 @@ def list_characters(
 @router.get("/{character_id}", response_model=CharacterFullResponse)
 def get_character(
     character_id: int,
-    service: CharacterBackend = Depends(get_character_backend),
+    db: Session = Depends(get_db)
 ):
     """
     取得角色完整資訊（Core + Active Profile）
@@ -100,23 +64,20 @@ def get_character(
     
     **不存在即 404**：不會自動創建角色
     """
+    service = CharacterService(db)
     return service.get_character_by_id(character_id)
 
 
 @router.get("/{character_id}/variant", response_model=CharacterVariantResponse | VariantQueueResponse)
 def request_variant(
     character_id: int,
+    background_tasks: BackgroundTasks,
     age: Optional[int] = Query(None, ge=0, le=150, description="目標年齡"),
     emotion: Optional[str] = Query(None, description="情緒狀態"),
     scene: Optional[str] = Query(None, description="場景描述"),
     injury: Optional[float] = Query(None, ge=0.0, le=1.0, description="受傷程度"),
     priority: int = Query(0, ge=0, le=10, description="優先級"),
-    queue_nonce: Optional[str] = Query(
-        None,
-        description="強制排入新的隊列任務 nonce（用於生圖點擊追蹤，避免 hash 冪等忽略重複請求）",
-    ),
-    service: CharacterBackend = Depends(get_character_backend),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db)
 ):
     """
     請求角色的進化變體
@@ -150,64 +111,7 @@ def request_variant(
         evolution_params['scene_context'] = scene
     if injury is not None:
         evolution_params['injury_level'] = injury
-    if queue_nonce:
-        # 併入 variant_hash 計算，確保每次點擊都能在佇列面板新增一筆任務。
-        evolution_params['_queue_nonce'] = queue_nonce
     
-    if isinstance(service, LocalCharacterService) or not is_database_available():
-        from datetime import datetime, timezone
-
-        def _as_dt(value):
-            if isinstance(value, datetime):
-                return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-            if isinstance(value, str) and value.strip():
-                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-                return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-            return datetime.now(timezone.utc)
-
-        full = service.get_character_by_id(character_id)
-        char_name = full.core.name if full and full.core else None
-        queue_mgr = LocalQueueManager()
-        task, _is_new = queue_mgr.request_variant_generation(
-            core_id=character_id,
-            evolution_params=evolution_params,
-            priority=priority,
-            character_name=char_name,
-        )
-        if task.get("status") == "ready":
-            return CharacterVariantResponse(
-                id=int(task["id"]),
-                core_id=int(task["core_id"]),
-                profile_id=None,
-                variant_hash=str(task["variant_hash"]),
-                evolution_params=task.get("evolution_params") or {},
-                status=str(task["status"]),
-                priority=int(task.get("priority") or 0),
-                result_url=task.get("result_url"),
-                result_metadata=task.get("result_metadata") or {},
-                error_message=task.get("error_message"),
-                retry_count=int(task.get("retry_count") or 0),
-                max_retries=int(task.get("max_retries") or 3),
-                queue_wait_ms=task.get("queue_wait_ms"),
-                generation_duration_ms=task.get("generation_duration_ms"),
-                created_at=_as_dt(task.get("created_at")),
-                updated_at=_as_dt(task.get("updated_at")),
-            )
-        raise HTTPException(
-            status_code=status.HTTP_202_ACCEPTED,
-            detail={
-                "message": "Variant generation queued (local mode — DB unavailable)",
-                "queue_id": int(task["id"]),
-                "variant_hash": str(task["variant_hash"]),
-                "status": str(task.get("status") or "pending"),
-                "estimated_wait_seconds": 0,
-            },
-            headers={
-                "Retry-After": "0",
-                "Location": f"/api/v1/characters/{character_id}/variant",
-            },
-        )
-
     # 2. 使用 QueueManager 處理冪等性與佇列寫入
     queue_mgr = QueueManager(db)
     variant, is_new = queue_mgr.request_variant_generation(
@@ -221,11 +125,13 @@ def request_variant(
         # 已生成完成，回傳 200
         return CharacterVariantResponse.model_validate(variant)
     else:
-        # pending 或 failed，回傳 202
-        # （failed 的變體理論上不應被用戶直接請求，此處僅做保護）
-        raise HTTPException(
-            status_code=status.HTTP_202_ACCEPTED,
-            detail={
+        # pending：排入背景任務執行演化
+        if is_new:
+            background_tasks.add_task(_process_variant_background, variant.id)
+        
+        return JSONResponse(
+            status_code=202,
+            content={
                 "message": "Variant generation queued",
                 "queue_id": variant.id,
                 "variant_hash": variant.variant_hash,
@@ -251,6 +157,10 @@ def list_character_variants(
     可用於監控生成進度或查看歷史變體
     """
     from characteros.models.orm import CharacterVariant
+
+    # 先驗證角色存在（不存在則 404），避免浪費查詢
+    service = CharacterService(db)
+    service.get_character_by_id(character_id)
     
     query = db.query(CharacterVariant).filter(
         CharacterVariant.core_id == character_id
@@ -261,10 +171,6 @@ def list_character_variants(
     
     variants = query.order_by(CharacterVariant.created_at.desc()).limit(100).all()
     
-    # 驗證角色存在（若不存在應 404）
-    service = CharacterService(db)
-    service.get_character_by_id(character_id)  # 僅用於驗證存在性
-    
     return [CharacterVariantResponse.model_validate(v) for v in variants]
 
 
@@ -273,7 +179,7 @@ def generate_character_images(
     character_id: int,
     body: ImageGenerateRequest,
     request: Request,
-    service: CharacterBackend = Depends(get_character_backend),
+    db: Session = Depends(get_db),
 ):
     """僅允許 GUI 面板觸發生圖，並依角色風格產出必要參考圖。"""
     from characteros.services.imaging import ImagingService
@@ -284,12 +190,19 @@ def generate_character_images(
             detail="生圖僅允許從 GUI 面板操作（/admin/panel）",
         )
 
+    # API key 優先從 header 讀取，避免明文暴露在請求體中
+    api_key = request.headers.get("X-Image-Gen-Api-Key", "") or body.api_key or ""
+
+    service = CharacterService(db)
     full = service.get_character_by_id(character_id)
     manifest: dict = {}
     if full.profile and full.profile.manifest:
         manifest = dict(full.profile.manifest)
-    # manifest 可允許為空：ImagingService 會自動補齊預設的
-    # `_style.character_style.visual`，以便在「尚未手動填完 manifest」時仍可生圖。
+    if not manifest:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"角色 {character_id} 沒有可用的 Profile manifest",
+        )
     identity = manifest.setdefault("_identity", {})
     meta = manifest.setdefault("_meta", {})
     identity.setdefault("name", full.core.name)
@@ -306,9 +219,8 @@ def generate_character_images(
             n=body.n,
             model=body.model or "",
             base_url=body.base_url or "",
-            api_key=body.api_key or "",
+            api_key=api_key,
             persist_entity_id=persist_id,
-            multi_angle=body.multi_angle,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
@@ -317,82 +229,22 @@ def generate_character_images(
     return ImageGenerateResponse.model_validate(payload)
 
 
-@router.post("/{character_id}/image-queue")
-def queue_character_image_generation(
-    character_id: int,
-    body: ImageQueueRequest,
-    service: CharacterBackend = Depends(get_character_backend),
-    db: Session = Depends(get_db),
-):
-    """把生圖工作排入佇列；年齡軸一次只開放下一步，後端 worker 自動銜接。"""
-    return enqueue_character_images(
-        character_id=character_id,
-        body=body,
-        service=service,
-        db=db,
-    )
-
-
 @router.get("/{character_id}/editor", response_model=CharacterEditorResponse)
 def get_character_editor(
     character_id: int,
-    service: CharacterBackend = Depends(get_character_backend),
+    db: Session = Depends(get_db),
 ):
     """完整角色編輯器讀取：core + active profile。"""
+    service = CharacterService(db)
     return service.get_editor_payload(character_id)
-
-
-@router.get("/{character_id}/charpass")
-def get_character_charpass(
-    character_id: int,
-    service: CharacterBackend = Depends(get_character_backend),
-):
-    """取得角色目前可讀 charpass manifest。"""
-    return {"charpass": _manifest_dict(service, character_id)}
-
-
-@router.post("/{character_id}/charpass")
-def save_character_charpass(
-    character_id: int,
-    body: dict,
-    service: CharacterBackend = Depends(get_character_backend),
-):
-    """直接儲存角色目前 charpass，供前端面板寫回 JSON 護照。"""
-    manifest = body.get("charpass") if isinstance(body, dict) else None
-    if not isinstance(manifest, dict):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="body.charpass must be an object",
-        )
-    saved = service.save_charpass(character_id, manifest)
-    return {"charpass": saved}
-
-
-@router.get("/{character_id}/versions", response_model=CharacterVersionSummaryResponse)
-def get_character_versions(
-    character_id: int,
-    service: CharacterBackend = Depends(get_character_backend),
-):
-    """取得角色目前版本快照與分支摘要。"""
-    return service.get_version_summary(character_id)
-
-
-@router.get("/{character_id}/assets/{asset_path:path}")
-def get_character_asset(
-    character_id: int,
-    asset_path: str,
-    service: CharacterBackend = Depends(get_character_backend),
-):
-    """唯讀提供角色本機資產，供面板預覽已生成圖片。"""
-    target = _resolve_local_asset_path(character_id, asset_path, service)
-    return FileResponse(target)
 
 
 @router.put("/{character_id}/editor", response_model=CharacterEditorResponse)
 def save_character_editor(
     character_id: int,
     body: CharacterEditorUpdateRequest,
-    service: CharacterBackend = Depends(get_character_backend),
+    db: Session = Depends(get_db),
 ):
     """完整角色編輯器儲存：更新 core + active profile。"""
+    service = CharacterService(db)
     return service.update_character_editor(character_id, body)

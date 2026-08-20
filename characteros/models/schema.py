@@ -135,8 +135,8 @@ class CharacterFullResponse(BaseModel):
     available_variants: List[CharacterVariantResponse] = Field(default_factory=list)
     
     def to_charpass_format(self) -> Dict[str, Any]:
-        """轉換為 .charpass 格式"""
-        result = {
+        """轉換為 .charpass 格式（安全合併，避免 manifest 覆蓋頂層字段）。"""
+        result: Dict[str, Any] = {
             "version": "1.0",
             "format": ".charpass",
             "core": self.core.model_dump(),
@@ -144,9 +144,9 @@ class CharacterFullResponse(BaseModel):
         
         if self.profile:
             result["active_profile"] = self.profile.model_dump()
-            # 合併 manifest 到頂層以便於使用
+            # 將 manifest 嵌套在 manifest 鍵下，避免覆蓋 version / core 等頂層字段
             if self.profile.manifest:
-                result.update(self.profile.manifest)
+                result["manifest"] = self.profile.manifest
         
         result["variants"] = [v.model_dump() for v in self.available_variants]
         

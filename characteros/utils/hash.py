@@ -31,7 +31,8 @@ def normalize_params(params: Dict[str, Any]) -> str:
 def compute_variant_hash(
     core_id: int,
     profile_version: int,
-    evolution_params: Dict[str, Any]
+    evolution_params: Dict[str, Any],
+    manifest_content: Dict[str, Any] | None = None,
 ) -> str:
     """
     計算變體指紋
@@ -40,14 +41,22 @@ def compute_variant_hash(
         core_id: 角色核心 ID
         profile_version: Profile 版本號
         evolution_params: 演化參數字典
+        manifest_content: Profile manifest 內容（可選，用於內容感知的冪等性）
     
     Returns:
         SHA256 hash (64 characters)
     """
+    # 計算 manifest 內容指紋（避免 manifest 過大影響 hash 效能）
+    manifest_hash = ""
+    if manifest_content:
+        manifest_str = json.dumps(manifest_content, sort_keys=True, ensure_ascii=False)
+        manifest_hash = hashlib.sha256(manifest_str.encode('utf-8')).hexdigest()[:16]
+    
     # 組建指紋輸入
     hash_input = {
         "core_id": core_id,
         "profile_version": profile_version,
+        "manifest_hash": manifest_hash,
         "evolution_params": evolution_params
     }
     
@@ -63,7 +72,8 @@ def verify_hash_match(
     core_id: int,
     profile_version: int,
     evolution_params: Dict[str, Any],
-    expected_hash: str
+    expected_hash: str,
+    manifest_content: Dict[str, Any] | None = None,
 ) -> bool:
     """
     驗證給定的 hash 是否匹配
@@ -71,7 +81,7 @@ def verify_hash_match(
     Returns:
         True if match, False otherwise
     """
-    computed = compute_variant_hash(core_id, profile_version, evolution_params)
+    computed = compute_variant_hash(core_id, profile_version, evolution_params, manifest_content)
     return computed == expected_hash
 
 

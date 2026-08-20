@@ -267,7 +267,7 @@ class CharacterService:
         """
         # 查詢 Core，並預載入 active profile
         core = self.db.query(CharacterCore).options(
-            joinedload(CharacterCore.profiles).and_(CharacterProfile.is_active == True)
+            joinedload(CharacterCore.profiles)
         ).filter(CharacterCore.id == character_id).first()
         
         if not core:
@@ -276,15 +276,12 @@ class CharacterService:
                 detail=f"Character with id {character_id} not found"
             )
         
-        # 取得 active profile（可能有多個版本，只取最新啟用的）
+        # 取得 active profile（只取最新啟用版本）
         active_profile = None
         if core.profiles:
-            # 按版本號降序排列，取第一個
-            active_profile = sorted(
-                [p for p in core.profiles if p.is_active],
-                key=lambda x: x.version,
-                reverse=True
-            )[0] if any(p.is_active for p in core.profiles) else None
+            active_profiles = [p for p in core.profiles if p.is_active]
+            if active_profiles:
+                active_profile = max(active_profiles, key=lambda x: x.version)
         
         # 查詢已生成的變體（status='ready'）
         ready_variants = self.db.query(CharacterVariant).filter(
@@ -580,7 +577,17 @@ class CharacterService:
         core.tags = body.tags or []
         core.meta_info = body.metadata or {}
 
-        # profile fields
+        # profile fields — 內容變更時遞增版本號，確保 variant_hash 不會與舊快取衝突
+        import hashlib, json
+        old_manifest_hash = hashlib.sha256(
+            json.dumps(profile.manifest or {}, sort_keys=True, ensure_ascii=False).encode()
+        ).hexdigest()
+        new_manifest_hash = hashlib.sha256(
+            json.dumps(body.manifest or {}, sort_keys=True, ensure_ascii=False).encode()
+        ).hexdigest()
+        if old_manifest_hash != new_manifest_hash:
+            profile.version = (profile.version or 1) + 1
+
         profile.project_name = body.project_name
         profile.project_id = body.project_id
         profile.style_preset = body.style_preset
