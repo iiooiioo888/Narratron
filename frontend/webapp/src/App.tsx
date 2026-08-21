@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ReactFlow, { Background, Controls, MiniMap } from 'reactflow'
 import 'reactflow/dist/style.css'
 
@@ -16,7 +16,53 @@ import {
 import type { NarratronState, PageId, ProjectRecord, RunMode, ShotRecord, TraceRecord } from './types'
 
 const PAGE_ORDER: PageId[] = ['Pad', 'Timeline', 'Dashboard', 'Map', 'Player']
+const PAGE_ZH: Record<PageId, string> = {
+  Pad: '寫板',
+  Timeline: '時軌',
+  Dashboard: '總覽',
+  Map: '因果圖',
+  Player: '播放器',
+}
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
+const SCRIPT_LIMIT = 20000
+const SAMPLE_SCRIPT = `INT. 廢棄工廠 — 夜
+
+角色
+- 卡爾（傷疤覆蓋左臉，手持鏽蝕鐵棍）
+- 艾拉（繃帶纏繞右臂，背著醫療包）
+
+道具
+- 鏽蝕鐵棍
+- 醫療包
+
+場景
+- 廢棄工廠：昏暗的吊燈搖晃，地面散落碎玻璃
+
+卡爾：（壓低聲音）守衛換班了，我們有十分鐘。
+艾拉：（檢查無線電）信號很弱，但夠用。`
+
+const HARDWARE_POOLS = [
+  { level: 'L0', code: 'Big Core', zh: '大核' },
+  { level: 'L1', code: 'Mid Core', zh: '中核' },
+  { level: 'L2', code: 'Alt Core', zh: '備核' },
+  { level: 'L3', code: 'Light Core', zh: '輕核' },
+] as const
+
+const PLUGIN_MATRIX = [
+  ['P1', 'Tracer', '追跡', '生成前'],
+  ['P2', 'Fixer', '固形', '生成前'],
+  ['P3', 'Forker', '分岔', '生成前'],
+  ['P4', 'Painter', '調色', '生成前'],
+  ['P5', 'Mover', '擬動', '生成前/後'],
+  ['P6', 'Screener', '篩檢', '生成後'],
+  ['P7', 'Router', '路由', '生成前'],
+  ['P8', 'Recycler', '重生', '生成前'],
+  ['P9', 'Player', '配樂', '生成後'],
+  ['P10', 'Filter', '濾聲', '生成後'],
+  ['P11', 'Cropper', '裁切', '生成後'],
+  ['P12', 'Exporter', '轉檔', '生成後'],
+  ['P13', 'Maker', '製本', '生成後'],
+] as const
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -52,18 +98,33 @@ function fmtDate(value?: string): string {
   if (!value) {
     return '-'
   }
-  return new Date(value).toLocaleString()
+  return new Date(value).toLocaleString('zh-TW', { hour12: false })
 }
 
 function jsonSummary(value: unknown): string {
   if (value == null) {
-    return 'No payload'
+    return '無資料'
   }
   try {
     return JSON.stringify(value, null, 2)
   } catch {
     return String(value)
   }
+}
+
+function padMs(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000))
+  const minutes = String(Math.floor(total / 60)).padStart(2, '0')
+  const seconds = String(total % 60).padStart(2, '0')
+  return `${minutes}:${seconds}`
+}
+
+function shotDuration(shot?: ShotRecord): number {
+  return Math.max(400, Number(shot?.duration_ms) || 2000)
+}
+
+function beatOf(shot?: ShotRecord): string {
+  return String(asRecord(shot?.payload).beat || '—')
 }
 
 async function callApi(
@@ -99,6 +160,10 @@ function getProjectStatus(project?: ProjectRecord): string {
   return 'stale'
 }
 
+function isPageId(value: string): value is PageId {
+  return PAGE_ORDER.includes(value as PageId)
+}
+
 export default function App() {
   const initialWorkspace = useMemo(() => loadWorkspace(), [])
   const [projects, setProjects] = useState<ProjectRecord[]>(initialWorkspace.projects)
@@ -114,6 +179,8 @@ export default function App() {
   const [loadingMode, setLoadingMode] = useState<RunMode | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedCharId, setSelectedCharId] = useState<string | undefined>()
+  const [playing, setPlaying] = useState(false)
+  const [playIndex, setPlayIndex] = useState(0)
 
   const activeProject = projects.find((project) => project.id === activeProjectId)
   const selectedRun = getSelectedRun(activeProject)
@@ -126,6 +193,45 @@ export default function App() {
   const graph = useMemo(() => buildFlowGraph(currentState ?? {}), [currentState])
   const characters = entities.filter((entity) => entity.kind === 'character')
   const selectedCharacter = characters.find((entity) => entity.id === selectedCharId) ?? characters[0]
+  const scriptLen = script.length
+  const scriptOk = Boolean(script.trim()) && scriptLen <= SCRIPT_LIMIT
+  const timelineReady = shots.length > 0
+  const mapReady = traces.length > 0 || shots.length > 0
+  const playerReady = shots.length > 0 || Boolean(currentState?.mux_uri)
+  const totalMs = shots.reduce((sum, shot) => sum + shotDuration(shot), 0)
+  const elapsedMs = shots.slice(0, playIndex).reduce((sum, shot) => sum + shotDuration(shot), 0)
+
+  useEffect(() => {
+    const applyHash = () => {
+      const hash = location.hash.replace(/^#/, '')
+      if (isPageId(hash)) {
+        setPage(hash)
+      }
+    }
+    applyHash()
+    window.addEventListener('hashchange', applyHash)
+    return () => window.removeEventListener('hashchange', applyHash)
+  }, [])
+
+  useEffect(() => {
+    if (location.hash.replace(/^#/, '') !== page) {
+      history.replaceState(null, '', `#${page}`)
+    }
+  }, [page])
+
+  const runKey = selectedRun?.id ?? ''
+  useEffect(() => {
+    const ordered = [...(currentState?.shots ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    if (!playing || ordered.length === 0 || currentState?.mux_uri) {
+      return
+    }
+    const duration = shotDuration(ordered[playIndex])
+    const length = ordered.length
+    const timer = window.setTimeout(() => {
+      setPlayIndex((index) => (index + 1) % length)
+    }, duration)
+    return () => window.clearTimeout(timer)
+  }, [playing, playIndex, currentState, runKey])
 
   function updateWorkspace(nextProjects: ProjectRecord[], nextActiveProjectId = activeProjectId) {
     setProjects(nextProjects)
@@ -160,10 +266,12 @@ export default function App() {
       project.id === activeProject.id ? selectRun(project, runId) : project,
     )
     updateWorkspace(nextProjects, activeProject.id)
+    setPlayIndex(0)
+    setPlaying(false)
   }
 
   async function handleSubmit(mode: RunMode) {
-    if (!activeProject || !script.trim()) {
+    if (!activeProject || !scriptOk) {
       return
     }
 
@@ -175,7 +283,7 @@ export default function App() {
         project.id === activeProject.id ? appendRun(project, { mode, script, persist, state }) : project,
       )
       updateWorkspace(nextProjects, activeProject.id)
-      setPage(mode === 'direct' ? 'Timeline' : 'Dashboard')
+      setPage('Pad')
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'API request failed')
     } finally {
@@ -223,13 +331,20 @@ export default function App() {
     updateWorkspace(nextProjects, activeProject.id)
   }
 
+  function pageReady(pageId: PageId): boolean {
+    if (pageId === 'Timeline') return timelineReady
+    if (pageId === 'Map') return mapReady
+    if (pageId === 'Player') return playerReady
+    return true
+  }
+
   function renderPad() {
     return (
       <section className="panel page-panel">
         <div className="section-header">
           <div>
             <h2>Pad</h2>
-            <p>寫板是唯一可寫入口，負責送出劇本到 `/parse` 或 `/direct`。</p>
+            <p>寫板是唯一可寫入口。日常請用 Direct：會一併解析實體並拆分鏡。</p>
           </div>
           <span className="pill pill-accent">Alpha Q1 API</span>
         </div>
@@ -242,6 +357,9 @@ export default function App() {
             placeholder="輸入角色、道具、場景與分鏡描述..."
           />
         </label>
+        <p className={`hint-inline ${scriptLen > SCRIPT_LIMIT ? 'warn' : ''}`}>
+          {scriptLen} / {SCRIPT_LIMIT} 字。空內容禁用送出。
+        </p>
 
         <div className="inline-grid">
           <label className="checkbox">
@@ -250,7 +368,7 @@ export default function App() {
               checked={persist}
               onChange={(event) => setPersist(event.target.checked)}
             />
-            <span>同步啟用後端 `persist`</span>
+            <span>同步啟用後端 persist（寫入 State Vault）</span>
           </label>
           <div className="hint-card">
             <strong>前端歷史</strong>
@@ -261,19 +379,41 @@ export default function App() {
         <div className="button-row">
           <button
             className="primary"
-            onClick={() => handleSubmit('parse')}
-            disabled={!activeProject || !script.trim() || loadingMode !== null}
+            onClick={() => handleSubmit('direct')}
+            disabled={!activeProject || !scriptOk || loadingMode !== null}
           >
-            {loadingMode === 'parse' ? 'Parsing...' : 'Parse'}
+            {loadingMode === 'direct' ? 'Directing...' : 'Direct 拆分鏡'}
           </button>
           <button
             className="secondary"
-            onClick={() => handleSubmit('direct')}
-            disabled={!activeProject || !script.trim() || loadingMode !== null}
+            onClick={() => handleSubmit('parse')}
+            disabled={!activeProject || !scriptOk || loadingMode !== null}
           >
-            {loadingMode === 'direct' ? 'Directing...' : 'Direct'}
+            {loadingMode === 'parse' ? 'Parsing...' : '僅 Parse'}
+          </button>
+          <button className="ghost" onClick={() => setScript(SAMPLE_SCRIPT)}>
+            載入範例
           </button>
         </div>
+        {currentState ? (
+          <div className="next-card">
+            <h3>{shots.length ? '分鏡已完成' : '實體已解析'}</h3>
+            <p>
+              {shots.length} 個 shot · {characters.length} 個角色。Direct 不必先 Parse。
+            </p>
+            <div className="button-row">
+              <button className="primary" onClick={() => setPage('Timeline')} disabled={!shots.length}>
+                查看分鏡
+              </button>
+              <button className="secondary" onClick={() => setPage('Dashboard')}>
+                角色護照
+              </button>
+              <button className="ghost" onClick={() => setPage('Player')} disabled={!shots.length}>
+                播放
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
     )
   }
@@ -288,9 +428,20 @@ export default function App() {
           </div>
           <span className="pill">{shots.length} shots</span>
         </div>
+        <p className="readonly-notice">此畫面為只讀資料，來源是 State Vault 的 shots。</p>
+        {shots.length > 0 ? (
+          <div className="button-row" style={{ marginBottom: 12 }}>
+            <button className="primary" onClick={() => setPage('Dashboard')}>
+              下一步：角色護照
+            </button>
+            <button className="secondary" onClick={() => setPage('Player')}>
+              播放分鏡
+            </button>
+          </div>
+        ) : null}
 
         {shots.length === 0 ? (
-          <div className="empty-state">目前沒有 shots。先在 Pad 執行 `Direct`。</div>
+          <div className="empty-state">目前沒有 shots。先在 Pad 執行 Direct。</div>
         ) : (
           <div className="content-grid">
             <div className="list-column">
@@ -301,7 +452,10 @@ export default function App() {
                   onClick={() => setSelectedShotId(shot.id)}
                 >
                   <strong>Shot {shot.order ?? '-'}</strong>
-                  <span>{shot.camera_language || 'camera language missing'}</span>
+                  <span>{shot.camera_language || '未指定鏡頭語言'}</span>
+                  <span>
+                    {shot.duration_ms ?? 0}ms · {shot.scene_id || '—'} · {beatOf(shot)}
+                  </span>
                 </button>
               ))}
             </div>
@@ -328,9 +482,35 @@ export default function App() {
         <div className="section-header">
           <div>
             <h2>Dashboard</h2>
-            <p>專案級總覽，整合實體、shots、trace 與後端階段提示。</p>
+            <p>專案級總覽：實體、shots、算力池、外掛與角色護照子面板。</p>
           </div>
           <span className="pill pill-accent">{activeProject ? getProjectStatus(activeProject) : 'missing'}</span>
+        </div>
+        <p className="readonly-notice">總覽為只讀刷新。角色護照是 Dashboard 子面板，不是第六個用戶層畫面。</p>
+
+        <div className="next-grid">
+          <div className="next-card">
+            <h3>1. 劇本與分鏡</h3>
+            <p>{shots.length ? `已有 ${shots.length} 個 shot` : '尚未 Direct。先回 Pad 拆分鏡。'}</p>
+            <div className="button-row">
+              <button className="secondary" onClick={() => setPage('Pad')}>
+                {shots.length ? '回 Pad' : '去 Direct'}
+              </button>
+            </div>
+          </div>
+          <div className="next-card">
+            <h3>2. 角色護照</h3>
+            <p>{characters.length ? `劇本有 ${characters.length} 個角色，請在下方子面板編輯。` : '尚無角色實體。'}</p>
+          </div>
+          <div className="next-card">
+            <h3>3. 播放</h3>
+            <p>{shots.length ? '可用 Player 預覽分鏡序列。' : '等 Direct 完成後即可播放。'}</p>
+            <div className="button-row">
+              <button className="secondary" onClick={() => setPage('Player')} disabled={!shots.length}>
+                開 Player
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="metrics-grid">
@@ -340,12 +520,46 @@ export default function App() {
           <MetricCard label="Assets" value={assets.length} />
         </div>
 
+        <h3 className="subhead">算力池（只讀，不得自創池名）</h3>
+        <div className="pool-grid">
+          {HARDWARE_POOLS.map((pool) => (
+            <div key={pool.code} className={`pool-card ${pool.code === 'Mid Core' ? 'active' : ''}`}>
+              <strong>{pool.code}</strong>
+              <span>
+                {pool.level} · {pool.zh}
+              </span>
+              <small>{pool.code === 'Mid Core' ? '本階段 Router 固定選此池' : '待機'}</small>
+            </div>
+          ))}
+        </div>
+
+        <h3 className="subhead">外掛觸發摘要</h3>
+        <div className="plugin-grid">
+          {PLUGIN_MATRIX.map(([pid, code, zh, phase]) => (
+            <div key={pid} className="plugin-card">
+              <strong>
+                {pid} {code}
+              </strong>
+              <span>{zh}</span>
+              <small>
+                {phase} · {pid === 'P7' ? 'Alpha Q1 可觸發' : '介面已凍結'}
+              </small>
+            </div>
+          ))}
+        </div>
+
+        <h3 className="subhead">KPI 預留 · 連續性誤差</h3>
+        <div className="hint-card">
+          <strong>continuity_error = —</strong>
+          <p>Keeper（Alpha Q2）尚未回傳此欄位。面板先佔位，不發明數值。</p>
+        </div>
+
         <div className="content-grid dashboard-grid">
           <DetailCard title="Entities by kind" body={grouped} />
           <div className="panel inset-panel">
             <h3>Phase Guardrail</h3>
             <p>`/parse` 與 `/direct` 已可用；`/keep`、`/run`、`/mux` 仍為 501 placeholder。</p>
-            <p>前端歷史已支援多專案、多次 run 切換。</p>
+            <p>角色護照快捷鍵：S 儲存（焦點在子面板時）。</p>
           </div>
         </div>
 
@@ -369,13 +583,14 @@ export default function App() {
         <div className="section-header">
           <div>
             <h2>Map</h2>
-            <p>以 React Flow 呈現 entities → trace_log → shots 的可互動因果圖。</p>
+            <p>以節點圖呈現 entities → trace_log → shots。畫面代號必須是 Map。</p>
           </div>
           <span className="pill">{traces.length} traces</span>
         </div>
+        <p className="readonly-notice">此畫面為只讀資料，不得編輯節點或替換資料來源。</p>
 
         {graph.nodes.length === 0 ? (
-          <div className="empty-state">目前沒有可視化資料。先執行 `Parse` 或 `Direct`。</div>
+          <div className="empty-state">目前沒有可視化資料。先執行 Parse 或 Direct。</div>
         ) : (
           <div className="map-layout">
             <div className="flow-shell">
@@ -405,6 +620,11 @@ export default function App() {
             <div className="inspector-column">
               <DetailCard title="Trace Inspector" body={selectedTrace} />
               <DetailCard title="Linked Shot" body={selectedShot} />
+              {selectedShot ? (
+                <button className="secondary" onClick={() => setPage('Timeline')}>
+                  跳到 Timeline 對應 shot
+                </button>
+              ) : null}
             </div>
           </div>
         )}
@@ -413,25 +633,71 @@ export default function App() {
   }
 
   function renderPlayer() {
+    const muxUri = currentState?.mux_uri
+    const current = shots[playIndex]
+
     return (
       <section className="panel page-panel">
         <div className="section-header">
           <div>
             <h2>Player</h2>
-            <p>保留合成結果播放區，等待後端 `Muxer` 接入。</p>
+            <p>用戶層播放器。合流成品由 Muxer 提供；與外掛 P9 配樂同名不同層。</p>
           </div>
-          <span className="pill">placeholder</span>
+          <span className="pill">{muxUri ? 'mux_uri 就緒' : 'Muxer 尚未上線'}</span>
         </div>
 
-        <div className="player-shell">
-          {currentState?.mux_uri ? (
-            <video controls className="video-box" src={String(currentState.mux_uri)} />
+        {!muxUri ? (
+          <div className="notice-banner">
+            Alpha Q4 合流器尚未上線（POST /mux 回 501）。以下先以 Director 分鏡序列播放，不把此畫面改名。
+          </div>
+        ) : null}
+
+        <div className="player-shell filled">
+          {muxUri ? (
+            <video controls className="video-box" src={String(muxUri)} />
+          ) : shots.length === 0 ? (
+            <div className="empty-state">尚無分鏡。先在 Pad 執行 Direct。</div>
           ) : (
-            <div className="empty-state">
-              `mux_uri` 尚未提供。Alpha Q1 階段這裡只顯示預留播放器版位。
+            <div className="storyboard-frame">
+              <p className="eyebrow">Shot {current?.order ?? '-'}</p>
+              <h3>{current?.camera_language || '未指定鏡頭語言'}</h3>
+              <p>{beatOf(current)}</p>
+              <small>
+                {current?.duration_ms ?? 0}ms · {current?.scene_id || '—'}
+              </small>
             </div>
           )}
         </div>
+
+        {!muxUri && shots.length > 0 ? (
+          <div className="player-controls">
+            <button className="primary" onClick={() => setPlaying((value) => !value)}>
+              {playing ? 'Pause' : 'Play'}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(shots.length - 1, 0)}
+              value={playIndex}
+              onChange={(event) => {
+                setPlaying(false)
+                setPlayIndex(Number(event.target.value))
+              }}
+            />
+            <span className="muted">
+              {padMs(elapsedMs)} / {padMs(totalMs)}
+            </span>
+            <button
+              className="ghost"
+              onClick={() => {
+                setPlaying(false)
+                setPlayIndex(0)
+              }}
+            >
+              Refresh
+            </button>
+          </div>
+        ) : null}
       </section>
     )
   }
@@ -454,6 +720,11 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {loadingMode ? (
+        <div className="loading-mask">
+          <span className="spinner" /> {loadingMode === 'parse' ? 'Parsing…' : 'Directing…'}
+        </div>
+      ) : null}
       <aside className="sidebar">
         <div className="brand-block">
           <p className="eyebrow">Narratron</p>
@@ -464,7 +735,7 @@ export default function App() {
         <div className="panel sidebar-panel">
           <h3>Projects</h3>
           <label className="field">
-            <span>Project name</span>
+            <span>專案名稱</span>
             <input
               value={projectName}
               onChange={(event) => setProjectName(event.target.value)}
@@ -473,10 +744,10 @@ export default function App() {
           </label>
           <div className="button-row compact">
             <button className="primary" onClick={handleCreateProject}>
-              New Project
+              新增專案
             </button>
             <button className="ghost" onClick={handleRenameProject} disabled={!activeProject}>
-              Rename
+              重新命名
             </button>
           </div>
           <div className="project-list">
@@ -496,15 +767,26 @@ export default function App() {
         <div className="panel sidebar-panel">
           <h3>Pages</h3>
           <div className="page-nav">
-            {PAGE_ORDER.map((pageId) => (
-              <button
-                key={pageId}
-                className={`nav-button ${page === pageId ? 'active' : ''}`}
-                onClick={() => setPage(pageId)}
-              >
-                <span>{pageId}</span>
-              </button>
-            ))}
+            {PAGE_ORDER.map((pageId, index) => {
+              const ready = pageReady(pageId)
+              const next =
+                (pageId === 'Pad' && !timelineReady) ||
+                (pageId === 'Timeline' && timelineReady && page !== 'Timeline') ||
+                (pageId === 'Dashboard' && timelineReady && page === 'Timeline')
+              return (
+                <button
+                  key={pageId}
+                  className={`nav-button ${page === pageId ? 'active' : ''} ${next ? 'next' : ''}`}
+                  title={ready ? PAGE_ZH[pageId] : '可先點入查看空狀態；內容來自 Pad 的 Direct'}
+                  onClick={() => setPage(pageId)}
+                >
+                  <span>
+                    {index + 1} {pageId}
+                  </span>
+                  <small>{next ? '下一步' : PAGE_ZH[pageId]}</small>
+                </button>
+              )
+            })}
           </div>
         </div>
 
@@ -533,7 +815,7 @@ export default function App() {
         <header className="topbar panel">
           <div>
             <p className="eyebrow">Current Project</p>
-            <h2>{activeProject?.name ?? 'No project selected'}</h2>
+            <h2>{activeProject?.name ?? '尚未選擇專案'}</h2>
             <p className="muted">
               {selectedRun
                 ? `${selectedRun.mode.toUpperCase()} · ${fmtDate(selectedRun.createdAt)}`
@@ -541,8 +823,10 @@ export default function App() {
             </p>
           </div>
           <div className="status-strip">
-            <span className="pill">API: {API_BASE || 'vite proxy -> :8080'}</span>
+            <span className="pill">API: {API_BASE || 'vite proxy → :8080'}</span>
             <span className="pill pill-accent">Persist: {persist ? 'on' : 'off'}</span>
+            <span className="pill">{shots.length} shots</span>
+            <span className="pill">{traces.length} traces</span>
           </div>
         </header>
 
@@ -566,7 +850,7 @@ function DetailCard(props: { title: string; body: ShotRecord | TraceRecord | obj
   return (
     <div className="panel inset-panel detail-card">
       <h3>{props.title}</h3>
-      {props.body ? <pre>{jsonSummary(props.body)}</pre> : <div className="empty-state small">No data selected.</div>}
+      {props.body ? <pre>{jsonSummary(props.body)}</pre> : <div className="empty-state small">尚未選擇資料。</div>}
     </div>
   )
 }

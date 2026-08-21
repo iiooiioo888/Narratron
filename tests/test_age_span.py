@@ -9,14 +9,18 @@ import pytest
 
 from characteros.imaging.prompt import assemble_request
 from characteros.services.age_span import (
+    RUNNING_STATUS,
     age_span_steps,
     build_age_span_evolution_params,
     collect_age_span_ref_uris,
+    find_next_runnable_task,
     initial_queue_status,
     new_pipeline_id,
     prepare_queued_image_generation,
+    recover_stale_running_tasks,
     should_queue_age_span,
     step_priority,
+    summarize_age_span_pipeline,
 )
 from characteros.services.evolution import EvolutionEngine
 from characteros.storage.local_characters import LocalCharacterService
@@ -73,6 +77,33 @@ def test_age_span_steps_are_faces_then_tpose() -> None:
     assert steps[1]["depends_on"] == {"phase": "face_detail", "age": 1}
     assert steps[3]["depends_on"] == {"phase": "face_detail", "age": 3}
     assert steps[4]["depends_on"] == {"phase": "tpose", "age": 1}
+
+
+def test_summarize_pipeline_headline_when_running() -> None:
+    steps = age_span_steps(age_start=1, age_end=2)
+    params = build_age_span_evolution_params(
+        steps[0],
+        pipeline_id=new_pipeline_id(),
+        extra="",
+    )
+    summary = summarize_age_span_pipeline(
+        [
+            {
+                "id": 1,
+                "core_id": 7,
+                "character_name": "卡爾",
+                "status": RUNNING_STATUS,
+                "evolution_params": params,
+                "result_metadata": {},
+            }
+        ],
+        core_id=7,
+    )
+    assert summary is not None
+    assert summary["running_count"] == 1
+    assert "正在生成 卡爾" in summary["headline"]
+    assert "面部" in summary["headline"]
+    assert summary["accepted_count"] == 0
 
 
 def test_full_age_span_covers_one_to_eighty() -> None:
@@ -423,4 +454,55 @@ def test_age_span_later_request_does_not_merge_identity_seed() -> None:
         extra_fields={"pipeline": "age_span", "age": 6},
     )
     assert request.ref_image_uris == ["https://cdn.example/face-5.png"]
+
+
+def test_age_span_evolution_params_never_store_api_key() -> None:
+    steps = age_span_steps(age_start=1, age_end=1)
+    params = build_age_span_evolution_params(
+        steps[0],
+        pipeline_id="pipe-secret",
+        api_key="sk-should-never-be-queued",
+    )
+    image_request = params["_image_request"]
+    assert "api_key" not in image_request
+
+
+def test_running_task_blocks_other_generation(local_root: Path) -> None:
+    service = LocalCharacterService(local_root)
+    core_id = service.list_characters()["items"][0].id
+    queue = LocalQueueManager(local_root)
+    first_step = age_span_steps(age_start=1, age_end=2)[0]
+    task, _ = queue.request_variant_generation(
+        core_id=core_id,
+        evolution_params=build_age_span_evolution_params(
+            first_step,
+            pipeline_id=new_pipeline_id(),
+            provider="null",
+        ),
+        priority=step_priority(0, first_step),
+        character_name="測試角色",
+        status="pending",
+    )
+    data = json.loads((local_root / ".characteros-queue.json").read_text(encoding="utf-8"))
+    data["tasks"][0]["status"] = RUNNING_STATUS
+    (local_root / ".characteros-queue.json").write_text(json.dumps(data), encoding="utf-8")
+    assert find_next_runnable_task(data["tasks"]) is None
+    assert queue.process_next(character_service=service, core_id=core_id) is None
+    persisted = json.loads((local_root / ".characteros-queue.json").read_text(encoding="utf-8"))
+    assert persisted["tasks"][0]["id"] == task["id"]
+    assert persisted["tasks"][0]["status"] == RUNNING_STATUS
+
+
+def test_stale_running_recovers_to_pending() -> None:
+    tasks = [
+        {
+            "id": 1,
+            "status": RUNNING_STATUS,
+            "updated_at": "2000-01-01T00:00:00+00:00",
+            "evolution_params": {},
+        }
+    ]
+    recovered = recover_stale_running_tasks(tasks, max_age_s=1)
+    assert recovered
+    assert tasks[0]["status"] == "pending"
 

@@ -45,6 +45,30 @@ def test_local_store_lists_and_loads_editor(local_root: Path) -> None:
     assert editor.profile.manifest.get("_identity", {}).get("name") == "測試角色"
 
 
+def test_list_characters_prefers_existing_face_asset_over_missing_thumb(tmp_path: Path) -> None:
+    root = tmp_path / "charpasses"
+    entity = root / "character-卡爾"
+    face_dir = entity / "assets" / "face_detail"
+    face_dir.mkdir(parents=True)
+    face_path = face_dir / "ref_face_detail_age_001_001.png"
+    face_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+    manifest = {
+        "schema": "https://narratron.dev/schemas/charpass/v1.json",
+        "_meta": {"character_name": "卡爾", "thumbnail": "thumb/thumb_256.png"},
+        "_identity": {"name": "卡爾", "ref_images": []},
+    }
+    (entity / "current.charpass").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    service = LocalCharacterService(root)
+    core = service.list_characters()["items"][0]
+    assert core.metadata["face_detail_asset_path"] == "assets/face_detail/ref_face_detail_age_001_001.png"
+    assert core.metadata["thumbnail_asset_path"] == "assets/face_detail/ref_face_detail_age_001_001.png"
+    assert not str(core.metadata.get("thumbnail") or "").endswith("thumb_256.png")
+
+
 def test_local_store_saves_editor_back_to_charpass(local_root: Path) -> None:
     service = LocalCharacterService(local_root)
     core_id = service.list_characters()["items"][0].id
@@ -66,6 +90,54 @@ def test_local_store_saves_editor_back_to_charpass(local_root: Path) -> None:
     raw = json.loads((local_root / "character-test" / "current.charpass").read_text(encoding="utf-8"))
     assert raw["_identity"]["name"] == "測試角色二"
     assert raw["_meta"]["tags"] == ["demo", "local"]
+
+
+def test_ensure_character_creates_then_returns_existing(tmp_path: Path) -> None:
+    service = LocalCharacterService(tmp_path)
+    created, is_new = service.ensure_character("艾拉", notes="繃帶纏繞右臂")
+    assert is_new is True
+    assert created.name == "艾拉"
+    assert created.base_age == 25
+    assert (tmp_path / "character-艾拉" / "current.charpass").is_file()
+
+    again, is_new_again = service.ensure_character("艾拉")
+    assert is_new_again is False
+    assert again.id == created.id
+    assert service.list_characters()["total"] == 1
+
+
+def test_ensure_character_api_and_sync(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from characteros.deps import get_character_backend
+    from characteros.main import app
+
+    service = LocalCharacterService(tmp_path)
+    app.dependency_overrides[get_character_backend] = lambda: service
+    try:
+        client = TestClient(app)
+        created = client.post("/api/v1/characters", json={"name": "卡爾"})
+        assert created.status_code == 200, created.text
+        body = created.json()
+        assert body["created"] is True
+        assert body["name"] == "卡爾"
+
+        again = client.post("/api/v1/characters", json={"name": "卡爾"})
+        assert again.status_code == 200, again.text
+        assert again.json()["created"] is False
+        assert again.json()["id"] == body["id"]
+
+        synced = client.post(
+            "/api/v1/characters/sync-from-script",
+            json={"names": ["卡爾", "艾拉", "卡爾", ""]},
+        )
+        assert synced.status_code == 200, synced.text
+        payload = synced.json()
+        assert payload["created_count"] == 1
+        assert payload["existing_count"] == 1
+        assert {item["name"] for item in payload["items"]} == {"卡爾", "艾拉"}
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_local_queue_processes_pending_task_into_variant_artifact(local_root: Path) -> None:
@@ -676,3 +748,214 @@ def test_task_item_from_dict_parity_local_and_database() -> None:
     assert local_item.has_face_detail is True
     assert local_item.angles == ["face_detail", "front"]
     assert raw["result_metadata"]["image_generation"]["images"][0]["final_asset_path"] == "assets/identity/face.png"
+
+
+def test_local_queue_reject_records_rejected_at(local_root: Path) -> None:
+    """拒絕任務不得再呼叫未匯入的 utcnow_iso，且須寫入 rejected_at。"""
+    service = LocalCharacterService(local_root)
+    core_id = service.list_characters()["items"][0].id
+    queue = LocalQueueManager(local_root)
+    now = datetime.now(timezone.utc).isoformat()
+    data = queue._load()
+    data["next_id"] = 2
+    data["tasks"] = [
+        {
+            "id": 1,
+            "core_id": core_id,
+            "character_name": "測試角色",
+            "variant_hash": "vh-reject",
+            "evolution_params": {},
+            "status": "ready",
+            "priority": 0,
+            "result_url": None,
+            "result_metadata": {
+                "image_generation": {
+                    "review": {"status": "pending"},
+                    "images": [{"asset_path": "staging/front.png"}],
+                }
+            },
+            "error_message": None,
+            "retry_count": 0,
+            "max_retries": 3,
+            "created_at": now,
+            "updated_at": now,
+        }
+    ]
+    queue._save(data)
+
+    rejected = queue.review_task(1, accepted=False, character_service=service)
+    review = rejected["result_metadata"]["image_generation"]["review"]
+    assert review["status"] == "rejected"
+    assert review.get("rejected_at")
+    assert queue.get_task_by_id(1)["result_metadata"]["image_generation"]["review"]["status"] == "rejected"
+
+
+def test_reset_failed_tasks_persists_waiting(local_root: Path) -> None:
+    """批次重設 failed 不得因中途 _load() 而丟掉狀態變更。"""
+    service = LocalCharacterService(local_root)
+    core_id = service.list_characters()["items"][0].id
+    queue = LocalQueueManager(local_root)
+    now = datetime.now(timezone.utc).isoformat()
+    data = queue._load()
+    data["next_id"] = 2
+    data["tasks"] = [
+        {
+            "id": 1,
+            "core_id": core_id,
+            "character_name": "測試角色",
+            "variant_hash": "vh-fail",
+            "evolution_params": {},
+            "status": "failed",
+            "priority": 0,
+            "result_metadata": {},
+            "error_message": "boom",
+            "retry_count": 1,
+            "max_retries": 3,
+            "created_at": now,
+            "updated_at": now,
+        }
+    ]
+    queue._save(data)
+
+    reset = queue.reset_failed_tasks()
+    assert len(reset) == 1
+    assert reset[0]["status"] == "waiting"
+    assert reset[0]["error_message"] is None
+    persisted = queue.get_task_by_id(1)
+    assert persisted is not None
+    assert persisted["status"] == "waiting"
+    assert persisted["error_message"] is None
+
+
+def test_nested_enqueue_does_not_clobber_next_id(local_root: Path) -> None:
+    """ensure_following / process_next 外層 _save 不得把 next_id 蓋回舊值造成重複 ID。"""
+    service = LocalCharacterService(local_root)
+    core_id = service.list_characters()["items"][0].id
+    queue = LocalQueueManager(local_root)
+    now = datetime.now(timezone.utc).isoformat()
+    pipeline_id = "age-span-test-next-id"
+    data = queue._load()
+    data["next_id"] = 2
+    data["tasks"] = [
+        {
+            "id": 1,
+            "core_id": core_id,
+            "character_name": "測試角色",
+            "variant_hash": "vh-age-1",
+            "evolution_params": {
+                "age_override": 1,
+                "_queue_nonce": f"{pipeline_id}-face_detail-age-001",
+                "_image_request": {
+                    "purpose": "face_detail",
+                    "pipeline": "age_span",
+                    "pipeline_id": pipeline_id,
+                    "phase": "face_detail",
+                    "age": 1,
+                    "age_start": 1,
+                    "age_end": 3,
+                    "step_index": 0,
+                    "total_steps": 6,
+                    "depends_on": None,
+                },
+            },
+            "status": "ready",
+            "priority": 6,
+            "result_url": "https://cdn.example/face-1.png",
+            "result_metadata": {
+                "image_generation": {
+                    "images": [{"url": "https://cdn.example/face-1.png"}],
+                    "review": {"status": "accepted"},
+                }
+            },
+            "error_message": None,
+            "retry_count": 0,
+            "max_retries": 3,
+            "created_at": now,
+            "updated_at": now,
+        }
+    ]
+    queue._save(data)
+
+    created = queue.ensure_following_age_span_tasks(core_id=core_id)
+    assert len(created) == 1
+    persisted = queue._load()
+    ids = [int(t["id"]) for t in persisted["tasks"]]
+    assert len(ids) == len(set(ids)), f"duplicate task ids: {ids}"
+    assert int(persisted["next_id"]) == max(ids) + 1
+    assert any(
+        (t.get("evolution_params") or {}).get("_image_request", {}).get("age") == 2
+        for t in persisted["tasks"]
+    )
+
+
+def test_repair_task_ids_renumbers_duplicates(local_root: Path) -> None:
+    queue = LocalQueueManager(local_root)
+    now = datetime.now(timezone.utc).isoformat()
+    data = {
+        "next_id": 2,
+        "tasks": [
+            {
+                "id": 1,
+                "core_id": 1,
+                "variant_hash": "a",
+                "evolution_params": {},
+                "status": "ready",
+                "priority": 0,
+                "created_at": now,
+                "updated_at": now,
+            },
+            {
+                "id": 2,
+                "core_id": 1,
+                "variant_hash": "b",
+                "evolution_params": {},
+                "status": "ready",
+                "priority": 0,
+                "created_at": now,
+                "updated_at": now,
+            },
+            {
+                "id": 2,
+                "core_id": 1,
+                "variant_hash": "c",
+                "evolution_params": {},
+                "status": "pending",
+                "priority": 0,
+                "created_at": now,
+                "updated_at": now,
+            },
+        ],
+        "worker": {"paused": False},
+    }
+    queue._path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    result = queue.repair_task_ids()
+    assert result["changed"] is True
+    assert result["task_ids"] == [1, 2, 3]
+    assert result["next_id"] == 4
+    pending = next(t for t in queue._load()["tasks"] if t["status"] == "pending")
+    assert pending["id"] == 3
+    preferred = LocalQueueManager._select_task(
+        [
+            {"id": 2, "status": "ready", "variant_hash": "b"},
+            {"id": 2, "status": "pending", "variant_hash": "c"},
+        ],
+        2,
+    )
+    assert preferred is not None
+    assert preferred["status"] == "pending"
+
+
+def test_asset_path_rejects_traversal(local_root: Path) -> None:
+    from fastapi import HTTPException
+
+    from characteros.routers.characters import _resolve_local_asset_path
+
+    service = LocalCharacterService(local_root)
+    with pytest.raises(HTTPException) as exc:
+        _resolve_local_asset_path(1, "../.characteros-index.json", service)
+    assert exc.value.status_code == 404
+
+    with pytest.raises(HTTPException) as exc:
+        _resolve_local_asset_path(1, "/etc/passwd", service)
+    assert exc.value.status_code == 404

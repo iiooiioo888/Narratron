@@ -43,6 +43,22 @@ class CharpassStore:
         safe = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in entity_id)
         return self.root / (safe or "unknown")
 
+    def resolve_inside(self, entity_id: str, relative_path: str) -> Path | None:
+        """把相對路徑解析到角色目錄內；越界或含 `..` 時回傳 None。"""
+        folder = self.entity_dir(entity_id).resolve()
+        rel = Path(str(relative_path or "").replace("\\", "/"))
+        if rel.is_absolute():
+            return None
+        parts = [part for part in rel.parts if part not in {"", "."}]
+        if not parts or ".." in parts:
+            return None
+        dest = folder.joinpath(*parts).resolve()
+        try:
+            dest.relative_to(folder)
+        except ValueError:
+            return None
+        return dest
+
     def write(
         self,
         entity_id: str,
@@ -165,42 +181,34 @@ class CharpassStore:
 
     def write_assets(self, entity_id: str, assets: dict[str, bytes]) -> dict[str, Path]:
         """把 ZIP 內嵌資產寫到本機 `data/charpasses/{id}/`，回傳 zip 路徑 → 檔案。"""
-        folder = self.entity_dir(entity_id)
         written: dict[str, Path] = {}
         for name, blob in assets.items():
-            rel = Path(str(name).replace("\\", "/"))
-            parts = [part for part in rel.parts if part not in {"", ".", ".."}]
-            if not parts:
+            dest = self.resolve_inside(entity_id, name)
+            if dest is None:
+                logger.warning("略過越界資產路徑：%s", name)
                 continue
-            dest = folder.joinpath(*parts)
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(blob)
+            self._write_bytes_atomic(dest, blob)
             written[name] = dest
         return written
 
     def write_json(self, entity_id: str, relative_path: str, payload: Any) -> Path:
         """把 JSON 檔寫入角色資料夾下的指定相對路徑。"""
-        folder = self.entity_dir(entity_id)
-        rel = Path(str(relative_path).replace("\\", "/"))
-        parts = [part for part in rel.parts if part not in {"", ".", ".."}]
-        if not parts:
-            raise ValueError("relative_path must not be empty")
-        dest = folder.joinpath(*parts)
+        dest = self.resolve_inside(entity_id, relative_path)
+        if dest is None:
+            raise ValueError("relative_path must stay inside the entity directory")
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(
+        self._write_text_atomic(
+            dest,
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
         return dest
 
     def read_json(self, entity_id: str, relative_path: str) -> dict[str, Any]:
         """讀取角色資料夾下的 JSON 檔；不存在或格式錯誤時回傳空 dict。"""
-        folder = self.entity_dir(entity_id)
-        rel = Path(str(relative_path).replace("\\", "/"))
-        parts = [part for part in rel.parts if part not in {"", ".", ".."}]
-        if not parts:
+        path = self.resolve_inside(entity_id, relative_path)
+        if path is None:
             return {}
-        path = folder.joinpath(*parts)
         if not path.is_file():
             return {}
         try:
@@ -285,9 +293,9 @@ class CharpassStore:
         if not isinstance(manifest, dict):
             return None
         manifest_path = folder / LOCAL_CURRENT_FILE
-        manifest_path.write_text(
+        self._write_text_atomic(
+            manifest_path,
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
         if legacy != manifest_path:
             legacy.unlink(missing_ok=True)
@@ -298,6 +306,7 @@ class CharpassStore:
             packed = self._pack_local_folder(folder, data)
             if packed is not None:
                 return packed
+            logger.warning("歷史快照改存 JSON：ZIP 打包失敗 folder=%s", folder)
         return data
 
     def _pack_local_folder(self, folder: Path, json_data: bytes) -> bytes | None:

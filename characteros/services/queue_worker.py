@@ -37,25 +37,81 @@ def set_worker_paused(paused: bool) -> dict[str, Any]:
     return control
 
 
+def _current_running_snapshot() -> dict[str, Any] | None:
+    try:
+        from characteros.services.age_span import _task_image_request, step_phrase
+        from characteros.storage.local_queue import LocalQueueManager
+
+        running = [
+            task
+            for task in LocalQueueManager().list_tasks(limit=400)
+            if str(task.get("status") or "").strip().lower() == "running"
+        ]
+        if not running:
+            return None
+        task = running[0]
+        req = _task_image_request(task)
+        age = req.get("age")
+        try:
+            age_int = int(age) if age is not None and age != "" else None
+        except (TypeError, ValueError):
+            age_int = None
+        step_index = req.get("step_index")
+        total_steps = req.get("total_steps")
+        try:
+            step_index = int(step_index) if step_index is not None else None
+        except (TypeError, ValueError):
+            step_index = None
+        try:
+            total_steps = int(total_steps) if total_steps is not None else None
+        except (TypeError, ValueError):
+            total_steps = None
+        return {
+            "id": int(task.get("id") or 0),
+            "core_id": int(task.get("core_id") or 0) or None,
+            "character_name": task.get("character_name"),
+            "status": "running",
+            "purpose": req.get("purpose") or req.get("phase"),
+            "phase": req.get("phase"),
+            "age": age_int,
+            "step_index": step_index,
+            "total_steps": total_steps,
+            "started_at": task.get("started_at") or task.get("updated_at"),
+            "label": step_phrase(req),
+        }
+    except Exception:
+        return None
+
+
 def worker_status() -> dict[str, Any]:
     paused = _local_paused()
     pending = 0
     waiting = 0
+    running = 0
+    failed = 0
     try:
         from characteros.storage.local_queue import LocalQueueManager
 
         stats = LocalQueueManager().get_queue_stats()
         pending = int(stats.get("total_pending") or 0)
         waiting = int(stats.get("total_waiting") or 0)
+        running = int(stats.get("total_running") or 0)
+        failed = int(stats.get("total_failed") or 0)
     except Exception:
         pass
+    current = _current_running_snapshot()
     return {
         "paused": paused,
-        "busy": _busy,
-        "auto_run": (not paused) and (_busy or pending > 0 or waiting > 0),
+        "busy": _busy or running > 0,
+        "auto_run": (not paused) and (_busy or pending > 0 or waiting > 0 or running > 0),
         "last_task_id": _last_task_id,
         "last_status": _last_status,
         "last_error": _last_error,
+        "current_task": current,
+        "pending_count": pending,
+        "waiting_count": waiting,
+        "running_count": running,
+        "failed_count": failed,
     }
 
 

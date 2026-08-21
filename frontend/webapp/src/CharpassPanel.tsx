@@ -334,7 +334,23 @@ interface AgeSpanPipelineStatus {
   steps?: AgeSpanStep[]
 }
 
-type PipelineStepResult = 'blocked' | 'processed' | 'await_review' | 'idle' | 'failed'
+interface AgeGalleryItem {
+  age: number
+  face_detail_asset_path?: string | null
+  tpose_asset_path?: string | null
+  face_detail_url?: string | null
+  tpose_url?: string | null
+  has_face_detail?: boolean
+  has_tpose?: boolean
+}
+
+interface AgeGalleryResponse {
+  character_id: number
+  character_name?: string | null
+  face_count?: number
+  tpose_count?: number
+  items?: AgeGalleryItem[]
+}
 
 type AgeSpanPhaseTab = 'face_detail' | 'tpose'
 
@@ -1591,6 +1607,8 @@ export function CharpassPanel(props: CharpassPanelProps) {
   const [showQueueForm, setShowQueueForm] = useState(false)
   const [ageSpanPhaseTab, setAgeSpanPhaseTab] = useState<AgeSpanPhaseTab>('face_detail')
   const [pinnedTaskId, setPinnedTaskId] = useState<number | null>(null)
+  const [selectedPreviewAge, setSelectedPreviewAge] = useState<number | null>(null)
+  const [ageGalleryByAge, setAgeGalleryByAge] = useState<Record<number, AgeGalleryItem>>({})
   const [autoContinue, setAutoContinue] = useState(() => {
     try {
       const stored = localStorage.getItem(AUTO_CONTINUE_STORAGE_KEY)
@@ -1792,6 +1810,31 @@ export function CharpassPanel(props: CharpassPanelProps) {
     }
   }
 
+  async function loadAgeGallery(characterId?: string | number | null): Promise<Record<number, AgeGalleryItem>> {
+    const id = String(characterId ?? selectedCharacter?.id ?? '').trim()
+    if (!id) {
+      setAgeGalleryByAge({})
+      return {}
+    }
+    try {
+      const response = await fetch(`${apiBase}/api/v1/characters/${id}/age-gallery`)
+      if (!response.ok) {
+        setAgeGalleryByAge({})
+        return {}
+      }
+      const body = (await response.json()) as AgeGalleryResponse
+      const map: Record<number, AgeGalleryItem> = {}
+      for (const item of body.items || []) {
+        map[Number(item.age)] = item
+      }
+      setAgeGalleryByAge(map)
+      return map
+    } catch {
+      setAgeGalleryByAge({})
+      return {}
+    }
+  }
+
   async function loadAgeSpanStatus(): Promise<AgeSpanPipelineStatus | null> {
     const coreId = queueCoreIdParam()
     const params = new URLSearchParams()
@@ -1809,6 +1852,7 @@ export function CharpassPanel(props: CharpassPanelProps) {
       }
       const body = (await response.json()) as AgeSpanPipelineStatus
       setAgeSpanStatus(body)
+      await loadAgeGallery(body.core_id ?? coreId)
       return body
     } catch {
       setAgeSpanStatus(null)
@@ -2676,28 +2720,85 @@ export function CharpassPanel(props: CharpassPanelProps) {
                         focusTask?.id === step.task_id ||
                         ageSpanStatus?.blocking_task_id === step.task_id ||
                         ageSpanStatus?.next_runnable_task_id === step.task_id
+                      const isSelected = selectedPreviewAge != null && Number(step.age) === Number(selectedPreviewAge)
                       return (
                         <button
                           key={`${step.phase}-${step.age}-${step.step_index}`}
                           type="button"
-                          className={`age-span-step-cell status-${normalized || 'missing'}${isCurrent ? ' is-current' : ''}`}
+                          className={`age-span-step-cell status-${normalized || 'missing'}${isCurrent ? ' is-current' : ''}${isSelected ? ' is-selected' : ''}`}
                           title={
                             step.error_message ||
-                            `${step.age} 歲 · ${ageSpanStepStatusLabel(step.status)}`
+                            `${step.age} 歲 · 點選預覽面部與 T 型`
                           }
                           onClick={() => {
+                            if (step.age != null) {
+                              setSelectedPreviewAge(Number(step.age))
+                            }
                             if (step.task_id) {
                               setPinnedTaskId(step.task_id)
                             }
                           }}
-                          disabled={!step.task_id}
                         >
                           <span className="age-span-step-age">{step.age}</span>
                         </button>
                       )
                     })}
                   </div>
-                  <p className="age-span-timeline-hint">點選年齡格子可切換上方「目前步驟」預覽；綠色代表已入庫。</p>
+                  {selectedPreviewAge != null ? (
+                    <div className="age-dual-preview">
+                      {(() => {
+                        const item = ageGalleryByAge[selectedPreviewAge] || {}
+                        const charId = ageSpanStatus?.core_id || selectedCharacter?.id
+                        const withBase = (url?: string | null) => {
+                          const raw = String(url || '').trim()
+                          if (!raw) return ''
+                          if (/^https?:\/\//i.test(raw)) return raw
+                          return `${apiBase}${raw.startsWith('/') ? raw : `/${raw}`}`
+                        }
+                        const faceSrc =
+                          withBase(item.face_detail_url) ||
+                          (item.face_detail_asset_path && charId
+                            ? `${apiBase}/api/v1/characters/${charId}/assets/${String(item.face_detail_asset_path)
+                                .split('/')
+                                .map(encodeURIComponent)
+                                .join('/')}`
+                            : '')
+                        const tposeSrc =
+                          withBase(item.tpose_url) ||
+                          (item.tpose_asset_path && charId
+                            ? `${apiBase}/api/v1/characters/${charId}/assets/${String(item.tpose_asset_path)
+                                .split('/')
+                                .map(encodeURIComponent)
+                                .join('/')}`
+                            : '')
+                        return (
+                          <>
+                            <div className="age-dual-pane">
+                              <div className="label">{selectedPreviewAge} 歲 · 面部</div>
+                              <div className="frame">
+                                {faceSrc ? (
+                                  <img src={faceSrc} alt={`${selectedPreviewAge} 歲面部`} loading="lazy" />
+                                ) : (
+                                  <span>尚無面部圖</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="age-dual-pane">
+                              <div className="label">{selectedPreviewAge} 歲 · T 型</div>
+                              <div className="frame">
+                                {tposeSrc ? (
+                                  <img src={tposeSrc} alt={`${selectedPreviewAge} 歲 T 型`} loading="lazy" />
+                                ) : (
+                                  <span>尚無 T 型圖</span>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </div>
+                  ) : null}
+                  <p className="age-span-timeline-hint">點選年齡格子可同時預覽該歲面部與 T 型；綠色代表已入庫。</p>
                 </div>
               ) : null}
 

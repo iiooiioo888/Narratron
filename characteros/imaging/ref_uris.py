@@ -150,14 +150,11 @@ def resolve_ref_uri_for_api(
         return None
 
     rel = cleaned.replace("\\", "/").lstrip("/")
-    candidates = [
-        store.entity_dir(entity_id) / rel,
-        store.entity_dir(entity_id) / "assets" / rel.removeprefix("assets/"),
-    ]
+    candidates = [rel, f"assets/{rel.removeprefix('assets/')}"]
     seen: set[Path] = set()
     for candidate in candidates:
-        resolved = candidate.resolve()
-        if resolved in seen:
+        resolved = store.resolve_inside(entity_id, candidate)
+        if resolved is None or resolved in seen:
             continue
         seen.add(resolved)
         data_uri = _local_ref_to_data_uri(resolved)

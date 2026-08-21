@@ -100,17 +100,30 @@ app = FastAPI(
 
 _cors_allow_all = os.environ.get("CHARACTEROS_CORS_ALLOW_ALL", "0") == "1"
 _cors_origins_env = os.environ.get("CHARACTEROS_CORS_ORIGINS", "")
-_cors_origins = (
-    ["*"]
-    if _cors_allow_all
-    else [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
-    or ["http://localhost:8001", "http://localhost:8080", "http://127.0.0.1:8001"]
-)
+if _cors_allow_all:
+    _cors_origins = ["*"]
+    _cors_credentials = False
+    logger.warning(
+        "CHARACTEROS_CORS_ALLOW_ALL=1：CORS 允許所有來源，已關閉 credentials，"
+        "避免與 allow_origins=['*'] 同時使用"
+    )
+else:
+    _cors_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()] or [
+        "http://localhost:8001",
+        "http://localhost:8080",
+        "http://127.0.0.1:8001",
+        "http://127.0.0.1:8080",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8501",
+        "http://127.0.0.1:8501",
+    ]
+    _cors_credentials = True
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_credentials=_cors_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

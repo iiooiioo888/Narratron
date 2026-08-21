@@ -1,8 +1,12 @@
 """CharacterOS 角色查詢服務。"""
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from uuid import uuid4
+
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
 
@@ -23,6 +27,7 @@ from characteros.services.branch_summary import (
     strip_final_asset_path_from_branch,
     summary_images_from_payload as _summary_images_from_payload,
 )
+from narratron.charpass.schema import empty_manifest_dict
 from narratron.charpass.store import CharpassStore
 
 
@@ -376,6 +381,69 @@ class CharacterService:
             "skip": skip,
             "limit": limit
         }
+
+    def ensure_character(
+        self,
+        name: str,
+        *,
+        base_age: int = 25,
+        gender_spectrum: Optional[float] = None,
+        tags: Optional[List[str]] = None,
+        notes: Optional[str] = None,
+    ) -> tuple[CharacterCoreResponse, bool]:
+        cleaned = str(name or "").strip()
+        if not cleaned:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="角色名稱不可為空")
+
+        query = self.db.query(CharacterCore)
+        existing = query.filter(CharacterCore.name == cleaned).first()
+        if existing is None and cleaned.isascii():
+            existing = query.filter(func.lower(CharacterCore.name) == cleaned.lower()).first()
+        if existing:
+            profile = self.get_active_profile(existing.id)
+            manifest = profile.manifest if profile and isinstance(profile.manifest, dict) else None
+            return _augment_core_with_manifest(existing, manifest), False
+
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        entity_id = f"character-{cleaned[:200]}"
+        manifest = empty_manifest_dict()
+        meta = manifest.setdefault("_meta", {})
+        identity = manifest.setdefault("_identity", {})
+        meta["character_name"] = cleaned
+        meta["entity_id"] = entity_id
+        meta["created_at"] = now
+        meta["updated_at"] = now
+        if tags:
+            meta["tags"] = list(tags)
+        if notes:
+            meta["notes"] = notes
+        identity["name"] = cleaned
+        identity["entity_id"] = entity_id
+        identity["age_appearance"] = str(base_age)
+        if gender_spectrum is not None:
+            identity["gender_spectrum"] = gender_spectrum
+
+        core = CharacterCore(
+            uuid=uuid4(),
+            name=cleaned,
+            base_age=base_age,
+            gender_spectrum=gender_spectrum,
+            identity_anchor={},
+            tags=list(tags or []),
+            meta_info={"notes": notes} if notes else {},
+        )
+        self.db.add(core)
+        self.db.flush()
+        profile = CharacterProfile(
+            core_id=core.id,
+            version=1,
+            is_active=True,
+            manifest=manifest,
+        )
+        self.db.add(profile)
+        self.db.commit()
+        self.db.refresh(core)
+        return _augment_core_with_manifest(core, manifest), True
     
     def get_active_profile(self, core_id: int) -> Optional[CharacterProfile]:
         """
@@ -552,6 +620,36 @@ class CharacterService:
             ],
             "branches": branches,
         }
+
+    def get_age_gallery(
+        self,
+        character_id: int,
+        *,
+        age_start: int = 1,
+        age_end: int = 80,
+    ) -> dict[str, Any]:
+        """依歲數列出面部／T 型資產路徑，供點選預覽。"""
+        from characteros.services.age_gallery import build_age_gallery
+
+        full = self.get_character_by_id(character_id)
+        profile = full.profile
+        manifest = profile.manifest if profile and isinstance(profile.manifest, dict) else {}
+        meta = manifest.get("_meta") if isinstance(manifest.get("_meta"), dict) else {}
+        identity = manifest.get("_identity") if isinstance(manifest.get("_identity"), dict) else {}
+        entity_id = str(
+            meta.get("entity_id")
+            or identity.get("entity_id")
+            or full.core.codename
+            or f"character-{full.core.name}"
+        ).strip()
+        folder = CharpassStore().entity_dir(entity_id)
+        return build_age_gallery(
+            folder,
+            character_id=character_id,
+            character_name=full.core.name if full and full.core else None,
+            age_start=age_start,
+            age_end=age_end,
+        )
 
     def update_character_editor(
         self,

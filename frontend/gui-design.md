@@ -1,7 +1,7 @@
 # GUI 第一版設計（文件版）
 
 > 對應白皮書用戶層 §2.1：`Pad -> Timeline -> Dashboard -> Map -> Player`。
-> 本文件只定義畫面布局與互動邏輯；不落地 React/Vue 專案。
+> 本文件定義畫面布局與互動邏輯。可執行實作：`frontend/webapp/` 與 `characteros/static/`。
 
 ## 1. 全域布局（App Shell）
 

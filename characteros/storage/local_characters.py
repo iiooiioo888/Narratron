@@ -25,10 +25,57 @@ from characteros.services.branch_summary import (
     strip_final_asset_path_from_branch,
     summary_images_from_payload as _summary_images_from_payload,
 )
-from narratron.charpass.schema import LOCAL_CURRENT_FILE, strip_local_sidecar
+from narratron.charpass.schema import LOCAL_CURRENT_FILE, empty_manifest_dict, strip_local_sidecar
 from narratron.charpass.store import CharpassStore, sidecar_manifest
 
 INDEX_FILENAME = ".characteros-index.json"
+
+
+def _names_match(left: str, right: str) -> bool:
+    a = str(left or "").strip()
+    b = str(right or "").strip()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    return a.isascii() and b.isascii() and a.lower() == b.lower()
+
+
+def entity_id_from_name(name: str) -> str:
+    cleaned = "".join(ch for ch in str(name or "").strip() if ch not in {"/", "\\", ":", "\0"})
+    cleaned = " ".join(cleaned.split())
+    if not cleaned:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="角色名稱不可為空")
+    return f"character-{cleaned[:200]}"
+
+
+def _seed_passport_manifest(
+    name: str,
+    entity_id: str,
+    *,
+    base_age: int = 25,
+    gender_spectrum: float | None = None,
+    tags: list[str] | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    manifest = empty_manifest_dict()
+    meta = manifest.setdefault("_meta", {})
+    identity = manifest.setdefault("_identity", {})
+    meta["character_name"] = name
+    meta["entity_id"] = entity_id
+    meta["created_at"] = now
+    meta["updated_at"] = now
+    if tags:
+        meta["tags"] = list(tags)
+    if notes:
+        meta["notes"] = notes
+    identity["name"] = name
+    identity["entity_id"] = entity_id
+    identity["age_appearance"] = str(base_age)
+    if gender_spectrum is not None:
+        identity["gender_spectrum"] = gender_spectrum
+    return manifest
 
 
 def _parse_dt(value: Any) -> datetime:
@@ -80,6 +127,97 @@ def _summary_images_from_manifest(manifest: dict[str, Any]) -> list[dict[str, An
             }
         )
     return images
+
+
+def _asset_exists(folder: Path, relative: str | None) -> bool:
+    rel = str(relative or "").strip().replace("\\", "/").lstrip("/")
+    if not rel or ".." in rel.split("/"):
+        return False
+    return (folder / Path(rel)).is_file()
+
+
+def _paths_from_age_span(manifest: dict[str, Any]) -> list[str]:
+    extensions = manifest.get("_extensions") if isinstance(manifest.get("_extensions"), dict) else {}
+    image_gen = extensions.get("image_gen") if isinstance(extensions.get("image_gen"), dict) else {}
+    age_span = image_gen.get("age_span") if isinstance(image_gen.get("age_span"), dict) else {}
+    paths: list[str] = []
+    for bucket_name in ("faces", "tposes"):
+        bucket = age_span.get(bucket_name)
+        if not isinstance(bucket, dict):
+            continue
+        for key in sorted(bucket.keys(), key=lambda item: str(item)):
+            entry = bucket.get(key)
+            if isinstance(entry, dict):
+                for field in ("asset_path", "path", "face_detail_asset_path", "thumbnail_asset_path"):
+                    path = str(entry.get(field) or "").strip()
+                    if path:
+                        paths.append(path)
+                        break
+            elif isinstance(entry, str) and entry.strip():
+                paths.append(entry.strip())
+    return paths
+
+
+def _scan_asset_pngs(folder: Path) -> list[str]:
+    assets = folder / "assets"
+    if not assets.is_dir():
+        return []
+    preferred: list[str] = []
+    others: list[str] = []
+    for path in sorted(assets.rglob("*.png"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            rel = path.relative_to(folder).as_posix()
+        except ValueError:
+            continue
+        if "face_detail" in rel:
+            preferred.append(rel)
+        else:
+            others.append(rel)
+    return preferred + others
+
+
+def resolve_preview_asset_paths(folder: Path, manifest: dict[str, Any]) -> tuple[str | None, str | None]:
+    """回傳實際存在於角色目錄的 (face_detail, thumbnail) 路徑。"""
+    meta = manifest.get("_meta") if isinstance(manifest.get("_meta"), dict) else {}
+    identity = manifest.get("_identity") if isinstance(manifest.get("_identity"), dict) else {}
+    refs = identity.get("ref_images") if isinstance(identity.get("ref_images"), list) else []
+
+    face_from_refs = _first_ref_path(refs, "face_detail")
+    thumb_from_refs = _first_ref_path(
+        refs,
+        "face_detail",
+        "front",
+        "three_quarter",
+        "left",
+        "right",
+        "back",
+        "top",
+        "bottom",
+    )
+    meta_thumb = str(meta.get("thumbnail") or "").strip() or None
+
+    candidates: list[str] = []
+    for path in (
+        face_from_refs,
+        thumb_from_refs,
+        meta_thumb,
+        *_paths_from_age_span(manifest),
+        *_scan_asset_pngs(folder),
+    ):
+        if path and path not in candidates:
+            candidates.append(path)
+
+    existing = [path for path in candidates if _asset_exists(folder, path)]
+    if not existing:
+        return None, None
+
+    face = next((path for path in existing if "face_detail" in path), existing[0])
+    thumb = face
+    if meta_thumb and _asset_exists(folder, meta_thumb):
+        thumb = meta_thumb
+    elif thumb_from_refs and _asset_exists(folder, thumb_from_refs):
+        thumb = thumb_from_refs
+    return face, thumb
 
 
 def _branch_quality_score(branch: dict[str, Any]) -> tuple[int, int, int]:
@@ -266,10 +404,11 @@ class LocalCharacterService:
         return data
 
     def _save_index(self, index: dict[str, Any]) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
-        self._index_path.write_text(
+        from characteros.utils.files import write_text_atomic
+
+        write_text_atomic(
+            self._index_path,
             json.dumps(index, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
 
     def _discover_entity_ids(self) -> list[str]:
@@ -385,22 +524,18 @@ class LocalCharacterService:
             "tags",
         ):
             metadata.pop(key, None)
-        thumbnail_asset_path = str(meta.get("thumbnail") or "").strip() or _first_ref_path(
-            identity_refs,
-            "face_detail",
-            "front",
-            "three_quarter",
-            "left",
-            "right",
-            "back",
-            "top",
-            "bottom",
-        )
-        face_detail_asset_path = _first_ref_path(identity_refs, "face_detail")
+        folder = self.store.entity_dir(entity_id)
+        face_detail_asset_path, thumbnail_asset_path = resolve_preview_asset_paths(folder, manifest)
         if thumbnail_asset_path:
             metadata["thumbnail_asset_path"] = thumbnail_asset_path
+            metadata["thumbnail"] = thumbnail_asset_path
+        else:
+            metadata.pop("thumbnail_asset_path", None)
+            metadata.pop("thumbnail", None)
         if face_detail_asset_path:
             metadata["face_detail_asset_path"] = face_detail_asset_path
+        else:
+            metadata.pop("face_detail_asset_path", None)
 
         return CharacterCoreResponse(
             id=character_id,
@@ -464,14 +599,73 @@ class LocalCharacterService:
 
     def _write_manifest_json(self, entity_id: str, manifest: dict[str, Any]) -> None:
         """直接寫入 L0 JSON，略過 ZIP 打包（離線測試用）。"""
+        from characteros.utils.files import write_text_atomic
+
         folder = self.store.entity_dir(entity_id)
         folder.mkdir(parents=True, exist_ok=True)
         cleaned = strip_local_sidecar(dict(manifest))
         path = folder / LOCAL_CURRENT_FILE
-        path.write_text(
+        write_text_atomic(
+            path,
             json.dumps(sidecar_manifest(cleaned), ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
+
+    def _find_character_by_name(self, name: str) -> CharacterCoreResponse | None:
+        target = str(name or "").strip()
+        if not target:
+            return None
+        listed = self.list_characters(skip=0, limit=100)
+        for item in listed["items"]:
+            if _names_match(item.name, target):
+                return item
+        entity_id = entity_id_from_name(target)
+        folder_name = self.store.entity_dir(entity_id).name
+        index = self._sync_index(self._load_index())
+        reverse = index.get("reverse") or {}
+        cid = reverse.get(folder_name) or reverse.get(entity_id)
+        if cid is None:
+            return None
+        return self.get_character_by_id(int(cid)).core
+
+    def ensure_character(
+        self,
+        name: str,
+        *,
+        base_age: int = 25,
+        gender_spectrum: Optional[float] = None,
+        tags: Optional[list[str]] = None,
+        notes: Optional[str] = None,
+    ) -> tuple[CharacterCoreResponse, bool]:
+        cleaned = str(name or "").strip()
+        if not cleaned:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="角色名稱不可為空")
+
+        existing = self._find_character_by_name(cleaned)
+        if existing:
+            return existing, False
+
+        entity_id = entity_id_from_name(cleaned)
+        folder = self.store.entity_dir(entity_id)
+        current = folder / LOCAL_CURRENT_FILE
+        if current.is_file():
+            index = self._sync_index(self._load_index())
+            self._save_index(index)
+            cid = int((index.get("reverse") or {})[folder.name])
+            return self.get_character_by_id(cid).core, False
+
+        manifest = _seed_passport_manifest(
+            cleaned,
+            folder.name,
+            base_age=base_age,
+            gender_spectrum=gender_spectrum,
+            tags=tags,
+            notes=notes,
+        )
+        self.store.write_manifest(entity_id, manifest, snapshot_history=False)
+        index = self._sync_index(self._load_index())
+        self._save_index(index)
+        cid = int((index.get("reverse") or {})[folder.name])
+        return self.get_character_by_id(cid).core, True
 
     def list_characters(
         self,
@@ -685,6 +879,27 @@ class LocalCharacterService:
             "history": history_items,
             "branches": branches,
         }
+
+    def get_age_gallery(
+        self,
+        character_id: int,
+        *,
+        age_start: int = 1,
+        age_end: int = 80,
+    ) -> dict[str, Any]:
+        """依歲數列出面部／T 型資產路徑，供點選預覽。"""
+        from characteros.services.age_gallery import build_age_gallery
+
+        entity_id = self._entity_id_for(character_id)
+        folder = self.store.entity_dir(entity_id)
+        full = self.get_character_by_id(character_id)
+        return build_age_gallery(
+            folder,
+            character_id=character_id,
+            character_name=full.core.name if full and full.core else None,
+            age_start=age_start,
+            age_end=age_end,
+        )
 
     def update_character_editor(
         self,

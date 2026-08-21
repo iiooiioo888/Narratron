@@ -3,1209 +3,406 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Narratron — AI 影視級因果敘事生成平台</title>
-  <style>
-    :root {
-      --bg: #0b0b10; --surface: #141419; --card: #1a1a22; --border: #2a2a35;
-      --text: #e5e7eb; --muted: #9ca3af; --accent: #6366f1; --accent2: #818cf8;
-      --green: #34d399; --yellow: #fbbf24; --red: #f87171; --blue: #60a5fa;
-      --radius: 12px; --shadow: 0 2px 12px rgba(0,0,0,.4);
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
-    a { color: var(--accent2); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    /* ── Nav ── */
-    nav { position: sticky; top: 0; z-index: 100; background: rgba(11,11,16,.92); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); padding: 0 24px; }
-    nav .inner { max-width: 1280px; margin: 0 auto; display: flex; align-items: center; height: 56px; gap: 24px; }
-    nav .brand { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; color: #fff; display: flex; align-items: center; gap: 8px; }
-    nav .brand span { color: var(--accent); }
-    nav .links { display: flex; gap: 4px; overflow-x: auto; }
-    nav .links a { padding: 6px 12px; border-radius: 8px; font-size: 13px; color: var(--muted); white-space: nowrap; transition: all .15s; }
-    nav .links a:hover, nav .links a.active { color: #fff; background: rgba(99,102,241,.15); text-decoration: none; }
-    nav .health-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-left: auto; }
-
-    /* ── Sections ── */
-    section { max-width: 1280px; margin: 0 auto; padding: 48px 24px; }
-    section.hidden { display: none; }
-    h1 { font-size: 42px; font-weight: 800; letter-spacing: -1px; margin-bottom: 12px; }
-    h2 { font-size: 28px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
-    h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
-    .subtitle { font-size: 18px; color: var(--muted); margin-bottom: 32px; max-width: 640px; }
-
-    /* ── Hero ── */
-    .hero { text-align: center; padding: 80px 24px 60px; }
-    .hero h1 { font-size: 56px; background: linear-gradient(135deg, #818cf8, #c084fc, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .hero .slogan { font-size: 22px; color: var(--muted); font-style: italic; margin: 16px 0 32px; }
-    .hero .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-    .btn { padding: 12px 24px; border-radius: 10px; border: 0; font-size: 15px; font-weight: 600; cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 8px; }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-primary:hover { background: var(--accent2); text-decoration: none; }
-    .btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
-    .btn-secondary:hover { border-color: var(--accent); text-decoration: none; }
-    .btn-sm { padding: 8px 16px; font-size: 13px; }
-
-    /* ── Feature Grid ── */
-    .feature-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; margin-top: 32px; }
-    .feature-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; transition: all .2s; cursor: pointer; position: relative; overflow: hidden; }
-    .feature-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow); }
-    .feature-card .icon { font-size: 36px; margin-bottom: 12px; }
-    .feature-card h3 { font-size: 18px; margin-bottom: 6px; }
-    .feature-card p { font-size: 14px; color: var(--muted); line-height: 1.55; }
-    .feature-card .badge { position: absolute; top: 12px; right: 12px; font-size: 11px; padding: 3px 8px; border-radius: 999px; font-weight: 600; }
-    .badge-live { background: rgba(52,211,153,.15); color: var(--green); }
-    .badge-soon { background: rgba(251,191,36,.15); color: var(--yellow); }
-    .badge-future { background: rgba(156,163,175,.15); color: var(--muted); }
-
-    /* ── GUI Panel ── */
-    .gui-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-top: 24px; }
-    .gui-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
-    .gui-header h2 { margin-bottom: 0; }
-    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-    .form-row.full { grid-template-columns: 1fr; }
-    .form-group { display: flex; flex-direction: column; gap: 4px; }
-    .form-group label { font-size: 13px; font-weight: 600; color: var(--muted); }
-    .form-group .hint { font-size: 11px; color: #6b7280; }
-    input, select, textarea { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 14px; font-family: inherit; transition: border-color .15s; }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
-    textarea { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; }
-    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-
-    /* ── Output ── */
-    .output-box { background: #111827; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 16px; max-height: 480px; overflow: auto; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; color: #d1d5db; }
-    .output-box:empty::before { content: '等待操作…'; color: #4b5563; font-style: italic; }
-
-    /* ── Status Bar ── */
-    .status-bar { font-size: 13px; padding: 8px 0; min-height: 28px; }
-    .status-bar.ok { color: var(--green); }
-    .status-bar.err { color: var(--red); }
-    .status-bar.loading { color: var(--yellow); }
-
-    /* ── Stat Chips ── */
-    .stat-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-    .stat-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); font-size: 13px; }
-    .stat-chip .num { font-weight: 700; font-size: 16px; }
-
-    /* ── Character List ── */
-    .char-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
-    .char-item { padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; display: flex; align-items: center; gap: 12px; transition: background .1s; }
-    .char-item:last-child { border-bottom: 0; }
-    .char-item:hover { background: rgba(99,102,241,.08); }
-    .char-item.active { background: rgba(99,102,241,.15); border-left: 3px solid var(--accent); }
-    .char-item .thumb { width: 44px; height: 44px; border-radius: 8px; background: var(--border); display: grid; place-items: center; font-size: 11px; color: var(--muted); overflow: hidden; flex-shrink: 0; }
-    .char-item .thumb img { width: 100%; height: 100%; object-fit: cover; }
-    .char-item .info { min-width: 0; }
-    .char-item .info strong { display: block; font-size: 14px; }
-    .char-item .info span { font-size: 12px; color: var(--muted); }
-
-    /* ── Queue Table ── */
-    .queue-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; max-height: 400px; overflow-y: auto; }
-    table.queue { width: 100%; border-collapse: collapse; font-size: 13px; }
-    table.queue th, table.queue td { padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; }
-    table.queue th { background: var(--surface); position: sticky; top: 0; z-index: 1; font-weight: 600; color: var(--muted); }
-    table.queue tr:hover td { background: rgba(99,102,241,.04); }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-    .badge-pending { background: rgba(251,191,36,.15); color: var(--yellow); }
-    .badge-ready { background: rgba(52,211,153,.15); color: var(--green); }
-    .badge-failed { background: rgba(248,113,113,.15); color: var(--red); }
-    .badge-accepted { background: rgba(96,165,250,.15); color: var(--blue); }
-    .badge-waiting { background: rgba(156,163,175,.15); color: var(--muted); }
-
-    /* ── Preview Grid ── */
-    .preview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 16px; }
-    .preview-card { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--card); }
-    .preview-card img { width: 100%; height: 160px; object-fit: cover; display: block; background: var(--border); }
-    .preview-card .caption { padding: 8px; font-size: 12px; color: var(--muted); }
-
-    /* ── Graph ── */
-    .graph-container { background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 16px; }
-    .graph-container iframe { width: 100%; height: 560px; border: 0; }
-
-    /* ── Timeline ── */
-    .timeline { position: relative; padding-left: 24px; }
-    .timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--border); }
-    .timeline-item { position: relative; margin-bottom: 16px; padding: 12px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
-    .timeline-item::before { content: ''; position: absolute; left: -20px; top: 16px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); }
-    .timeline-item .camera { font-weight: 600; color: var(--accent2); }
-    .timeline-item .beat { font-size: 13px; color: var(--muted); margin-top: 4px; }
-
-    /* ── Inspector ── */
-    .inspector { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 16px; }
-    .inspector pre { font-size: 12px; max-height: 300px; overflow: auto; }
-
-    /* ── Responsive ── */
-    @media (max-width: 768px) {
-      .hero h1 { font-size: 36px; }
-      .feature-grid { grid-template-columns: 1fr; }
-      .form-row { grid-template-columns: 1fr; }
-      nav .links { display: none; }
-    }
-
-    /* ── Tabs ── */
-    .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
-    .tabs button { background: none; border: none; color: var(--muted); padding: 8px 16px; font-size: 14px; cursor: pointer; border-bottom: 2px solid transparent; transition: all .15s; }
-    .tabs button.active { color: var(--accent2); border-bottom-color: var(--accent); }
-    .tabs button:hover { color: var(--text); }
-
-    /* ── Loading Spinner ── */
-    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-  </style>
+  <title>Narratron — Pad → Timeline → Dashboard → Map → Player</title>
+  <link rel="stylesheet" href="/static/css/gui.css" />
 </head>
 <body>
-
-<!-- ════════════════ Navigation ════════════════ -->
-<nav>
-  <div class="inner">
-    <div class="brand">🎬 <span>Narratron</span></div>
-    <div class="links" id="navLinks">
-      <a href="#home" class="active" data-page="home">首頁</a>
-      <a href="#parse" data-page="parse">劇本解析</a>
-      <a href="#direct" data-page="direct">分鏡調度</a>
-      <a href="#characters" data-page="characters">角色管理</a>
-      <a href="#imaging" data-page="imaging">生圖管線</a>
-      <a href="#queue" data-page="queue">佇列中心</a>
-      <a href="#graph" data-page="graph">因果圖</a>
-      <a href="#monitor" data-page="monitor">系統監控</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <p class="eyebrow">Narratron</p>
+      <h1>敘事體</h1>
+      <p>Every Frame Carries Its Past.</p>
     </div>
-    <div class="health-dot" id="healthDot" title="系統狀態"></div>
-  </div>
-</nav>
 
-<!-- ════════════════ HOME ════════════════ -->
-<section id="page-home">
-  <div class="hero">
-    <h1>Narratron</h1>
-    <p class="slogan">Every Frame Carries Its Past.</p>
-    <p class="subtitle">AI 影視級因果敘事生成平台。每一幀畫面都背負導致當前狀態的全部前因——生成的不是快照，而是因果壓縮包。</p>
-    <div class="cta-row">
-      <a href="#parse" class="btn btn-primary" onclick="navigate('parse')">🎬 開始解析劇本</a>
-      <a href="#characters" class="btn btn-secondary" onclick="navigate('characters')">👤 管理角色</a>
-      <a href="#queue" class="btn btn-secondary" onclick="navigate('queue')">📊 佇列中心</a>
+    <div class="nav-group">
+      <p class="nav-label">用戶層流程</p>
+      <button class="nav-item" data-page="Pad" type="button">
+        <span class="nav-step">1</span>
+        <span class="nav-copy"><span class="code">Pad</span><span class="zh">寫劇本</span></span>
+        <span class="nav-hint" data-hint="Pad"></span>
+      </button>
+      <button class="nav-item" data-page="Timeline" type="button">
+        <span class="nav-step">2</span>
+        <span class="nav-copy"><span class="code">Timeline</span><span class="zh">看分鏡</span></span>
+        <span class="nav-hint" data-hint="Timeline"></span>
+      </button>
+      <button class="nav-item" data-page="Dashboard" type="button">
+        <span class="nav-step">3</span>
+        <span class="nav-copy"><span class="code">Dashboard</span><span class="zh">角色與生圖</span></span>
+        <span class="nav-hint" data-hint="Dashboard"></span>
+      </button>
+      <button class="nav-item" data-page="Map" type="button">
+        <span class="nav-step">4</span>
+        <span class="nav-copy"><span class="code">Map</span><span class="zh">因果圖</span></span>
+        <span class="nav-hint" data-hint="Map"></span>
+      </button>
+      <button class="nav-item" data-page="Player" type="button">
+        <span class="nav-step">5</span>
+        <span class="nav-copy"><span class="code">Player</span><span class="zh">播放</span></span>
+        <span class="nav-hint" data-hint="Player"></span>
+      </button>
     </div>
-  </div>
+    <div class="journey-box" id="journeyBox">
+      <p class="nav-label">接下來</p>
+      <p class="journey-copy" id="journeyCopy">在 Pad 寫劇本，按 Direct 拆分鏡。</p>
+      <button class="btn btn-primary btn-sm" id="journeyBtn" type="button" onclick="goRecommended()">開始寫板</button>
+    </div>
 
-  <section>
-    <h2>🚀 核心功能</h2>
-    <div class="feature-grid">
-      <div class="feature-card" onclick="navigate('parse')">
-        <span class="badge badge-live">Alpha Q1</span>
-        <div class="icon">📝</div>
-        <h3>劇本解析 Parser</h3>
-        <p>讀取劇本，自動提取角色、道具、場景實體，初始化 State Vault 與 Trace Log 因果記錄。</p>
-      </div>
-      <div class="feature-card" onclick="navigate('direct')">
-        <span class="badge badge-live">Alpha Q1</span>
-        <div class="icon">🎬</div>
-        <h3>分鏡調度 Director</h3>
-        <p>將故事拆解為分鏡，自動決定鏡頭語言（全景/特寫/跟拍）與時序節奏，寫入因果鏈。</p>
-      </div>
-      <div class="feature-card" onclick="navigate('characters')">
-        <span class="badge badge-live">Sprint 1</span>
-        <div class="icon">👤</div>
-        <h3>角色管理 CharacterOS</h3>
-        <p>角色護照 (.charpass) 全生命週期管理：建立、編輯、版本控制、風格設定。</p>
-      </div>
-      <div class="feature-card" onclick="navigate('imaging')">
-        <span class="badge badge-live">Sprint 1</span>
-        <div class="icon">🎨</div>
-        <h3>生圖管線 Imaging</h3>
-        <p>可插拔的第三方 AI 生圖：支援 WAN（阿里百煉）、OpenAI 相容、自訂 HTTP webhook。</p>
-      </div>
-      <div class="feature-card" onclick="navigate('queue')">
-        <span class="badge badge-live">Sprint 1</span>
-        <div class="icon">📊</div>
-        <h3>佇列中心 Queue</h3>
-        <p>年齡軸 pipeline：1–80 歲逐步生圖，一次一張，完成自動入庫再接下一步。</p>
-      </div>
-      <div class="feature-card" onclick="navigate('graph')">
-        <span class="badge badge-live">Alpha Q1</span>
-        <div class="icon">🕸️</div>
-        <h3>因果圖 Causal Graph</h3>
-        <p>視覺化 Trace Log 因果鏈：實體 → 痕跡 → 分鏡的有向圖，支援互動式探索。</p>
-      </div>
-      <div class="feature-card">
-        <span class="badge badge-soon">Alpha Q2</span>
-        <div class="icon">🛡️</div>
-        <h3>守護器 Keeper</h3>
-        <p>因果鏈驗證與連續性檢查，確保每一幀的傷痕、道具、服裝邏輯一致。</p>
-      </div>
-      <div class="feature-card">
-        <span class="badge badge-future">Alpha Q3</span>
-        <div class="icon">🎥</div>
-        <h3>執行器 Runner</h3>
-        <p>呼叫影片生成模型（Wan2.1 / LTX），將分鏡序列渲染為實際影片片段。</p>
-      </div>
-      <div class="feature-card">
-        <span class="badge badge-future">Alpha Q4</span>
-        <div class="icon">🎞️</div>
-        <h3>合流器 Muxer</h3>
-        <p>將多個鏡頭片段合成為連貫的完整影片，自動處理轉場與音訊同步。</p>
+    <div class="sidebar-foot">
+      <a class="nav-item" href="/admin/panel"><span class="code">管理面板</span><span class="zh">進階後台</span></a>
+      <div class="health-row">
+        <span class="health-dot" id="healthDot" title="系統狀態"></span>
+        <span id="healthLabel">檢查中…</span>
       </div>
     </div>
-  </section>
+  </aside>
 
-  <section>
-    <h2>📐 架構總覽</h2>
-    <div class="form-row full">
-      <div class="gui-section" style="margin-top:0">
-        <pre style="font-size:13px;line-height:1.7;color:var(--muted);">
-<span style="color:var(--accent2)">劇本輸入</span> → <span style="color:var(--green)">Parser</span>（提取實體 + 因果記錄）
-                ↓
-        <span style="color:var(--green)">Director</span>（分鏡 + 鏡頭語言）
-                ↓
-   ┌──────────┼──────────┐
-   ↓          ↓          ↓
-<span style="color:var(--yellow)">State Vault</span>  <span style="color:var(--yellow)">Trace Log</span>  <span style="color:var(--yellow)">Chroma/Redis</span>
-   ↓          ↓          ↓
-   └──────────┼──────────┘
-              ↓
-<span style="color:var(--blue)">CharacterOS</span> → <span style="color:var(--blue)">Imaging Pipeline</span> → <span style="color:var(--blue)">Queue Worker</span>
-              ↓
-       <span style="color:var(--muted)">（Keeper → Runner → Muxer）</span>
-              ↓
-        <span style="color:var(--accent2)">最終影片輸出</span>
-        </pre>
+  <div class="workspace">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow" id="topPhase">Alpha Q1</p>
+        <h2 id="topTitle">Narratron</h2>
+        <p class="muted" id="topSubtitle">Pad → Timeline → Dashboard → Map → Player</p>
       </div>
-    </div>
-  </section>
-</section>
+      <div class="status-strip" id="topPills"></div>
+    </header>
+    <div id="errorBanner" class="error-banner hidden"></div>
+    <div id="noticeBanner" class="notice-banner hidden"></div>
 
-<!-- ════════════════ PARSE ════════════════ -->
-<section id="page-parse" class="hidden">
-  <div class="gui-section">
-    <div class="gui-header">
-      <h2>📝 劇本解析 Parser</h2>
-      <span class="badge badge-live">Alpha Q1 · 已完成</span>
-    </div>
-    <p style="color:var(--muted);margin-bottom:16px;font-size:14px;">
-      貼上劇本文字，Parser 會自動提取角色、道具、場景實體，初始化 State Vault 並記錄因果鏈。
-      支援中英文混合劇本、場景標記（INT./EXT.）、角色列表、參考圖 URI 等格式。
-    </p>
-    <div class="form-row full">
-      <div class="form-group">
-        <label>劇本內容</label>
-        <div class="hint">支援格式：場景標記 (INT./EXT.)、角色/道具/場景區塊、參考圖 ![alt](url)、中文對話格式</div>
-        <textarea id="parseScript" rows="12" placeholder="INT. 廢棄工廠 — 夜
+    <div class="workspace-body inspector-collapsed">
+      <main>
+        <section id="page-Pad" class="page">
+          <div class="panel">
+            <div class="section-header">
+              <div>
+                <h2>Pad</h2>
+                <p class="muted">寫板是唯一可寫入口。日常請用 Direct：會一併解析實體並拆分鏡。</p>
+              </div>
+              <span class="pill pill-accent">步驟 1 / 5</span>
+            </div>
+            <ol class="flow-steps">
+              <li class="active">寫劇本</li>
+              <li>Direct 拆分鏡</li>
+              <li>角色護照</li>
+              <li>生圖佇列</li>
+              <li>播放</li>
+            </ol>
+            <div class="form-group">
+              <label>劇本內容</label>
+              <div class="hint">空內容禁用送出；上限 20,000 字。不直接改 State Vault。</div>
+              <textarea id="padScript" rows="14" placeholder="INT. 廢棄工廠 — 夜
 
 角色
 - 卡爾（傷疤覆蓋左臉，手持鏽蝕鐵棍）
 - 艾拉（繃帶纏繞右臂）
 
-場景
-- 廢棄工廠：昏暗的燈光，地面散落碎玻璃
-
-卡爾：我們必須在天亮前離開這裡。
-艾拉：（點頭）跟我來，我知道一條路。"></textarea>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label><input type="checkbox" id="parsePersist" checked style="width:auto;margin-right:6px;"> Persist（寫入 State Vault）</label>
-      </div>
-    </div>
-    <div class="btn-row">
-      <button class="btn btn-primary" onclick="runParse()">▶ 執行解析</button>
-      <button class="btn btn-secondary btn-sm" onclick="loadSampleScript()">載入範例劇本</button>
-    </div>
-    <div class="status-bar" id="parseStatus"></div>
-    <h3 style="margin-top:16px;">解析結果</h3>
-    <div class="stat-row" id="parseStats"></div>
-    <div class="output-box" id="parseOutput"></div>
-  </div>
-</section>
-
-<!-- ════════════════ DIRECT ════════════════ -->
-<section id="page-direct" class="hidden">
-  <div class="gui-section">
-    <div class="gui-header">
-      <h2>🎬 分鏡調度 Director</h2>
-      <span class="badge badge-live">Alpha Q1 · 已完成</span>
-    </div>
-    <p style="color:var(--muted);margin-bottom:16px;font-size:14px;">
-      將劇本拆解為分鏡序列，自動決定每個 shot 的鏡頭語言（全景/特寫/跟拍/過肩）與持續時間。
-      Director 會先呼叫 Parser 提取實體，再進行分鏡拆解。
-    </p>
-    <div class="form-row full">
-      <div class="form-group">
-        <label>劇本內容</label>
-        <div class="hint">Director = Parser + 分鏡拆解。輸入完整劇本即可自動完成全流程。</div>
-        <textarea id="directScript" rows="12" placeholder="INT. 廢棄工廠 — 夜
-
-角色
-- 卡爾（傷疤覆蓋左臉，手持鏽蝕鐵棍）
-- 艾拉（繃帶纏繞右臂）
-
-卡爾：我們必須在天亮前離開這裡。
-艾拉：（點頭）跟我來，我知道一條路。
-
-EXT. 街道 — 日
-兩人快速穿過空無一人的街道。"></textarea>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label><input type="checkbox" id="directPersist" checked style="width:auto;margin-right:6px;"> Persist（寫入 State Vault）</label>
-      </div>
-    </div>
-    <div class="btn-row">
-      <button class="btn btn-primary" onclick="runDirect()">▶ 執行分鏡調度</button>
-      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('directScript').value=document.getElementById('parseScript').value||''">從解析區複製劇本</button>
-    </div>
-    <div class="status-bar" id="directStatus"></div>
-
-    <h3 style="margin-top:20px;">分鏡時間軸</h3>
-    <div class="timeline" id="directTimeline"></div>
-
-    <h3 style="margin-top:20px;">完整輸出</h3>
-    <div class="output-box" id="directOutput"></div>
-  </div>
-</section>
-
-<!-- ════════════════ CHARACTERS ════════════════ -->
-<section id="page-characters" class="hidden">
-  <div class="gui-section">
-    <div class="gui-header">
-      <h2>👤 角色管理 CharacterOS</h2>
-      <span class="badge badge-live">Sprint 1</span>
-    </div>
-    <div class="form-row">
-      <div>
-        <label>角色清單</label>
-        <input id="charSearch" placeholder="搜尋角色名稱…" oninput="filterCharacters()" style="margin-bottom:8px;" />
-        <div class="char-list" id="charList"><div style="padding:16px;color:var(--muted);text-align:center;">載入中…</div></div>
-        <div class="status-bar" id="charListStatus"></div>
-      </div>
-      <div>
-        <label>角色編輯器</label>
-        <div class="form-group" style="margin-bottom:8px;">
-          <div id="charIdDisplay" style="padding:8px 12px;background:var(--card);border-radius:8px;font-family:monospace;font-size:14px;color:var(--muted);">尚未選擇角色</div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>名稱</label>
-            <input id="charName" placeholder="角色名稱" />
+卡爾：我們必須在天亮前離開這裡。"></textarea>
+              <div class="hint" id="padCount">0 / 20000</div>
+            </div>
+            <div class="form-row">
+              <label class="muted"><input type="checkbox" id="padPersist" checked style="width:auto;margin-right:6px;"> persist（寫入 State Vault）</label>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary" id="btnDirect" type="button" onclick="runDirect()" disabled>Direct 拆分鏡</button>
+              <button class="btn btn-secondary" id="btnParse" type="button" onclick="runParse()" disabled>僅 Parse</button>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="loadSampleScript()">載入範例</button>
+            </div>
+            <p class="hint">Direct 已含 Parser。只有要先確認實體、暫不拆分鏡時才用「僅 Parse」。</p>
+            <div class="status-bar" id="padStatus"></div>
+            <div class="stat-row" id="padStats"></div>
+            <div id="padNext"></div>
+            <details class="json-fold">
+              <summary>原始 JSON</summary>
+              <div class="output-box" id="padOutput"></div>
+            </details>
           </div>
-          <div class="form-group">
-            <label>基準年齡</label>
-            <input id="charAge" type="number" min="0" max="150" placeholder="28" />
+        </section>
+
+        <section id="page-Timeline" class="page hidden">
+          <div class="panel">
+            <div class="section-header">
+              <div>
+                <h2>Timeline</h2>
+                <p class="muted">依 shot 順序檢視 Director 輸出。本階段只讀。</p>
+              </div>
+              <span class="pill" id="timelineCount">0 shots</span>
+            </div>
+            <p class="readonly-notice">此畫面為只讀資料，來源是 State Vault 的 shots。</p>
+            <div id="timelineNext"></div>
+            <div id="timelineEmpty" class="empty-state">目前沒有 shots。請先在 Pad 按「Direct 拆分鏡」。</div>
+            <div class="content-grid hidden" id="timelineGrid">
+              <div class="timeline" id="timelineList"></div>
+              <div class="shot-human" id="timelineDetail">選擇一個 shot。</div>
+            </div>
           </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>性別光譜 (0–1)</label>
-            <input id="charGender" type="number" min="0" max="1" step="0.1" placeholder="0.5" />
+        </section>
+
+        <section id="page-Dashboard" class="page hidden">
+          <div class="panel">
+            <div class="section-header">
+              <div>
+                <h2>Dashboard</h2>
+                <p class="muted">專案級總覽。角色護照、生圖、佇列都在此子面板，不另開用戶層畫面。</p>
+              </div>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="refreshDashboard()">Refresh</button>
+            </div>
+            <div class="tabs" id="dashTabs">
+              <button class="active" type="button" data-tab="overview" onclick="setDashTab('overview')">總覽</button>
+              <button type="button" data-tab="characters" onclick="setDashTab('characters')">角色護照</button>
+              <button type="button" data-tab="imaging" onclick="setDashTab('imaging')">生圖</button>
+              <button type="button" data-tab="queue" onclick="setDashTab('queue')">佇列</button>
+              <button type="button" data-tab="monitor" onclick="setDashTab('monitor')">監控</button>
+            </div>
+            <div id="genLive" class="gen-live hidden"></div>
+
+            <div id="dash-overview">
+              <p class="readonly-notice">角色護照、生圖、佇列都在此子面板，不是第六個用戶層畫面。</p>
+              <div class="next-grid" id="dashNext"></div>
+              <div class="metrics-grid" id="dashMetrics"></div>
+              <details class="json-fold">
+                <summary>算力池與外掛（進階）</summary>
+                <h3 style="margin:18px 0 10px;">算力池（只讀，不得自創池名）</h3>
+                <div class="pool-grid" id="dashPools"></div>
+                <h3 style="margin:18px 0 10px;">外掛觸發摘要</h3>
+                <div class="plugin-grid" id="dashPlugins"></div>
+                <h3 style="margin:18px 0 10px;">KPI 預留 · 連續性誤差</h3>
+                <div class="metric-card">
+                  <span>continuity_error</span>
+                  <strong id="dashKpi">—</strong>
+                  <p class="muted" style="margin-top:8px;font-size:12px;">Keeper（Alpha Q2）尚未回傳此欄位。面板先佔位，不發明數值。</p>
+                </div>
+              </details>
+            </div>
+
+            <div id="dash-characters" class="hidden">
+              <div class="toolbar-row">
+                <input id="newCharName" placeholder="新角色名稱，例如 卡爾" />
+                <button class="btn btn-primary btn-sm" type="button" onclick="createCharacterFromForm()">新增角色</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="syncParsedCharacters()">從劇本同步</button>
+              </div>
+              <p class="hint" id="charSyncHint">Direct 之後可把解析到的角色寫進護照，再去生圖。</p>
+              <div class="form-row">
+                <div>
+                  <label>角色清單</label>
+                  <input id="charSearch" placeholder="搜尋角色名稱…" oninput="filterCharacters()" style="margin-bottom:8px;" />
+                  <div class="char-list" id="charList"><div style="padding:16px;color:var(--muted);text-align:center;">載入中…</div></div>
+                  <div class="status-bar" id="charListStatus"></div>
+                </div>
+                <div>
+                  <label>角色護照</label>
+                  <div id="charIdDisplay" class="pill" style="margin-bottom:8px;">尚未選擇角色</div>
+                  <div class="form-row">
+                    <div class="form-group"><label>名稱</label><input id="charName" /></div>
+                    <div class="form-group"><label>基準年齡</label><input id="charAge" type="number" min="0" max="150" /></div>
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group"><label>性別光譜 (0–1)</label><input id="charGender" type="number" min="0" max="1" step="0.1" /></div>
+                    <div class="form-group"><label>標籤</label><input id="charTags" placeholder="逗號分隔" /></div>
+                  </div>
+                  <div class="form-group"><label>風格預設</label><input id="charStylePreset" /></div>
+                  <div class="form-group"><label>manifest JSON</label><textarea id="charManifest" rows="6"></textarea></div>
+                  <div class="btn-row">
+                    <button class="btn btn-primary btn-sm" type="button" onclick="loadCharEditor()">載入</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="saveCharEditor()">儲存</button>
+                    <a class="btn btn-secondary btn-sm" href="/admin/panel">進階管理面板</a>
+                  </div>
+                  <div class="status-bar" id="charEditorStatus"></div>
+                  <label>年齡瀏覽</label>
+                  <p class="hint">點選歲數，同時顯示該歲面部與 T 型圖。</p>
+                  <div id="charAgeBrowser" class="age-browser">
+                    <div class="age-browser-meta muted" id="charAgeMeta">選擇角色後可瀏覽 1–80 歲。</div>
+                    <div class="age-browser-strip" id="charAgeStrip"></div>
+                    <div class="age-browser-stage" id="charAgeStage">
+                      <div class="age-browser-pane">
+                        <div class="age-browser-label">面部</div>
+                        <div class="age-browser-frame" id="charAgeFace"><span class="muted">尚未選擇</span></div>
+                      </div>
+                      <div class="age-browser-pane">
+                        <div class="age-browser-label">T 型</div>
+                        <div class="age-browser-frame" id="charAgeTpose"><span class="muted">尚未選擇</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <label>角色圖片</label>
+                  <div class="preview-grid" id="charImageGallery"><p class="muted">選擇角色後顯示已生成圖片。</p></div>
+                  <div class="output-box" id="charPassOutput" style="max-height:220px;"></div>
+                </div>
+              </div>
+            </div>
+
+            <div id="dash-imaging" class="hidden">
+              <div class="tabs" id="imagingTabs">
+                <button class="active" type="button" onclick="switchImagingTab('generate')">生成</button>
+                <button type="button" onclick="switchImagingTab('config')">設定</button>
+                <button type="button" onclick="switchImagingTab('providers')">Provider</button>
+              </div>
+              <div id="imagingTab-generate">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>角色</label>
+                    <select id="imgCharSelect" onchange="onImgCharSelect()">
+                      <option value="">請選擇角色</option>
+                    </select>
+                    <input id="imgCharId" type="hidden" />
+                  </div>
+                  <div class="form-group">
+                    <label>用途</label>
+                    <select id="imgPurpose">
+                      <option value="age_span" selected>年齡軸（1–80 歲）</option>
+                      <option value="identity">identity</option>
+                      <option value="face_detail">face_detail</option>
+                      <option value="tpose">tpose</option>
+                      <option value="outfit">outfit</option>
+                      <option value="expression">expression</option>
+                      <option value="thumb">thumb</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-group"><label>額外風格（可選）</label><textarea id="imgExtra" rows="2"></textarea></div>
+                <div class="btn-row">
+                  <button class="btn btn-primary" type="button" onclick="queueImageGeneration()">排入生圖並開始</button>
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="goDash('queue')">查看佇列</button>
+                </div>
+                <div class="status-bar" id="imgGenStatus"></div>
+                <p class="hint">一次只向 AI 要一張圖，完成後自動入庫再接下一步。呼叫模型時請看上方進度，可能需要數十秒。</p>
+                <details class="json-fold">
+                  <summary>原始回應</summary>
+                  <div class="output-box" id="imgGenOutput"></div>
+                </details>
+              </div>
+              <div id="imagingTab-config" class="hidden">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Provider</label>
+                    <select id="imgProvider">
+                      <option value="wan">wan</option>
+                      <option value="openai">openai</option>
+                      <option value="http">http</option>
+                      <option value="null">null</option>
+                    </select>
+                  </div>
+                  <div class="form-group"><label>Model</label><input id="imgModel" value="wan2.7-image-pro" /></div>
+                </div>
+                <div class="form-group"><label>Base URL</label><input id="imgBaseUrl" /></div>
+                <div class="form-group"><label>API Key（留空不修改）</label><input id="imgApiKey" type="password" /></div>
+                <div class="btn-row">
+                  <button class="btn btn-primary btn-sm" type="button" onclick="loadImagingConfig()">讀取</button>
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="saveImagingConfig()">儲存</button>
+                </div>
+                <div class="status-bar" id="imgCfgStatus"></div>
+              </div>
+              <div id="imagingTab-providers" class="hidden">
+                <div class="output-box" id="imgProvidersOutput">載入中…</div>
+              </div>
+            </div>
+
+            <div id="dash-queue" class="hidden">
+              <div class="stat-row" id="queueStatsRow"></div>
+              <div id="queueLiveHint" class="hint" style="margin-bottom:8px;">一次一張；生成中會顯示經過時間。</div>
+              <div class="btn-row" style="margin:12px 0;">
+                <button class="btn btn-primary btn-sm" type="button" onclick="startAutoPipeline()">開始自動生圖</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="stopAutoPipeline()">暫停</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="acceptAllReady()">批次接受</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="resetFailed()">重設失敗</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="loadQueue()">重新載入</button>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>狀態</label>
+                  <select id="queueFilter" onchange="loadQueue()">
+                    <option value="">全部</option>
+                    <option value="pending">pending</option>
+                    <option value="running">running</option>
+                    <option value="waiting">waiting</option>
+                    <option value="ready">ready</option>
+                    <option value="failed">failed</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>角色 ID</label>
+                  <input id="queueCoreId" type="number" min="1" placeholder="留空=全部" onchange="loadQueue()" />
+                </div>
+              </div>
+              <div class="queue-table-wrap">
+                <table class="queue">
+                  <thead><tr><th>ID</th><th>角色</th><th>狀態</th><th>步驟</th><th>進度</th><th>時間</th><th>操作</th></tr></thead>
+                  <tbody id="queueBody"></tbody>
+                </table>
+              </div>
+              <h3 style="margin-top:16px;">預覽圖</h3>
+              <div class="preview-grid" id="queuePreview"></div>
+              <div class="status-bar" id="queueStatus"></div>
+            </div>
+
+            <div id="dash-monitor" class="hidden">
+              <div class="stat-row" id="monitorStats"></div>
+              <div class="btn-row" style="margin-bottom:12px;">
+                <button class="btn btn-primary btn-sm" type="button" onclick="loadMonitor()">刷新</button>
+              </div>
+              <h3>Health</h3>
+              <div class="output-box" id="monitorHealth"></div>
+              <h3 style="margin-top:12px;">指標</h3>
+              <div class="output-box" id="monitorMetrics"></div>
+              <h3 style="margin-top:12px;">Worker</h3>
+              <div class="output-box" id="monitorWorker"></div>
+            </div>
           </div>
-          <div class="form-group">
-            <label>標籤（逗號分隔）</label>
-            <input id="charTags" placeholder="protagonist, modern" />
+        </section>
+
+        <section id="page-Map" class="page hidden">
+          <div class="panel">
+            <div class="section-header">
+              <div>
+                <h2>Map</h2>
+                <p class="muted">只讀 Trace Log 視覺化。點節點看前因後果，可跳到對應 shot。</p>
+              </div>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="buildMap()">Refresh</button>
+            </div>
+            <p class="readonly-notice">此畫面為只讀資料，不得編輯節點。</p>
+            <div class="graph-container" id="mapContainer">
+              <div class="empty-state">請先在 Pad 執行 Parse 或 Direct。</div>
+            </div>
+            <div class="output-box" id="mapInspector" style="margin-top:12px;">選擇一個節點。</div>
           </div>
+        </section>
+
+        <section id="page-Player" class="page hidden">
+          <div class="panel">
+            <div class="section-header">
+              <div>
+                <h2>Player</h2>
+                <p class="muted">用戶層播放器。合流成品由 Muxer 提供；與外掛 P9 配樂同名不同層。</p>
+              </div>
+              <span class="pill pill-warn" id="playerPhase">Muxer 尚未上線</span>
+            </div>
+            <div id="muxNotice" class="notice-banner">Alpha Q4 合流器尚未上線（<code>POST /mux</code> 回 501）。以下先以 Director 分鏡序列播放，不把此畫面改名。</div>
+            <div class="player-stage" id="playerStage">
+              <div class="muted" id="playerEmpty">尚無分鏡。請先在 Pad 執行 Direct。</div>
+              <video id="playerVideo" class="hidden" controls></video>
+              <div class="player-overlay" id="playerOverlay"></div>
+            </div>
+            <div class="player-controls">
+              <button class="btn btn-primary btn-sm" type="button" id="btnPlay" onclick="togglePlayer()">Play</button>
+              <input type="range" id="playerScrub" min="0" max="0" value="0" step="1" oninput="scrubPlayer(this.value)" />
+              <span class="muted" id="playerTime">00:00 / 00:00</span>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="refreshPlayer()">Refresh</button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="inspector">
+        <div class="inspector-head">
+          <h3 id="inspectorTitle">Inspector</h3>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="toggleInspector()">收合</button>
         </div>
-        <div class="form-group">
-          <label>風格預設</label>
-          <input id="charStylePreset" placeholder="cinematic_realistic, 3D建模風格" />
-        </div>
-        <div class="form-group">
-          <label>manifest JSON</label>
-          <textarea id="charManifest" rows="6" placeholder='{"_style":{"character_style":{"visual":{"medium":"cinematic realism"}}}}'></textarea>
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-primary btn-sm" onclick="loadCharEditor()">載入</button>
-          <button class="btn btn-secondary btn-sm" onclick="saveCharEditor()">儲存</button>
-        </div>
-        <div class="status-bar" id="charEditorStatus"></div>
-        <h3 style="margin-top:16px;">角色護照預覽</h3>
-        <div class="output-box" id="charPassOutput" style="max-height:240px;"></div>
-      </div>
+        <div id="inspectorBody" class="muted">選擇元素後顯示詳情、狀態碼與 API 摘要。</div>
+      </aside>
     </div>
   </div>
-</section>
-
-<!-- ════════════════ IMAGING ════════════════ -->
-<section id="page-imaging" class="hidden">
-  <div class="gui-section">
-    <div class="gui-header">
-      <h2>🎨 生圖管線 Imaging</h2>
-      <span class="badge badge-live">Sprint 1</span>
-    </div>
-    <p style="color:var(--muted);margin-bottom:16px;font-size:14px;">
-      依角色護照風格生成 AI 圖片。支援多種 provider（WAN / OpenAI 相容 / 自訂 HTTP），
-      生圖結果會自動寫回角色資料夾。
-    </p>
-
-    <div class="tabs" id="imagingTabs">
-      <button class="active" onclick="switchImagingTab('config')">⚙️ 生圖設定</button>
-      <button onclick="switchImagingTab('generate')">🎨 生成圖片</button>
-      <button onclick="switchImagingTab('providers')">🔌 Provider 列表</button>
-    </div>
-
-    <div id="imagingTab-config">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Provider</label>
-          <select id="imgProvider">
-            <option value="wan">wan（阿里百煉 WAN）</option>
-            <option value="openai">openai（OpenAI 相容）</option>
-            <option value="http">http（自訂 HTTP webhook）</option>
-            <option value="null">null（僅組 prompt，測試用）</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Model</label>
-          <input id="imgModel" value="wan2.7-image-pro" />
-        </div>
-      </div>
-      <div class="form-row full">
-        <div class="form-group">
-          <label>Base URL</label>
-          <input id="imgBaseUrl" value="https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1" />
-        </div>
-      </div>
-      <div class="form-row full">
-        <div class="form-group">
-          <label>API Key（留空不修改）</label>
-          <input id="imgApiKey" type="password" placeholder="sk-… 或百煉 API Key" />
-        </div>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-primary btn-sm" onclick="loadImagingConfig()">讀取設定</button>
-        <button class="btn btn-secondary btn-sm" onclick="saveImagingConfig()">儲存設定</button>
-      </div>
-      <div class="status-bar" id="imgCfgStatus"></div>
-    </div>
-
-    <div id="imagingTab-generate" class="hidden">
-      <div class="form-row">
-        <div class="form-group">
-          <label>角色 ID</label>
-          <div class="hint">從角色管理頁面選擇，或手動輸入</div>
-          <input id="imgCharId" type="number" min="1" placeholder="例如：1" />
-        </div>
-        <div class="form-group">
-          <label>用途 Purpose</label>
-          <select id="imgPurpose">
-            <option value="age_span">age_span（1–80 歲年齡軸）</option>
-            <option value="identity">identity（身份參考）</option>
-            <option value="face_detail">face_detail（面部細緻）</option>
-            <option value="tpose">tpose（T 型外觀）</option>
-            <option value="outfit">outfit（服裝造型）</option>
-            <option value="expression">expression（表情特寫）</option>
-            <option value="thumb">thumb（縮圖預覽）</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>額外風格描述</label>
-          <textarea id="imgExtra" rows="2" placeholder="賽博龐克霓虹、電影級側光、8K 細節"></textarea>
-        </div>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" onclick="queueImageGeneration()">🚀 排入生圖佇列</button>
-      </div>
-      <div class="status-bar" id="imgGenStatus"></div>
-      <div class="output-box" id="imgGenOutput"></div>
-    </div>
-
-    <div id="imagingTab-providers" class="hidden">
-      <div class="output-box" id="imgProvidersOutput">載入中…</div>
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════ QUEUE ════════════════ -->
-<section id="page-queue" class="hidden">
-  <div class="gui-section">
-    <div class="gui-header">
-      <h2>📊 佇列中心 Queue</h2>
-      <span class="badge badge-live">Sprint 1</span>
-    </div>
-    <p style="color:var(--muted);margin-bottom:16px;font-size:14px;">
-      管理生圖佇列任務。年齡軸 pipeline 一次只向 AI 請求一張圖，完成後自動入庫並接下一步。
-    </p>
-
-    <div class="stat-row" id="queueStatsRow"></div>
-
-    <div class="btn-row" style="margin-bottom:16px;">
-      <button class="btn btn-primary btn-sm" onclick="startAutoPipeline()">▶ 開始自動生圖</button>
-      <button class="btn btn-secondary btn-sm" onclick="stopAutoPipeline()">⏸ 暫停</button>
-      <button class="btn btn-secondary btn-sm" onclick="acceptAllReady()">✅ 批次接受所有已完成</button>
-      <button class="btn btn-secondary btn-sm" onclick="resetFailed()">🔄 重設失敗</button>
-      <button class="btn btn-secondary btn-sm" onclick="loadQueue()">🔄 重新載入</button>
-    </div>
-
-    <div class="form-row" style="margin-bottom:12px;">
-      <div class="form-group">
-        <label>狀態篩選</label>
-        <select id="queueFilter" onchange="loadQueue()">
-          <option value="">全部</option>
-          <option value="pending">pending</option>
-          <option value="waiting">waiting</option>
-          <option value="ready">ready</option>
-          <option value="failed">failed</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>角色 ID 篩選</label>
-        <input id="queueCoreId" type="number" min="1" placeholder="留空=全部" onchange="loadQueue()" />
-      </div>
-    </div>
-
-    <div class="queue-table-wrap">
-      <table class="queue">
-        <thead><tr>
-          <th>ID</th><th>角色</th><th>狀態</th><th>用途</th><th>摘要</th><th>建立時間</th><th>操作</th>
-        </tr></thead>
-        <tbody id="queueBody"><tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">載入中…</td></tr></tbody>
-      </table>
-    </div>
-
-    <h3 style="margin-top:20px;">預覽</h3>
-    <div class="preview-grid" id="queuePreview"></div>
-    <div class="status-bar" id="queueStatus"></div>
-  </div>
-</section>
-
-<!-- ════════════════ GRAPH ════════════════ -->
-<section id="page-graph" class="hidden">
-  <div class="gui-section">
-    <div class="gui-header">
-      <h2>🕸️ 因果圖 Causal Graph</h2>
-      <span class="badge badge-live">Alpha Q1</span>
-    </div>
-    <p style="color:var(--muted);margin-bottom:16px;font-size:14px;">
-      視覺化 Trace Log 因果鏈。先在「劇本解析」或「分鏡調度」頁面執行一次，再回來查看因果圖。
-    </p>
-    <div class="btn-row" style="margin-bottom:12px;">
-      <button class="btn btn-primary btn-sm" onclick="buildGraph()">🔄 產生因果圖</button>
-    </div>
-    <div class="graph-container" id="graphContainer">
-      <div style="padding:40px;text-align:center;color:var(--muted);">請先執行「劇本解析」或「分鏡調度」產生資料，再按「產生因果圖」。</div>
-    </div>
-    <h3 style="margin-top:20px;">Trace Log Inspector</h3>
-    <div class="inspector" id="traceInspector">
-      <p style="color:var(--muted);">選擇一筆 trace 記錄檢視詳情…</p>
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════ MONITOR ════════════════ -->
-<section id="page-monitor" class="hidden">
-  <div class="gui-section">
-    <div class="gui-header">
-      <h2>📡 系統監控 Monitor</h2>
-    </div>
-    <div class="stat-row" id="monitorStats"></div>
-    <div class="btn-row" style="margin-bottom:16px;">
-      <button class="btn btn-primary btn-sm" onclick="loadMonitor()">🔄 刷新</button>
-    </div>
-    <h3>Health Check</h3>
-    <div class="output-box" id="monitorHealth"></div>
-    <h3 style="margin-top:16px;">系統指標</h3>
-    <div class="output-box" id="monitorMetrics"></div>
-    <h3 style="margin-top:16px;">Worker 狀態</h3>
-    <div class="output-box" id="monitorWorker"></div>
-  </div>
-</section>
-
-<!-- ════════════════ Footer ════════════════ -->
-<footer style="text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;border-top:1px solid var(--border);margin-top:40px;">
-  Narratron — AI 影視級因果敘事生成平台 · Alpha Q1 · Every Frame Carries Its Past.
-</footer>
-
-<script>
-// ════════════════ Config ════════════════
-const CHAROS_API = '';  // same-origin
-const NARRATRON_API = 'http://localhost:8080';
-
-// ════════════════ Navigation ════════════════
-let currentPage = 'home';
-let lastParseState = null;
-let lastDirectState = null;
-let selectedCharId = '';
-let allCharacters = [];
-
-function navigate(page) {
-  document.querySelectorAll('section[id^="page-"]').forEach(s => s.classList.add('hidden'));
-  const target = document.getElementById('page-' + page);
-  if (target) target.classList.remove('hidden');
-  document.querySelectorAll('#navLinks a').forEach(a => a.classList.toggle('active', a.dataset.page === page));
-  currentPage = page;
-  window.location.hash = page;
-  if (page === 'characters' && allCharacters.length === 0) loadCharacters();
-  if (page === 'queue') loadQueue();
-  if (page === 'monitor') loadMonitor();
-  if (page === 'imaging') loadImagingConfig();
-}
-
-document.querySelectorAll('#navLinks a').forEach(a => {
-  a.addEventListener('click', e => { e.preventDefault(); navigate(a.dataset.page); });
-});
-
-window.addEventListener('hashchange', () => {
-  const page = location.hash.slice(1) || 'home';
-  if (document.getElementById('page-' + page)) navigate(page);
-});
-
-// ════════════════ Utils ════════════════
-async function api(base, path, opts = {}) {
-  const url = base + path;
-  const resp = await fetch(url, opts);
-  const text = await resp.text();
-  let data = {};
-  try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
-  if (!resp.ok) {
-    const detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
-    throw new Error(detail || `HTTP ${resp.status}`);
-  }
-  return data;
-}
-
-function setStatus(id, msg, kind = '') {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.textContent = msg;
-  el.className = 'status-bar ' + kind;
-}
-
-function pretty(v) { return JSON.stringify(v, null, 2); }
-
-function formatTime(v) {
-  if (!v) return '—';
-  try { return new Date(v).toLocaleString('zh-TW', { hour12: false }); } catch { return String(v); }
-}
-
-function badgeClass(status) {
-  const s = String(status || '').toLowerCase();
-  if (s === 'ready' || s === 'accepted') return 'badge-ready';
-  if (s === 'pending') return 'badge-pending';
-  if (s === 'failed') return 'badge-failed';
-  if (s === 'waiting') return 'badge-waiting';
-  return 'badge-pending';
-}
-
-function statusLabel(s) {
-  const m = { pending: '等待中', ready: '已完成', failed: '失敗', accepted: '已入庫', waiting: '排隊中' };
-  return m[s] || s;
-}
-
-// ════════════════ Health Check ════════════════
-async function checkHealth() {
-  try {
-    const data = await api(CHAROS_API, '/api/v1/health');
-    document.getElementById('healthDot').style.background = 'var(--green)';
-    document.getElementById('healthDot').title = `系統正常 · ${data.storage_mode || 'unknown'}`;
-  } catch {
-    document.getElementById('healthDot').style.background = 'var(--red)';
-    document.getElementById('healthDot').title = '系統離線';
-  }
-}
-
-// ════════════════ PARSE ════════════════
-const SAMPLE_SCRIPT = `INT. 廢棄工廠 — 夜
-
-角色
-- 卡爾（傷疤覆蓋左臉，手持鏽蝕鐵棍）
-- 艾拉（繃帶纏繞右臂，背著醫療包）
-
-道具
-- 鏽蝕鐵棍
-- 醫療包
-- 老式無線電
-
-場景
-- 廢棄工廠：昏暗的吊燈搖晃，地面散落碎玻璃與鏽蝕零件
-
-參考圖：https://example.com/ref/factory.png
-
-卡爾：（壓低聲音）守衛換班了，我們有十分鐘。
-艾拉：（檢查無線電）信號很弱，但夠用。
-卡爾握緊鐵棍，帶頭走向走廊深處。
-艾拉跟上，繃帶上滲出淡淡血跡。`;
-
-function loadSampleScript() {
-  document.getElementById('parseScript').value = SAMPLE_SCRIPT;
-}
-
-async function runParse() {
-  const script = document.getElementById('parseScript').value.trim();
-  if (!script) { setStatus('parseStatus', '請輸入劇本內容', 'err'); return; }
-  const persist = document.getElementById('parsePersist').checked;
-  setStatus('parseStatus', '解析中…', 'loading');
-  document.getElementById('parseOutput').textContent = '';
-  document.getElementById('parseStats').innerHTML = '';
-  try {
-    const data = await api(NARRATRON_API, '/parse', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script, persist }),
-    });
-    lastParseState = data;
-    document.getElementById('parseOutput').textContent = pretty(data);
-    const entities = data.entities || [];
-    const traces = data.traces || [];
-    const assets = data.assets || [];
-    const kinds = {};
-    entities.forEach(e => { kinds[e.kind] = (kinds[e.kind] || 0) + 1; });
-    document.getElementById('parseStats').innerHTML = `
-      <span class="stat-chip"><span class="num">${entities.length}</span> 實體</span>
-      <span class="stat-chip"><span class="num">${traces.length}</span> 因果記錄</span>
-      <span class="stat-chip"><span class="num">${assets.length}</span> 資產</span>
-      ${Object.entries(kinds).map(([k, v]) => `<span class="stat-chip">${k}: ${v}</span>`).join('')}
-    `;
-    setStatus('parseStatus', `✓ 解析完成：${entities.length} 個實體，${traces.length} 條因果記錄`, 'ok');
-  } catch (err) {
-    setStatus('parseStatus', `✗ 解析失敗：${err.message}`, 'err');
-  }
-}
-
-// ════════════════ DIRECT ════════════════
-async function runDirect() {
-  const script = document.getElementById('directScript').value.trim();
-  if (!script) { setStatus('directStatus', '請輸入劇本內容', 'err'); return; }
-  const persist = document.getElementById('directPersist').checked;
-  setStatus('directStatus', '分鏡調度中…', 'loading');
-  document.getElementById('directOutput').textContent = '';
-  document.getElementById('directTimeline').innerHTML = '';
-  try {
-    const data = await api(NARRATRON_API, '/direct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script, persist }),
-    });
-    lastDirectState = data;
-    document.getElementById('directOutput').textContent = pretty(data);
-
-    const shots = data.shots || [];
-    const traces = data.traces || [];
-    const timeline = document.getElementById('directTimeline');
-    if (shots.length === 0) {
-      timeline.innerHTML = '<p style="color:var(--muted);">無分鏡資料</p>';
-    } else {
-      timeline.innerHTML = shots.map(s => `
-        <div class="timeline-item">
-          <div class="camera">#${s.order} · ${s.camera_language || '未指定'}</div>
-          <div class="beat">${(s.payload && s.payload.beat) || '—'}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;">${s.duration_ms}ms · ${s.scene_id}</div>
-        </div>
-      `).join('');
-    }
-    setStatus('directStatus', `✓ 分鏡調度完成：${shots.length} 個 shot，${traces.length} 條因果記錄`, 'ok');
-  } catch (err) {
-    setStatus('directStatus', `✗ 分鏡調度失敗：${err.message}`, 'err');
-  }
-}
-
-// ════════════════ CHARACTERS ════════════════
-function assetUrl(charId, path) {
-  const clean = String(path || '').trim().replace(/^\/+/, '');
-  return clean ? `${CHAROS_API}/api/v1/characters/${charId}/assets/${clean}` : '';
-}
-
-function pickThumb(c) {
-  const m = c.metadata || {};
-  return m.face_detail_asset_path || m.thumbnail_asset_path || '';
-}
-
-function filterCharacters() {
-  const q = document.getElementById('charSearch').value.trim().toLowerCase();
-  const list = q ? allCharacters.filter(c => (c.name || '').toLowerCase().includes(q)) : allCharacters;
-  renderCharList(list);
-}
-
-function renderCharList(chars) {
-  const box = document.getElementById('charList');
-  if (!chars.length) { box.innerHTML = '<div style="padding:16px;color:var(--muted);text-align:center;">無角色</div>'; return; }
-  box.innerHTML = chars.map(c => {
-    const thumb = pickThumb(c);
-    const thumbHtml = thumb ? `<img src="${assetUrl(c.id, thumb)}" alt="" />` : '—';
-    return `<div class="char-item${c.id == selectedCharId ? ' active' : ''}" onclick="selectChar(${c.id},'${(c.name||'').replace(/'/g,"\\'")}')">
-      <div class="thumb">${thumbHtml}</div>
-      <div class="info"><strong>#${c.id} ${c.name || '（未命名）'}</strong><span>${(c.tags||[]).join(', ') || '無標籤'}</span></div>
-    </div>`;
-  }).join('');
-}
-
-async function loadCharacters() {
-  setStatus('charListStatus', '載入中…', 'loading');
-  try {
-    const data = await api(CHAROS_API, '/api/v1/characters');
-    allCharacters = data || [];
-    renderCharList(allCharacters);
-    setStatus('charListStatus', `共 ${allCharacters.length} 筆角色`, 'ok');
-  } catch (err) {
-    setStatus('charListStatus', `載入失敗：${err.message}`, 'err');
-  }
-}
-
-function selectChar(id, name) {
-  selectedCharId = id;
-  document.getElementById('charIdDisplay').textContent = `#${id} · ${name}`;
-  document.getElementById('imgCharId').value = id;
-  filterCharacters();
-  loadCharEditor();
-}
-
-async function loadCharEditor() {
-  const id = selectedCharId;
-  if (!id) { setStatus('charEditorStatus', '請先選擇角色', 'err'); return; }
-  setStatus('charEditorStatus', '載入中…', 'loading');
-  try {
-    const data = await api(CHAROS_API, `/api/v1/characters/${id}/editor`);
-    const core = data.core || {};
-    const profile = data.profile || {};
-    document.getElementById('charName').value = core.name || '';
-    document.getElementById('charAge').value = core.base_age ?? '';
-    document.getElementById('charGender').value = core.gender_spectrum ?? '';
-    document.getElementById('charTags').value = (core.tags || []).join(', ');
-    document.getElementById('charStylePreset').value = profile.style_preset || '';
-    document.getElementById('charManifest').value = pretty(profile.manifest || {});
-    document.getElementById('charPassOutput').textContent = pretty(profile.manifest || {});
-    setStatus('charEditorStatus', '✓ 已載入', 'ok');
-  } catch (err) {
-    setStatus('charEditorStatus', `載入失敗：${err.message}`, 'err');
-  }
-}
-
-async function saveCharEditor() {
-  const id = selectedCharId;
-  if (!id) { setStatus('charEditorStatus', '請先選擇角色', 'err'); return; }
-  setStatus('charEditorStatus', '儲存中…', 'loading');
-  try {
-    const payload = {
-      name: document.getElementById('charName').value.trim(),
-      base_age: Number(document.getElementById('charAge').value || 0),
-      gender_spectrum: document.getElementById('charGender').value === '' ? null : Number(document.getElementById('charGender').value),
-      tags: document.getElementById('charTags').value.split(',').map(x => x.trim()).filter(Boolean),
-      style_preset: document.getElementById('charStylePreset').value.trim() || null,
-      manifest: (() => { try { return JSON.parse(document.getElementById('charManifest').value || '{}'); } catch { return {}; } })(),
-    };
-    await api(CHAROS_API, `/api/v1/characters/${id}/editor`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    setStatus('charEditorStatus', '✓ 儲存成功', 'ok');
-    loadCharacters();
-  } catch (err) {
-    setStatus('charEditorStatus', `儲存失敗：${err.message}`, 'err');
-  }
-}
-
-// ════════════════ IMAGING ════════════════
-function switchImagingTab(tab) {
-  ['config', 'generate', 'providers'].forEach(t => {
-    const el = document.getElementById('imagingTab-' + t);
-    if (el) el.classList.toggle('hidden', t !== tab);
-  });
-  document.querySelectorAll('#imagingTabs button').forEach((btn, i) => {
-    btn.classList.toggle('active', ['config', 'generate', 'providers'][i] === tab);
-  });
-  if (tab === 'providers') loadProviders();
-}
-
-async function loadImagingConfig() {
-  setStatus('imgCfgStatus', '讀取中…', 'loading');
-  try {
-    const data = await api(CHAROS_API, '/api/v1/admin/imaging-config');
-    document.getElementById('imgProvider').value = data.provider || 'wan';
-    document.getElementById('imgModel').value = data.model || '';
-    document.getElementById('imgBaseUrl').value = data.base_url || '';
-    setStatus('imgCfgStatus', `已載入。API Key：${data.has_api_key ? '已設定' : '尚未設定'}`, 'ok');
-  } catch (err) {
-    setStatus('imgCfgStatus', `讀取失敗：${err.message}`, 'err');
-  }
-}
-
-async function saveImagingConfig() {
-  const payload = {
-    provider: document.getElementById('imgProvider').value,
-    base_url: document.getElementById('imgBaseUrl').value.trim(),
-    model: document.getElementById('imgModel').value.trim(),
-    persist_env: true,
-  };
-  const key = document.getElementById('imgApiKey').value.trim();
-  if (key) payload.api_key = key;
-  setStatus('imgCfgStatus', '儲存中…', 'loading');
-  try {
-    const data = await api(CHAROS_API, '/api/v1/admin/imaging-config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    setStatus('imgCfgStatus', `✓ 已更新。API Key：${data.has_api_key ? '已設定' : '尚未設定'}`, 'ok');
-  } catch (err) {
-    setStatus('imgCfgStatus', `儲存失敗：${err.message}`, 'err');
-  }
-}
-
-async function loadProviders() {
-  try {
-    const data = await api(CHAROS_API, '/api/v1/imaging/providers');
-    document.getElementById('imgProvidersOutput').textContent = pretty(data);
-  } catch (err) {
-    document.getElementById('imgProvidersOutput').textContent = `載入失敗：${err.message}`;
-  }
-}
-
-async function queueImageGeneration() {
-  const charId = document.getElementById('imgCharId').value;
-  if (!charId) { setStatus('imgGenStatus', '請輸入角色 ID', 'err'); return; }
-  setStatus('imgGenStatus', '排入佇列中…', 'loading');
-  try {
-    const payload = {
-      purpose: document.getElementById('imgPurpose').value,
-      extra: document.getElementById('imgExtra').value.trim(),
-      persist: true,
-    };
-    const data = await api(CHAROS_API, `/api/v1/characters/${charId}/image-queue`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CharacterOS-Panel': 'enabled' },
-      body: JSON.stringify(payload),
-    });
-    document.getElementById('imgGenOutput').textContent = pretty(data);
-    setStatus('imgGenStatus', '✓ 已排入佇列，後端 worker 會自動處理', 'ok');
-  } catch (err) {
-    setStatus('imgGenStatus', `排入失敗：${err.message}`, 'err');
-    document.getElementById('imgGenOutput').textContent = err.message;
-  }
-}
-
-// ════════════════ QUEUE ════════════════
-async function loadQueue() {
-  setStatus('queueStatus', '載入中…', 'loading');
-  try {
-    const params = new URLSearchParams();
-    const status = document.getElementById('queueFilter').value;
-    const coreId = document.getElementById('queueCoreId').value.trim();
-    if (status) params.set('status', status);
-    if (coreId) params.set('core_id', coreId);
-    params.set('limit', '200');
-    const data = await api(CHAROS_API, `/api/v1/admin/queue-tasks?${params}`);
-    renderQueueStats(data.stats || {});
-    renderQueueTasks(data.tasks || []);
-    renderQueuePreview(data.tasks || []);
-    setStatus('queueStatus', `共 ${data.total ?? 0} 筆任務`, 'ok');
-  } catch (err) {
-    setStatus('queueStatus', `載入失敗：${err.message}`, 'err');
-    document.getElementById('queueBody').innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--red);padding:16px;">${err.message}</td></tr>`;
-  }
-}
-
-function renderQueueStats(stats) {
-  document.getElementById('queueStatsRow').innerHTML = `
-    <span class="stat-chip"><span class="num">${stats.total_pending || 0}</span> 等待中</span>
-    <span class="stat-chip"><span class="num">${stats.total_waiting || 0}</span> 排隊中</span>
-    <span class="stat-chip"><span class="num">${stats.total_ready || 0}</span> 已完成</span>
-    <span class="stat-chip"><span class="num">${stats.total_failed || 0}</span> 失敗</span>
-    <span class="stat-chip">平均等待 ${Math.round(stats.average_wait_time_ms || 0)}ms</span>
-  `;
-}
-
-function renderQueueTasks(tasks) {
-  const body = document.getElementById('queueBody');
-  if (!tasks.length) { body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">無任務</td></tr>'; return; }
-  body.innerHTML = tasks.map(t => {
-    const s = t.status || 'pending';
-    const imgGen = (t.result_metadata || {}).image_generation || {};
-    const purpose = t.purpose || imgGen.purpose || '—';
-    const name = t.character_name ? `#${t.core_id} · ${t.character_name}` : `#${t.core_id}`;
-    const actions = [];
-    if (s === 'ready') actions.push(`<button class="btn btn-sm btn-secondary" onclick="acceptTask(${t.id})">接受</button>`);
-    if (s === 'failed') actions.push(`<button class="btn btn-sm btn-secondary" onclick="resetTask(${t.id})">重設</button>`);
-    return `<tr>
-      <td>${t.id}</td><td>${name}</td>
-      <td><span class="badge ${badgeClass(s)}">${statusLabel(s)}</span></td>
-      <td>${purpose}</td>
-      <td style="font-family:monospace;font-size:12px;">${(t.variant_hash || '').slice(0, 12)}</td>
-      <td>${formatTime(t.created_at)}</td>
-      <td>${actions.join(' ') || '—'}</td>
-    </tr>`;
-  }).join('');
-}
-
-function renderQueuePreview(tasks) {
-  const grid = document.getElementById('queuePreview');
-  const cards = [];
-  tasks.forEach(t => {
-    const imgGen = (t.result_metadata || {}).image_generation || {};
-    const images = imgGen.images || [];
-    images.filter(i => i && i.asset_path).forEach(img => {
-      const src = assetUrl(t.core_id, img.asset_path);
-      cards.push(`<div class="preview-card"><img src="${src}" alt="" loading="lazy" /><div class="caption">#${t.core_id} ${t.character_name || ''} · ${img.angle || ''}</div></div>`);
-    });
-  });
-  grid.innerHTML = cards.join('') || '<p style="color:var(--muted);">無預覽圖</p>';
-}
-
-async function acceptTask(id) {
-  try {
-    await api(CHAROS_API, `/api/v1/admin/queue-tasks/${id}/accept`, { method: 'POST' });
-    loadQueue();
-  } catch (err) { alert(`接受失敗：${err.message}`); }
-}
-
-async function resetTask(id) {
-  try {
-    await api(CHAROS_API, `/api/v1/admin/queue-tasks/${id}/reset`, { method: 'POST' });
-    loadQueue();
-  } catch (err) { alert(`重設失敗：${err.message}`); }
-}
-
-async function acceptAllReady() {
-  const coreId = document.getElementById('queueCoreId').value.trim();
-  const params = new URLSearchParams();
-  if (coreId) params.set('core_id', coreId);
-  try {
-    const data = await api(CHAROS_API, `/api/v1/admin/queue-tasks/accept-all?${params}`, { method: 'POST' });
-    alert(`已批次接受 ${data.accepted || 0} 筆任務`);
-    loadQueue();
-  } catch (err) { alert(`批次接受失敗：${err.message}`); }
-}
-
-async function startAutoPipeline() {
-  try {
-    await api(CHAROS_API, '/api/v1/admin/queue-worker/start', { method: 'POST' });
-    setStatus('queueStatus', '✓ 後端 worker 已啟動，會自動逐步生圖', 'ok');
-    loadQueue();
-  } catch (err) { setStatus('queueStatus', `啟動失敗：${err.message}`, 'err'); }
-}
-
-async function stopAutoPipeline() {
-  try {
-    await api(CHAROS_API, '/api/v1/admin/queue-worker/pause', { method: 'POST' });
-    setStatus('queueStatus', '已暫停 worker', 'ok');
-  } catch (err) { setStatus('queueStatus', `暫停失敗：${err.message}`, 'err'); }
-}
-
-async function resetFailed() {
-  const coreId = document.getElementById('queueCoreId').value.trim();
-  const params = new URLSearchParams();
-  if (coreId) params.set('core_id', coreId);
-  try {
-    const data = await api(CHAROS_API, `/api/v1/admin/queue-tasks/reset-failed?${params}`, { method: 'POST' });
-    setStatus('queueStatus', `✓ 已重設 ${data.reset || 0} 筆失敗任務`, 'ok');
-    loadQueue();
-  } catch (err) { setStatus('queueStatus', `重設失敗：${err.message}`, 'err'); }
-}
-
-// ════════════════ GRAPH ════════════════
-function buildGraph() {
-  const state = lastDirectState || lastParseState;
-  if (!state) {
-    document.getElementById('graphContainer').innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);">尚無資料。請先執行「劇本解析」或「分鏡調度」。</div>';
-    return;
-  }
-
-  const entities = state.entities || [];
-  const shots = state.shots || [];
-  const traces = state.traces || [];
-
-  // Build SVG graph
-  const width = 900, height = 500;
-  const nodes = [];
-  const edges = [];
-  const cx = width / 2, cy = height / 2;
-
-  // Entity nodes (left)
-  entities.forEach((e, i) => {
-    const y = 60 + i * (height - 120) / Math.max(entities.length - 1, 1);
-    nodes.push({ id: e.id, label: e.name, x: 120, y, kind: e.kind, group: 'entity' });
-  });
-
-  // Shot nodes (right)
-  shots.forEach((s, i) => {
-    const y = 60 + i * (height - 120) / Math.max(shots.length - 1, 1);
-    nodes.push({ id: s.id, label: `#${s.order}`, x: width - 120, y, kind: 'shot', group: 'shot' });
-  });
-
-  // Trace nodes (middle)
-  traces.forEach((t, i) => {
-    const y = 40 + i * (height - 80) / Math.max(traces.length - 1, 1);
-    nodes.push({ id: t.id, label: (t.cause || t.effect || '').slice(0, 20), x: cx, y, kind: 'trace', group: 'trace' });
-    if (t.entity_id) edges.push({ from: t.id, to: t.entity_id });
-    if (t.shot_id) edges.push({ from: t.id, to: t.shot_id });
-  });
-
-  const nodeMap = {};
-  nodes.forEach(n => nodeMap[n.id] = n);
-
-  const colors = { character: '#6aa6ff', prop: '#9b7bff', scene: '#3ddc97', shot: '#ffcc66', trace: '#ff6b6b' };
-
-  let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" style="background:#0b0b10;">`;
-
-  // Edges
-  edges.forEach(e => {
-    const from = nodeMap[e.from], to = nodeMap[e.to];
-    if (from && to) {
-      svg += `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="#333" stroke-width="1" marker-end="url(#arrow)"/>`;
-    }
-  });
-
-  svg += `<defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/></marker></defs>`;
-
-  // Nodes
-  nodes.forEach(n => {
-    const color = colors[n.kind] || '#aaa';
-    const r = n.group === 'trace' ? 6 : 10;
-    svg += `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${color}" stroke="#0b0b10" stroke-width="2"/>`;
-    svg += `<text x="${n.x}" y="${n.y + r + 14}" text-anchor="middle" fill="#9ca3af" font-size="10" font-family="sans-serif">${n.label}</text>`;
-  });
-
-  svg += '</svg>';
-
-  document.getElementById('graphContainer').innerHTML = svg;
-
-  // Inspector
-  const inspector = document.getElementById('traceInspector');
-  if (traces.length === 0) {
-    inspector.innerHTML = '<p style="color:var(--muted);">無 trace 記錄</p>';
-  } else {
-    inspector.innerHTML = traces.map(t => `
-      <div style="margin-bottom:8px;padding:8px;background:var(--surface);border-radius:6px;cursor:pointer;" onclick="this.querySelector('pre').classList.toggle('hidden')">
-        <strong style="color:var(--accent2);">${t.id}</strong> · ${t.cause} → ${t.effect}
-        <pre class="hidden" style="margin-top:4px;">${pretty(t)}</pre>
-      </div>
-    `).join('');
-  }
-}
-
-// ════════════════ MONITOR ════════════════
-async function loadMonitor() {
-  try {
-    const health = await api(CHAROS_API, '/api/v1/health');
-    document.getElementById('monitorHealth').textContent = pretty(health);
-  } catch (err) {
-    document.getElementById('monitorHealth').textContent = `失敗：${err.message}`;
-  }
-
-  try {
-    const metrics = await api(CHAROS_API, '/api/v1/admin/metrics');
-    document.getElementById('monitorMetrics').textContent = pretty(metrics);
-    document.getElementById('monitorStats').innerHTML = `
-      <span class="stat-chip"><span class="num">${metrics.total_characters || 0}</span> 角色</span>
-      <span class="stat-chip"><span class="num">${metrics.total_profiles || 0}</span> Profile</span>
-      <span class="stat-chip"><span class="num">${metrics.total_variants || 0}</span> 變體</span>
-    `;
-  } catch (err) {
-    document.getElementById('monitorMetrics').textContent = `失敗：${err.message}`;
-  }
-
-  try {
-    const worker = await api(CHAROS_API, '/api/v1/admin/queue-worker');
-    document.getElementById('monitorWorker').textContent = pretty(worker);
-  } catch (err) {
-    document.getElementById('monitorWorker').textContent = `失敗：${err.message}`;
-  }
-}
-
-// ════════════════ Init ════════════════
-checkHealth();
-setInterval(checkHealth, 30000);
-
-const initPage = location.hash.slice(1) || 'home';
-if (document.getElementById('page-' + initPage)) navigate(initPage);
-</script>
+</div>
+<div id="loadingMask" class="loading-mask hidden"><span class="spinner"></span> 處理中…</div>
+<script src="/static/js/gui.js"></script>
 </body>
 </html>

@@ -22,7 +22,9 @@ Pad → API 閘道
 目前原型：
 
 - `frontend/webapp/`：`React + Vite + TypeScript` GUI，含 `Pad / Timeline / Dashboard / Map / Player`
+- 門面 App Shell：`characteros/static/index.html`（`http://localhost:8001/`）
 - `Map` 使用圖形節點視覺化因果關係
 - 支援前端本地多專案、多次 `parse/direct` 歷史持久化
+- `Player` 在 Muxer 未上線時改播分鏡序列，不改名為 Preview / Viewer
 
 仍禁止在本目錄放入與白皮書無關的畫面名（如 Editor、GraphView）。

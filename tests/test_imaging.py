@@ -649,3 +649,25 @@ def test_ensure_unaccepted_generation_rejects_nested_images_by_angle_assets_path
             }
         )
 
+
+def test_resolve_ref_uri_rejects_path_traversal(tmp_path: Path) -> None:
+    from characteros.imaging.ref_uris import resolve_ref_uri_for_api
+    from narratron.charpass.store import CharpassStore
+
+    root = tmp_path / "charpasses"
+    store = CharpassStore(root)
+    secret = root / "secret.png"
+    root.mkdir()
+    secret.write_bytes(
+        bytes.fromhex(
+            "89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C489"
+            "0000000D49444154789C6360606060000000050001A5F645400000000049454E44AE426082"
+        )
+    )
+    entity = root / "character-test"
+    entity.mkdir()
+    (entity / "current.charpass").write_text("{}\n", encoding="utf-8")
+
+    assert resolve_ref_uri_for_api("../secret.png", store=store, entity_id="character-test") is None
+    assert resolve_ref_uri_for_api("/etc/passwd", store=store, entity_id="character-test") is None
+

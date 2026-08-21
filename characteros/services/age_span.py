@@ -11,6 +11,7 @@ WAN 只吃可公開抓取的 http(s) 參考圖，因此每步必須把 provider 
 
 from __future__ import annotations
 
+from datetime import datetime, timezone, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -19,10 +20,59 @@ AGE_SPAN_END = 80
 AGE_SPAN_PIPELINE = "age_span"
 AGE_SPAN_PURPOSES = {"age_span", "identity", "face_detail", "tpose"}
 WAITING_STATUS = "waiting"
+RUNNING_STATUS = "running"
+STALE_RUNNING_SECONDS = 20 * 60
+PHASE_LABELS = {
+    "face_detail": "面部",
+    "tpose": "T 型",
+    "identity": "身份",
+    "outfit": "服裝",
+    "expression": "表情",
+    "thumb": "縮圖",
+    "age_span": "年齡軸",
+}
 
 
 class AgeSpanDependencyPending(Exception):
     """年齡軸前置步驟尚未完成，任務應保持 pending 而非標記 failed。"""
+
+
+def _parse_task_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
+
+
+def recover_stale_running_tasks(
+    tasks: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+    max_age_s: int = STALE_RUNNING_SECONDS,
+) -> list[dict[str, Any]]:
+    """卡住的 running（行程中斷）收斂回 pending，避免生圖迴圈永久停住。"""
+    current = now or datetime.now(timezone.utc)
+    recovered: list[dict[str, Any]] = []
+    limit = timedelta(seconds=max(1, int(max_age_s)))
+    for task in tasks:
+        if str(task.get("status") or "").strip().lower() != RUNNING_STATUS:
+            continue
+        started = _parse_task_datetime(task.get("started_at") or task.get("updated_at"))
+        if started is not None and current - started < limit:
+            continue
+        task["status"] = "pending"
+        recovered.append(task)
+    return recovered
+
+
+def has_in_flight_generation(tasks: list[dict[str, Any]]) -> bool:
+    recover_stale_running_tasks(tasks)
+    return any(str(item.get("status") or "").strip().lower() == RUNNING_STATUS for item in tasks)
 
 FACE_PHASE = "face_detail"
 TPOSE_PHASE = "tpose"
@@ -144,41 +194,60 @@ def build_age_span_evolution_params(
     persist: bool = True,
     entity_id: str | None = None,
 ) -> dict[str, Any]:
+    # api_key 仍接受以相容舊呼叫端，但絕不寫入佇列 JSON。
+    _ = api_key
     age = int(step["age"])
     purpose = str(step["purpose"])
     token = _age_token(age)
     age_start = int(step.get("age_start") or AGE_SPAN_START)
     age_end = int(step.get("age_end") or AGE_SPAN_END)
     user_extra = str(extra or "").strip()
+    image_request: dict[str, Any] = {
+        "purpose": purpose,
+        "provider": provider,
+        "model": model,
+        "base_url": base_url,
+        "extra": age_span_prompt_extra(phase=str(step["phase"]), age=age, user_extra=user_extra),
+        "user_extra": user_extra,
+        "n": 1,
+        "multi_angle": False,
+        "persist": persist,
+        "entity_id": entity_id,
+        "pipeline": AGE_SPAN_PIPELINE,
+        "pipeline_id": pipeline_id,
+        "phase": step["phase"],
+        "age": age,
+        "age_start": age_start,
+        "age_end": age_end,
+        "step_index": step["step_index"],
+        "total_steps": step["total_steps"],
+        "depends_on": step.get("depends_on"),
+        "angle": step.get("angle"),
+        "asset_dir": f"assets/{purpose}/age_{token}",
+        "filename_prefix": f"ref_{purpose}_age_{token}",
+    }
+    # api_key 不寫入佇列 JSON；執行時由 imaging settings / 環境變數提供
     return {
         "age_override": age,
         "_queue_nonce": f"{pipeline_id}-{purpose}-age-{token}",
-        "_image_request": {
-            "purpose": purpose,
-            "provider": provider,
-            "model": model,
-            "base_url": base_url,
-            "api_key": api_key,
-            "extra": age_span_prompt_extra(phase=str(step["phase"]), age=age, user_extra=user_extra),
-            "user_extra": user_extra,
-            "n": 1,
-            "multi_angle": False,
-            "persist": persist,
-            "entity_id": entity_id,
-            "pipeline": AGE_SPAN_PIPELINE,
-            "pipeline_id": pipeline_id,
-            "phase": step["phase"],
-            "age": age,
-            "age_start": age_start,
-            "age_end": age_end,
-            "step_index": step["step_index"],
-            "total_steps": step["total_steps"],
-            "depends_on": step.get("depends_on"),
-            "angle": step.get("angle"),
-            "asset_dir": f"assets/{purpose}/age_{token}",
-            "filename_prefix": f"ref_{purpose}_age_{token}",
-        },
+        "_image_request": image_request,
     }
+
+
+def phase_label(phase: str | None) -> str:
+    key = str(phase or "").strip()
+    return PHASE_LABELS.get(key, key or "生圖")
+
+
+def step_phrase(image_request: dict[str, Any] | None) -> str:
+    req = image_request if isinstance(image_request, dict) else {}
+    label = phase_label(str(req.get("phase") or req.get("purpose") or ""))
+    age = req.get("age")
+    try:
+        age_int = int(age)
+    except (TypeError, ValueError):
+        return label
+    return f"{label} {age_int} 歲"
 
 
 def _task_image_request(task: dict[str, Any]) -> dict[str, Any]:
@@ -569,7 +638,7 @@ def find_open_age_span_pipeline_id(tasks: list[dict[str, Any]]) -> str | None:
             continue
         for task in group:
             status = str(task.get("status") or "").strip().lower()
-            if status in {"pending", WAITING_STATUS, "failed"}:
+            if status in {"pending", WAITING_STATUS, "failed", RUNNING_STATUS}:
                 return pipeline_id
         if missing_next_step(tasks, pipeline_id):
             return pipeline_id
@@ -593,10 +662,14 @@ _pipeline_groups = pipeline_groups
 
 
 def activate_next_waiting_task(tasks: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """每個 pipeline 最多一筆 pending；前置步驟入庫後，才把下一步從 waiting 轉成 pending。"""
+    """每個 pipeline 最多一筆 pending／running；前置步驟入庫後，才把下一步從 waiting 轉成 pending。"""
+    recover_stale_running_tasks(tasks)
     activated: dict[str, Any] | None = None
     for pipeline_tasks in _pipeline_groups(tasks).values():
-        if any(str(item.get("status") or "").strip().lower() == "pending" for item in pipeline_tasks):
+        if any(
+            str(item.get("status") or "").strip().lower() in {"pending", RUNNING_STATUS}
+            for item in pipeline_tasks
+        ):
             continue
         waiting = sorted(
             [
@@ -623,7 +696,14 @@ def activate_next_waiting_task(tasks: list[dict[str, Any]]) -> dict[str, Any] | 
 
 def normalize_age_span_queue(tasks: list[dict[str, Any]]) -> None:
     """把多筆同時 pending 的年齡軸步驟收斂成一次只開放下一步。"""
+    recover_stale_running_tasks(tasks)
     for pipeline_tasks in _pipeline_groups(tasks).values():
+        if any(str(item.get("status") or "").strip().lower() == RUNNING_STATUS for item in pipeline_tasks):
+            for item in pipeline_tasks:
+                status = str(item.get("status") or "").strip().lower()
+                if status == "pending":
+                    item["status"] = WAITING_STATUS
+            continue
         candidates = sorted(
             [
                 item
@@ -702,6 +782,8 @@ def _step_effective_status(task: dict[str, Any] | None) -> str:
         return "failed"
     if status == "pending":
         return "pending"
+    if status == RUNNING_STATUS:
+        return RUNNING_STATUS
     if status == WAITING_STATUS:
         return WAITING_STATUS
     if status == "ready":
@@ -782,6 +864,11 @@ def summarize_age_span_pipeline(
         for task in pipeline_tasks
         if str(task.get("status") or "").strip().lower() == "pending"
     ]
+    running = [
+        task
+        for task in pipeline_tasks
+        if str(task.get("status") or "").strip().lower() == RUNNING_STATUS
+    ]
     waiting = [
         task
         for task in pipeline_tasks
@@ -794,11 +881,16 @@ def summarize_age_span_pipeline(
     ]
     blocking = None
     preview = [dict(task) for task in tasks]
-    activate_next_waiting_task(preview)
-    runnable = find_next_runnable_task(preview)
-    runnable_image_request = _task_image_request(runnable) if runnable else {}
-    if runnable and str(runnable_image_request.get("pipeline") or "") != AGE_SPAN_PIPELINE:
-        runnable = None
+    if running:
+        runnable = running[0]
+        runnable_image_request = _task_image_request(runnable)
+    else:
+        activate_next_waiting_task(preview)
+        runnable = find_next_runnable_task(preview)
+        runnable_image_request = _task_image_request(runnable) if runnable else {}
+        if runnable and str(runnable_image_request.get("pipeline") or "") != AGE_SPAN_PIPELINE:
+            runnable = None
+            runnable_image_request = {}
 
     blocking_reason: str | None = None
     if failed:
@@ -812,7 +904,21 @@ def summarize_age_span_pipeline(
     total_steps = int(_task_image_request(pipeline_tasks[0]).get("total_steps") or len(pipeline_tasks))
     planned_steps = _build_pipeline_steps(pipeline_tasks)
     missing_count = sum(1 for item in planned_steps if item.get("status") == "missing")
-    has_open = bool(pending or waiting or failed or missing_next_step(pipeline_tasks, resolved_pipeline_id))
+    has_open = bool(
+        pending or waiting or failed or running or missing_next_step(pipeline_tasks, resolved_pipeline_id)
+    )
+    name = pipeline_tasks[0].get("character_name") or f"角色 #{pipeline_tasks[0].get('core_id')}"
+    done = f"{len(accepted)}/{total_steps}"
+    if blocking_reason:
+        headline = blocking_reason
+    elif running:
+        headline = f"正在生成 {name} · {step_phrase(runnable_image_request)}（{done}）"
+    elif runnable:
+        headline = f"排隊中 {name} · 下一步 {step_phrase(runnable_image_request)}（{done}）"
+    elif has_open:
+        headline = f"{name} 年齡軸進行中（{done}）"
+    else:
+        headline = f"{name} 年齡軸已完成（{done}）"
     return {
         "pipeline_id": resolved_pipeline_id or None,
         "core_id": int(pipeline_tasks[0].get("core_id") or 0) or None,
@@ -822,6 +928,7 @@ def summarize_age_span_pipeline(
         "ready_pending_review_count": len(ready_pending),
         "pending_count": len(pending),
         "waiting_count": len(waiting) + missing_count,
+        "running_count": len(running),
         "failed_count": len(failed),
         "blocking_task_id": int(blocking["id"]) if blocking else None,
         "blocking_reason": blocking_reason,
@@ -829,12 +936,16 @@ def summarize_age_span_pipeline(
         "next_phase": runnable_image_request.get("phase") if runnable else None,
         "next_age": runnable_image_request.get("age") if runnable else None,
         "has_open_pipeline": has_open,
+        "headline": headline,
         "steps": planned_steps,
     }
 
 
 def find_next_runnable_task(tasks: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """找出下一筆可執行的 pending 任務（年齡軸依 step_index 循序）。"""
+    """找出下一筆可執行的 pending 任務（全系統同時只允許一張 in-flight）。"""
+    recover_stale_running_tasks(tasks)
+    if has_in_flight_generation(tasks):
+        return None
     pending = [task for task in tasks if str(task.get("status") or "").strip().lower() == "pending"]
 
     def _sort_key(task: dict[str, Any]) -> tuple:

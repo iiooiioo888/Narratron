@@ -232,3 +232,14 @@ def test_manifest_to_dict_roundtrip() -> None:
     data["_extensions"]["comfyui"]["version"] = "0"
     dumped = manifest_to_dict(data)
     assert dumped["_extensions"]["comfyui"]["version"] == "0"
+
+
+def test_store_write_json_rejects_path_traversal(tmp_path: Path) -> None:
+    store = CharpassStore(tmp_path / "charpasses")
+    store.write_manifest("character-test", _base_manifest())
+    with pytest.raises(ValueError):
+        store.write_json("character-test", "../outside.json", {"leaked": True})
+    assert not (tmp_path / "charpasses" / "outside.json").exists()
+    dest = store.write_json("character-test", "causal/record.json", {"ok": True})
+    assert dest.is_file()
+    assert dest.resolve().is_relative_to((tmp_path / "charpasses" / "character-test").resolve())

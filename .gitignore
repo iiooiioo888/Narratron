@@ -48,7 +48,7 @@ logs/
 # Docker
 .dockerenv
 Dockerfile
-docker-compose.yml
+docker-compose.override.yml
 
 # OS
 .DS_Store
@@ -64,7 +64,11 @@ htmlcov/
 .tmp-pytest/
 _tmp_*.py
 
-# Runtime data (keep structure, ignore content)
+# Node (frontend/webapp)
+node_modules/
 data/charpasses/.characteros-queue.json
+data/charpasses/.characteros-queue.json.corrupt*
 data/charpasses/.characteros-index.json
+data/charpasses/character-*/
+!data/charpasses/README.md
 ```

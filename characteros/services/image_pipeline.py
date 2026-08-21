@@ -34,9 +34,33 @@ from characteros.services.age_span import (
 from characteros.storage.db_availability import is_database_available
 from characteros.storage.local_characters import LocalCharacterService
 from characteros.storage.local_queue import LocalQueueManager
+from characteros.imaging.settings import settings as imaging_settings
 
 
 TASK_LIST_LIMIT = 400
+
+
+def _resolved_queue_provider(body: ImageQueueRequest) -> str | None:
+    """入列時寫入實際 provider；未指定則用全域生圖設定，避免默默變成 null 占位圖。"""
+    raw = body.provider
+    if raw is not None and str(raw).strip():
+        return str(raw).strip().lower()
+    configured = str(imaging_settings.get_provider() or "").strip().lower()
+    return configured or None
+
+
+def _resolved_queue_model(body: ImageQueueRequest) -> str | None:
+    if body.model is not None and str(body.model).strip():
+        return str(body.model).strip()
+    configured = str(imaging_settings.get_model() or "").strip()
+    return configured or None
+
+
+def _resolved_queue_base_url(body: ImageQueueRequest) -> str | None:
+    if body.base_url is not None and str(body.base_url).strip():
+        return str(body.base_url).strip()
+    configured = str(imaging_settings.get_base_url() or "").strip()
+    return configured or None
 
 
 def _list_tasks(character_id: int, *, local_mode: bool, db: Session | None) -> list[dict[str, Any]]:
@@ -98,9 +122,9 @@ def _enqueue_age_span(
     evolution_params = build_age_span_evolution_params(
         first_step,
         pipeline_id=pipeline_id,
-        provider=body.provider,
-        model=body.model,
-        base_url=body.base_url,
+        provider=_resolved_queue_provider(body),
+        model=_resolved_queue_model(body),
+        base_url=_resolved_queue_base_url(body),
         api_key=body.api_key,
         extra=body.extra,
         persist=body.persist,
@@ -163,10 +187,9 @@ def _enqueue_single(
     evolution_params["_queue_nonce"] = f"img-{uuid4()}"
     evolution_params["_image_request"] = {
         "purpose": body.purpose,
-        "provider": body.provider,
-        "model": body.model,
-        "base_url": body.base_url,
-        "api_key": body.api_key,
+        "provider": _resolved_queue_provider(body),
+        "model": _resolved_queue_model(body),
+        "base_url": _resolved_queue_base_url(body),
         "extra": body.extra,
         "n": body.n,
         "multi_angle": body.multi_angle,

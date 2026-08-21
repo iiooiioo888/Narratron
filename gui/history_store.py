@@ -71,7 +71,16 @@ def save_runs(runs: list[GuiRun]) -> None:
             for r in runs
         ]
     }
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = path.with_name(f"{path.name}.tmp")
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        try:
+            path.write_text(text, encoding="utf-8")
+        finally:
+            tmp.unlink(missing_ok=True)
 
 
 def create_run_id() -> str:

@@ -245,6 +245,57 @@ class QueueManager:
         if variant.status == "ready":
             return variant
 
+        from datetime import datetime, timezone
+
+        from characteros.services.age_span import (
+            RUNNING_STATUS,
+            recover_stale_running_tasks,
+        )
+
+        all_tasks = self._all_variant_task_dicts()
+        recovered = recover_stale_running_tasks(all_tasks)
+        if recovered:
+            self._apply_age_span_statuses(all_tasks)
+            variant = self.get_variant_by_id(variant_id)
+            if not variant:
+                from fastapi import HTTPException, status
+
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Queue task {variant_id} not found",
+                )
+        current_status = str(variant.status or "").strip().lower()
+        in_flight = [
+            item
+            for item in all_tasks
+            if int(item.get("id") or 0) != int(variant_id)
+            and str(item.get("status") or "").strip().lower() == RUNNING_STATUS
+        ]
+        if in_flight or (current_status != RUNNING_STATUS and any(
+            str(item.get("status") or "").strip().lower() == RUNNING_STATUS for item in all_tasks
+        )):
+            from fastapi import HTTPException, status
+
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="已有一張圖正在生成，生圖迴圈一次只允許一張",
+            )
+        if current_status not in {"pending", "failed", RUNNING_STATUS}:
+            from fastapi import HTTPException, status
+
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Task {variant_id} is {current_status or 'unknown'}, not runnable",
+            )
+        if current_status != RUNNING_STATUS:
+            variant.status = RUNNING_STATUS
+            metadata = dict(variant.result_metadata or {})
+            metadata["started_at"] = datetime.now(timezone.utc).isoformat()
+            variant.result_metadata = metadata
+            self.db.add(variant)
+            self.db.commit()
+            self.db.refresh(variant)
+
         profile = None
         if variant.profile_id:
             profile = self.db.query(CharacterProfile).filter(
@@ -543,13 +594,22 @@ class QueueManager:
 
         prepare_for_processing(tasks, enqueue=_enqueue, core_id=core_id)
         self._sync_age_span_queue()
+        # nested enqueue 寫入 DB，須重載後才能看到新任務
+        tasks = self._all_variant_task_dicts()
         scoped = tasks if core_id is None else [
             item for item in tasks if int(item.get("core_id", 0)) == int(core_id)
         ]
         runnable = find_next_runnable_task(scoped)
         if not runnable:
             return None
-        return self.process_variant(int(runnable["id"]))
+        from fastapi import HTTPException, status as http_status
+
+        try:
+            return self.process_variant(int(runnable["id"]))
+        except HTTPException as exc:
+            if exc.status_code == http_status.HTTP_409_CONFLICT:
+                return None
+            raise
 
     def process_all_pending(self, *, limit: int = 20) -> list[CharacterVariant]:
         """批次處理 pending 任務（每次只處理當下可執行者）。"""
@@ -593,6 +653,10 @@ class QueueManager:
             CharacterVariant.status == 'waiting'
         ).count()
         
+        running_count = self.db.query(CharacterVariant).filter(
+            CharacterVariant.status == 'running'
+        ).count()
+
         ready_count = self.db.query(CharacterVariant).filter(
             CharacterVariant.status == 'ready'
         ).count()
@@ -624,6 +688,7 @@ class QueueManager:
         return {
             "total_pending": pending_count,
             "total_waiting": waiting_count,
+            "total_running": running_count,
             "total_ready": ready_count,
             "total_failed": failed_count,
             "average_wait_time_ms": float(avg_wait),

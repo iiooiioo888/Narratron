@@ -36,6 +36,36 @@ class CharacterCoreResponse(CharacterCoreBase):
     updated_at: datetime
 
 
+class CharacterEnsureRequest(BaseModel):
+    """建立或取得角色：同名則回傳既有護照，不另開分身。"""
+
+    name: str = Field(..., min_length=1, max_length=255, description="角色名稱")
+    base_age: int = Field(25, ge=0, le=150, description="基準年齡")
+    gender_spectrum: Optional[float] = Field(None, ge=0.0, le=1.0, description="性別光譜 (0=女性，1=男性)")
+    tags: List[str] = Field(default_factory=list, description="標籤列表")
+    notes: Optional[str] = Field(None, max_length=2000, description="備註（例如從劇本摘錄的外觀）")
+
+
+class CharacterEnsureResponse(CharacterCoreResponse):
+    """建立或取得角色的回應。"""
+
+    created: bool = False
+
+
+class CharacterSyncRequest(BaseModel):
+    """把劇本解析出的角色名寫入護照。"""
+
+    names: List[str] = Field(default_factory=list, description="角色名稱列表")
+
+
+class CharacterSyncResponse(BaseModel):
+    """從劇本同步角色護照的結果。"""
+
+    items: List[CharacterCoreResponse]
+    created_count: int = 0
+    existing_count: int = 0
+
+
 # ============================================
 # Profile Schemas
 # ============================================
@@ -243,6 +273,30 @@ class CharacterVersionSummaryResponse(BaseModel):
     branches: List[VersionBranchSummaryResponse] = Field(default_factory=list)
 
 
+class CharacterAgeAssetItem(BaseModel):
+    """單一歲數的面部／T 型資產。"""
+
+    age: int
+    face_detail_asset_path: Optional[str] = None
+    tpose_asset_path: Optional[str] = None
+    face_detail_url: Optional[str] = None
+    tpose_url: Optional[str] = None
+    has_face_detail: bool = False
+    has_tpose: bool = False
+
+
+class CharacterAgeGalleryResponse(BaseModel):
+    """年齡軸圖庫：點選歲數即可預覽面部與 T 型。"""
+
+    character_id: int
+    character_name: Optional[str] = None
+    age_start: int = 1
+    age_end: int = 80
+    face_count: int = 0
+    tpose_count: int = 0
+    items: List[CharacterAgeAssetItem] = Field(default_factory=list)
+
+
 # ============================================
 # Admin & Stats Schemas
 # ============================================
@@ -251,6 +305,7 @@ class QueueStatsResponse(BaseModel):
     """佇列統計資訊"""
     total_pending: int
     total_waiting: int = 0
+    total_running: int = 0
     total_ready: int
     total_failed: int
     average_wait_time_ms: float
@@ -284,6 +339,7 @@ class QueueTaskItem(BaseModel):
     face_detail_count: int = 0
     created_at: datetime
     updated_at: datetime
+    started_at: Optional[datetime] = None
 
 
 class QueueTaskListResponse(BaseModel):
@@ -304,6 +360,21 @@ class AgeSpanStepStatus(BaseModel):
     error_message: Optional[str] = None
 
 
+class QueueWorkerCurrentTask(BaseModel):
+    """目前正在向 AI 請求的那一筆。"""
+    id: int
+    core_id: Optional[int] = None
+    character_name: Optional[str] = None
+    status: str = "running"
+    purpose: Optional[str] = None
+    phase: Optional[str] = None
+    age: Optional[int] = None
+    step_index: Optional[int] = None
+    total_steps: Optional[int] = None
+    started_at: Optional[str] = None
+    label: Optional[str] = None
+
+
 class QueueWorkerStatusResponse(BaseModel):
     """後端逐步生圖 worker 狀態。"""
     paused: bool = False
@@ -312,6 +383,11 @@ class QueueWorkerStatusResponse(BaseModel):
     last_task_id: Optional[int] = None
     last_status: Optional[str] = None
     last_error: Optional[str] = None
+    current_task: Optional[QueueWorkerCurrentTask] = None
+    pending_count: int = 0
+    waiting_count: int = 0
+    running_count: int = 0
+    failed_count: int = 0
 
 
 class AgeSpanPipelineStatusResponse(BaseModel):
@@ -324,6 +400,7 @@ class AgeSpanPipelineStatusResponse(BaseModel):
     ready_pending_review_count: int = 0
     pending_count: int = 0
     waiting_count: int = 0
+    running_count: int = 0
     failed_count: int = 0
     blocking_task_id: Optional[int] = None
     blocking_reason: Optional[str] = None
@@ -331,6 +408,7 @@ class AgeSpanPipelineStatusResponse(BaseModel):
     next_phase: Optional[str] = None
     next_age: Optional[int] = None
     has_open_pipeline: bool = False
+    headline: Optional[str] = None
     steps: List[AgeSpanStepStatus] = Field(default_factory=list)
 
 
@@ -349,6 +427,7 @@ class HealthCheckResponse(BaseModel):
     status: str  # healthy, degraded, unhealthy
     database: str  # connected, disconnected
     timestamp: datetime
+    storage_mode: str = "local"
 
 
 # ============================================

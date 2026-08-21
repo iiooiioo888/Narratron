@@ -23,11 +23,18 @@ Pad → Timeline → Dashboard → Map → Player
 
 | 白皮書節點 | 中文 | 本 repo 路徑 | 狀態 |
 | :--- | :--- | :--- | :--- |
-| `Pad` | 寫板 | [`frontend/pad.md`](../frontend/pad.md) | 僅文件 |
-| `Timeline` | 時軌 | [`frontend/timeline.md`](../frontend/timeline.md) | 僅文件 |
-| `Dashboard` | 總覽 | [`frontend/dashboard.md`](../frontend/dashboard.md) | 僅文件 |
-| `Map` | 因果圖 | [`frontend/map.md`](../frontend/map.md) | 僅文件 |
-| `Player` | 播放器 | [`frontend/player.md`](../frontend/player.md) | 僅文件 |
+| `Pad` | 寫板 | [`frontend/pad.md`](../frontend/pad.md) | Alpha Q1 已通 |
+| `Timeline` | 時軌 | [`frontend/timeline.md`](../frontend/timeline.md) | Alpha Q1 已通 |
+| `Dashboard` | 總覽 | [`frontend/dashboard.md`](../frontend/dashboard.md) | Alpha Q1 已通 |
+| `Map` | 因果圖 | [`frontend/map.md`](../frontend/map.md) | Alpha Q1 已通 |
+| `Player` | 播放器 | [`frontend/player.md`](../frontend/player.md) | Alpha Q1 已通（Muxer 成品待 Q4） |
+
+可執行 GUI：
+
+- 門面 App Shell：[`characteros/static/index.html`](../characteros/static/index.html)
+- React 原型：[`frontend/webapp/`](../frontend/webapp/)
+- Streamlit：[`gui/streamlit_app.py`](../gui/streamlit_app.py)
+- CharacterOS 進階後台：[`characteros/static/panel.html`](../characteros/static/panel.html)（`/admin/panel`，不是第六個用戶層畫面）
 
 入口說明：[`frontend/README.md`](../frontend/README.md)
 

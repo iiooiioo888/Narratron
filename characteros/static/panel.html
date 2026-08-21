@@ -1,0 +1,1459 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CharacterOS 管理面板</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
+    h1 { margin-bottom: 8px; }
+    .hint { color: #6b7280; margin-bottom: 20px; line-height: 1.5; }
+    .field-hint { font-size: 12px; color: #9ca3af; margin: -4px 0 8px; line-height: 1.45; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { border: 1px solid #d1d5db; border-radius: 10px; padding: 14px; }
+    .card h2 { margin-top: 0; font-size: 18px; }
+    .card .section-desc { font-size: 13px; color: #6b7280; margin: -4px 0 12px; line-height: 1.45; }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 8px 0 4px; }
+    input, select, textarea, button { width: 100%; box-sizing: border-box; padding: 8px; margin-bottom: 8px; }
+    button { cursor: pointer; border: 0; border-radius: 8px; background: #2563eb; color: #fff; }
+    button.secondary { background: #374151; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    pre { background: #111827; color: #e5e7eb; padding: 10px; border-radius: 8px; max-height: 320px; overflow: auto; }
+    .list { max-height: 320px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
+    .item { padding: 8px; border-bottom: 1px solid #f3f4f6; cursor: pointer; border-radius: 6px; display: grid; grid-template-columns: 56px 1fr; gap: 10px; align-items: center; }
+    .item:hover { background: #f9fafb; }
+    .item.active { background: #eff6ff; border: 1px solid #93c5fd; }
+    .item:last-child { border-bottom: 0; }
+    .item-thumb { width: 56px; height: 56px; border-radius: 10px; overflow: hidden; background: #f3f4f6; border: 1px solid #e5e7eb; display: grid; place-items: center; color: #9ca3af; font-size: 12px; }
+    .item-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .item-main { min-width: 0; }
+    .item-main strong, .item-main span { display: block; }
+    .inline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .status { font-size: 13px; color: #4b5563; min-height: 1.2em; }
+    .status.ok { color: #059669; }
+    .status.err { color: #dc2626; }
+    .id-badge { display: inline-block; padding: 6px 10px; border-radius: 8px; background: #f3f4f6; font-family: Consolas, monospace; font-size: 14px; margin-bottom: 8px; }
+    .id-badge.empty { color: #9ca3af; font-style: italic; font-family: inherit; }
+    textarea.json { min-height: 110px; font-family: Consolas, monospace; }
+    .steps { font-size: 13px; color: #374151; background: #f9fafb; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; line-height: 1.55; }
+    .steps ol { margin: 6px 0 0 18px; padding: 0; }
+    .full-span { grid-column: 1 / -1; }
+    .stat-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .stat-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #f3f4f6; font-size: 13px; }
+    .stat-chip.pending { background: #fef3c7; color: #92400e; }
+    .stat-chip.ready { background: #d1fae5; color: #065f46; }
+    .stat-chip.failed { background: #fee2e2; color: #991b1b; }
+    .stat-chip.mode { background: #eff6ff; color: #1d4ed8; }
+    .queue-toolbar { display: grid; grid-template-columns: 1fr 1fr auto auto auto; gap: 8px; align-items: end; margin-bottom: 10px; }
+    .queue-toolbar label { margin-top: 0; }
+    .queue-toolbar button { margin-bottom: 0; }
+    .queue-cta-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+    .queue-cta-row button { width: auto; min-width: 160px; margin: 0; padding: 10px 16px; font-weight: 700; }
+    .queue-cta-row button.secondary { min-width: 0; font-weight: 600; }
+    .current-step-card { display: none; grid-template-columns: 140px 1fr; gap: 14px; align-items: start; padding: 12px; border: 1px solid #dbeafe; background: #f8fbff; border-radius: 12px; margin-bottom: 12px; }
+    .current-step-card.visible { display: grid; }
+    .current-step-card img { width: 140px; height: 140px; object-fit: cover; border-radius: 10px; background: #e5e7eb; }
+    .current-step-card .preview-empty { width: 140px; height: 140px; border-radius: 10px; background: #eef2ff; color: #6366f1; display: grid; place-items: center; font-size: 13px; text-align: center; padding: 8px; }
+    .current-step-card strong { display: block; font-size: 16px; margin-bottom: 4px; }
+    .current-step-card p { margin: 0 0 8px; color: #4b5563; font-size: 13px; line-height: 1.5; }
+    .age-span-grid-wrap { margin-bottom: 12px; }
+    .age-span-grid-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .age-span-tabs { display: flex; gap: 6px; }
+    .age-span-tabs button { width: auto; margin: 0; padding: 6px 10px; background: #e5e7eb; color: #111827; }
+    .age-span-tabs button.active { background: #2563eb; color: #fff; }
+    .age-span-grid { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 4px; }
+    .age-span-cell { border: 0; margin: 0; padding: 6px 0; border-radius: 6px; font-size: 11px; background: #f3f4f6; color: #6b7280; }
+    .age-span-cell.accepted, .age-span-cell.ready { background: #d1fae5; color: #065f46; }
+    .age-span-cell.pending { background: #fef3c7; color: #92400e; }
+    .age-span-cell.failed { background: #fee2e2; color: #991b1b; }
+    .age-span-cell.current { outline: 2px solid #2563eb; }
+    .age-span-cell.is-selected { outline: 2px solid #7c3aed; }
+    .age-span-hint { font-size: 12px; color: #6b7280; margin: 8px 0 0; }
+    .age-dual-preview { display: none; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 12px; }
+    .age-dual-preview.visible { display: grid; }
+    .age-dual-pane { border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px; background: #fff; }
+    .age-dual-pane .label { font-size: 12px; color: #6b7280; margin-bottom: 8px; }
+    .age-dual-pane .frame { aspect-ratio: 1; border-radius: 10px; background: #f3f4f6; display: grid; place-items: center; overflow: hidden; color: #9ca3af; font-size: 13px; text-align: center; padding: 8px; }
+    .age-dual-pane img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    @media (max-width: 720px) { .age-dual-preview.visible { grid-template-columns: 1fr; } }
+    .queue-advanced summary { cursor: pointer; font-weight: 700; margin: 8px 0; }
+    .queue-table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; max-height: 360px; }
+    table.queue-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.queue-table th, table.queue-table td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; text-align: left; vertical-align: top; }
+    table.queue-table th { background: #f9fafb; position: sticky; top: 0; z-index: 1; }
+    table.queue-table tr:hover td { background: #f9fafb; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge.pending { background: #fef3c7; color: #92400e; }
+    .badge.ready { background: #d1fae5; color: #065f46; }
+    .badge.failed { background: #fee2e2; color: #991b1b; }
+    .mono { font-family: Consolas, monospace; font-size: 12px; word-break: break-all; }
+    .queue-empty { padding: 16px; color: #9ca3af; text-align: center; }
+    .queue-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .queue-actions button { width: auto; margin: 0; padding: 6px 10px; font-size: 12px; }
+    .queue-actions a { font-size: 12px; color: #2563eb; text-decoration: none; }
+    .preview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 14px; }
+    .preview-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px; background: #fff; }
+    .preview-card img { width: 100%; height: 160px; object-fit: cover; border-radius: 8px; background: #f3f4f6; }
+    .preview-card .caption { margin-top: 6px; font-size: 12px; color: #4b5563; word-break: break-word; }
+    .age-span-banner { margin-bottom: 12px; padding: 12px 14px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe; font-size: 13px; line-height: 1.55; }
+    .age-span-banner.warn { background: #fffbeb; border-color: #fcd34d; }
+    .age-span-banner .progress { margin-top: 8px; height: 8px; background: #dbeafe; border-radius: 999px; overflow: hidden; }
+    .age-span-banner .progress > span { display: block; height: 100%; background: #2563eb; border-radius: 999px; }
+    tr.queue-blocking td { background: #fffbeb !important; }
+    @media (max-width: 960px) {
+      .grid { grid-template-columns: 1fr; }
+      .queue-toolbar { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <p class="hint" style="margin-top:0"><a href="/">← 返回 Narratron 門面（Pad / Timeline / Dashboard / Map / Player）</a></p>
+  <h1>CharacterOS 管理面板</h1>
+  <div class="hint">
+    進階角色 Core／Profile／Manifest、視覺風格與生圖流程。此頁不是用戶層第六個畫面，而是 Dashboard 角色護照的進階後台。
+    <strong>角色 ID 由系統自動分配</strong>，請從左側清單點選角色，無需手動輸入編號。
+    若 PostgreSQL 未啟動，會自動改讀寫本機 <code>data/charpasses/</code> 進行測試。
+    生圖僅能在此 GUI 面板操作，API 直連生圖入口已停用。
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>角色清單</h2>
+      <p class="section-desc">點選一筆角色後，編輯器與生圖區會自動帶入該角色的系統 ID。</p>
+      <label>名稱搜尋</label>
+      <div class="field-hint">支援模糊比對；留空則列出全部角色。</div>
+      <input id="searchName" placeholder="例如：卡爾、主角、反派…" />
+      <button onclick="loadCharacters()">重新載入清單</button>
+      <div id="characterList" class="list"></div>
+      <div id="listStatus" class="status"></div>
+    </section>
+
+    <section class="card">
+      <h2>完整角色編輯（Core + Profile）</h2>
+      <p class="section-desc">編輯核心身份與專案 Profile；manifest 內的 <code>_style.character_style</code> 會影響生圖提示詞。</p>
+      <label>目前選擇的角色 ID（系統分配，唯讀）</label>
+      <div class="field-hint">由資料庫自動編號；切換角色請回到左側清單點選。</div>
+      <div id="characterIdDisplay" class="id-badge empty">尚未選擇角色</div>
+      <input id="characterId" type="hidden" value="" />
+      <div class="inline">
+        <button id="btnLoadEditor" onclick="loadCharacterEditor()" disabled>載入編輯資料</button>
+        <button id="btnSaveEditor" class="secondary" onclick="saveCharacterEditor()" disabled>儲存角色</button>
+      </div>
+
+      <label>名稱／代號</label>
+      <div class="field-hint">名稱為顯示用；代號可填內部識別碼（可留空）。</div>
+      <div class="inline">
+        <input id="editName" placeholder="角色名稱，例如：卡爾" />
+        <input id="editCodename" placeholder="代號，例如：K-01（可留空）" />
+      </div>
+
+      <label>基準年齡／性別光譜</label>
+      <div class="field-hint">性別光譜 0～1：0 偏陽剛、1 偏陰柔、0.5 中性；變體生圖時可用「年齡」覆蓋基準年齡。</div>
+      <div class="inline">
+        <input id="editBaseAge" type="number" min="0" max="150" placeholder="基準年齡，例如：28" />
+        <input id="editGenderSpectrum" type="number" min="0" max="1" step="0.1" placeholder="性別光譜 0～1" />
+      </div>
+
+      <label>標籤 tags（逗號分隔）</label>
+      <div class="field-hint">用於搜尋與分類，例如：protagonist, modern, cyberpunk</div>
+      <input id="editTags" placeholder="protagonist, modern" />
+
+      <label>identity_anchor（身份錨點 JSON）</label>
+      <div class="field-hint">鎖定臉部／髮型等不可變特徵；生圖時用於維持角色一致性。</div>
+      <textarea id="editIdentityAnchor" class="json" placeholder='{"face_shape":"oval","hair":"short black"}'></textarea>
+
+      <label>metadata（擴充 JSON）</label>
+      <div class="field-hint">任意鍵值，不參與生圖 prompt 組裝。</div>
+      <textarea id="editMetadata" class="json"></textarea>
+
+      <label>風格預設／建立者</label>
+      <div class="inline">
+        <input id="editStylePreset" placeholder="style_preset，例如：cinematic_realistic" />
+        <input id="editCreatedBy" placeholder="created_by，例如：gui-panel" />
+      </div>
+
+      <label>專案名稱／專案 ID</label>
+      <div class="inline">
+        <input id="editProjectName" placeholder="專案名稱，例如：Episode 01" />
+        <input id="editProjectId" placeholder="專案 ID（可留空）" />
+      </div>
+
+      <label>outfit_config（服裝 JSON）</label>
+      <div class="field-hint">預設服裝與配件設定；purpose=outfit 生圖時會參考。</div>
+      <textarea id="editOutfitConfig" class="json"></textarea>
+
+      <label>manifest JSON（含 _style／角色風格）</label>
+      <div class="field-hint">完整護照 manifest；<code>_style.character_style</code> 含 art_prompt、reference_images 等生圖必要欄位。</div>
+      <textarea id="editManifest" class="json" style="min-height: 180px;"></textarea>
+
+      <label>備註 notes</label>
+      <textarea id="editNotes" rows="3" placeholder="給自己的備註，不會寫進生圖 prompt"></textarea>
+      <div id="editorStatus" class="status"></div>
+    </section>
+
+    <section class="card">
+      <h2>生圖設定（WAN／OpenAI 相容）</h2>
+      <p class="section-desc">設定第三方生圖 API；儲存後僅供本面板「生成圖片」使用，不開放公開 API 直連。</p>
+      <button onclick="loadImagingConfig()">讀取目前設定</button>
+      <label>Provider（生圖後端）</label>
+      <div class="field-hint">wan＝阿里百煉；openai＝OpenAI 相容；http＝自訂 webhook；null＝只組 prompt 不呼叫網路（測試用）。</div>
+      <select id="provider">
+        <option value="wan">wan（阿里百煉 WAN）</option>
+        <option value="openai">openai（OpenAI 相容介面）</option>
+        <option value="http">http（自訂 HTTP webhook）</option>
+        <option value="null">null（僅組 prompt，不打 API）</option>
+      </select>
+      <label>Base URL（API 端點）</label>
+      <div class="field-hint">WAN 可填 compatible-mode/v1；留空則使用已儲存的設定。</div>
+      <input id="baseUrl" value="https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1" />
+      <label>Model（模型名稱）</label>
+      <div class="field-hint">例如 wan2.7-image-pro；依 provider 文件填寫。</div>
+      <input id="model" value="wan2.7-image-pro" />
+      <label>API Key（留空代表不修改已儲存的金鑰）</label>
+      <input id="apiKey" type="password" placeholder="sk-… 或百煉 API Key" />
+      <label><input id="persistEnv" type="checkbox" checked style="width:auto;margin-right:6px;" /> 同步寫入專案根目錄 .env</label>
+      <button onclick="saveImagingConfig()">儲存生圖設定</button>
+      <div id="cfgStatus" class="status"></div>
+    </section>
+
+    <section class="card">
+      <h2>變體／生圖</h2>
+      <p class="section-desc">依選中角色排入生圖任務。新人物請用年齡軸：系統會自動逐步向 AI 請求，一次一張，完成後直接入庫。</p>
+      <div class="steps">
+        <strong>建議流程</strong>
+        <ol>
+          <li>左側清單點選角色（ID 自動帶入）</li>
+          <li>按「建立 1–80 歲年齡軸並自動開始」</li>
+          <li>系統會先跑面部細緻 1–80 歲，再跑 T 型外觀 1–80 歲；不必逐個按執行</li>
+        </ol>
+      </div>
+      <label>目前選擇的角色 ID（與編輯器同步，唯讀）</label>
+      <div id="imgCharacterIdDisplay" class="id-badge empty">尚未選擇角色</div>
+      <input id="imgCharacterId" type="hidden" value="" />
+
+      <label>變體參數（皆可留空，留空則使用 Profile 基準值）</label>
+      <div class="field-hint">先請求變體可預先排入佇列；生圖仍可直接使用目前 manifest。</div>
+      <div class="inline">
+        <input id="age" type="number" min="0" max="150" placeholder="目標年齡，例如：45" />
+        <input id="emotion" placeholder="情緒：neutral / happy / sad / angry" />
+      </div>
+      <div class="inline">
+        <input id="scene" placeholder="場景：battle / formal_event / casual_street" />
+        <input id="injury" type="number" min="0" max="1" step="0.1" placeholder="受傷程度 0～1" />
+      </div>
+      <button id="btnVariant" class="secondary" onclick="requestVariant()" disabled>請求變體（排入佇列）</button>
+
+      <label>生圖用途 Purpose</label>
+      <div class="field-hint">新人物請選 <strong>age_span</strong>。identity 會產出多視角參考圖；face_detail / tpose 為單張用途。</div>
+      <select id="purpose">
+        <option value="age_span">age_span（新人物 1–80 歲面部 + T 型）</option>
+        <option value="identity">identity（身份／臉部參考）</option>
+        <option value="face_detail">face_detail（面部細緻）</option>
+        <option value="tpose">tpose（T 型外觀）</option>
+        <option value="outfit">outfit（服裝造型）</option>
+        <option value="expression">expression（表情特寫）</option>
+        <option value="thumb">thumb（縮圖預覽）</option>
+      </select>
+
+      <label>額外風格描述（會拼進 prompt）</label>
+      <div class="field-hint">疊加在 manifest 內 <code>_style.character_style</code> 之上；可寫畫風、光線、構圖等中文或英文關鍵詞。</div>
+      <textarea id="extra" rows="3" placeholder="例如：賽博龐克霓虹、電影級側光、油畫筆觸、8K 細節、霧面膚質"></textarea>
+
+      <div class="inline">
+        <button id="btnGenerateAgeSpan" onclick="generateAgeSpanAndRun()" disabled>建立 1–80 歲年齡軸並自動開始</button>
+        <button id="btnGenerate" class="secondary" onclick="generateImages()" disabled>排入目前用途</button>
+      </div>
+      <button id="btnCopyPrompt" class="secondary" onclick="copyPrompt()" disabled>複製最後提示詞</button>
+      <label>變體 API 回應</label>
+      <pre id="variantOutput">{}</pre>
+      <label>生圖 API 回應</label>
+      <pre id="imageOutput">{}</pre>
+      <div id="imgStatus" class="status"></div>
+    </section>
+
+    <section class="card full-span">
+      <h2>佇列任務面板</h2>
+      <p class="section-desc">
+        一次只向 AI 請求一張圖，完成後<strong>自動入庫並接下一筆</strong>。不必在列表裡逐個按執行。
+        PostgreSQL 未啟動時，任務寫入本機 <code>data/charpasses/.characteros-queue.json</code>。
+      </p>
+
+      <div id="ageSpanBanner" class="age-span-banner" style="display:none;"></div>
+      <div id="queueStats" class="stat-row"></div>
+      <div class="queue-cta-row">
+        <button id="btnAutoPipeline" onclick="startAutoPipeline()">繼續後端生圖</button>
+        <button class="secondary" id="btnStopAutoPipeline" onclick="stopAutoPipeline()" style="display:none;">暫停後端生圖</button>
+        <button class="secondary" onclick="acceptAllReadyTasks()">批次接受所有已完成</button>
+        <button class="secondary" onclick="startAutoPipeline({ resetFailed: true })">重設失敗並繼續</button>
+        <button class="secondary" onclick="clearQueueTasks()">清空佇列</button>
+        <button class="secondary" onclick="loadQueueTasks()">重新載入</button>
+      </div>
+      <div id="queueCurrentStep" class="current-step-card"></div>
+      <div id="ageDualPreview" class="age-dual-preview" aria-live="polite"></div>
+      <div id="ageSpanGrid" class="age-span-grid-wrap"></div>
+
+      <details class="queue-advanced">
+        <summary>進階：篩選與技術紀錄</summary>
+        <div class="queue-toolbar">
+          <div>
+            <label>狀態篩選</label>
+            <select id="queueStatusFilter">
+              <option value="">全部狀態</option>
+              <option value="pending">pending（等待中）</option>
+              <option value="ready">ready（已完成）</option>
+              <option value="failed">failed（失敗）</option>
+            </select>
+          </div>
+          <div>
+            <label>角色 ID（可留空）</label>
+            <input id="queueCoreFilter" type="number" min="1" placeholder="例如：1" />
+          </div>
+          <div>
+            <label>重設 from_id（可留空）</label>
+            <input id="queueFromIdFilter" type="number" min="1" placeholder="例如：2" />
+          </div>
+          <button class="secondary" onclick="toggleQueueAutoRefresh()">自動刷新：關</button>
+          <button class="secondary" onclick="filterQueueBySelected()" id="btnQueueSelected" disabled>只看目前角色</button>
+        </div>
+        <div class="queue-table-wrap">
+          <table class="queue-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>角色</th>
+                <th>狀態</th>
+                <th>用途</th>
+                <th>摘要</th>
+                <th>建立時間</th>
+                <th>結果</th>
+              </tr>
+            </thead>
+            <tbody id="queueTaskBody">
+              <tr><td colspan="7" class="queue-empty">載入中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+      <div id="queuePreview" class="preview-grid"></div>
+      <div id="queueStatus" class="status"></div>
+    </section>
+  </div>
+
+  <script>
+    let lastPrompt = "";
+    let selectedCharacterId = "";
+    let queueAutoRefreshTimer = null;
+    let lastAgeSpanStatus = null;
+    let queueAutoRun = false;
+    let lastAgeSpanPhaseTab = "face_detail";
+    let selectedPreviewAge = null;
+    let ageGalleryByAge = {};
+
+    // 角色視覺預設：當 manifest 尚未填入 _style.character_style.visual 時，自動補齊
+    const DEFAULT_STYLE_PRESET = "3D建模風格, T型體";
+    const DEFAULT_CREATED_BY = DEFAULT_STYLE_PRESET;
+    const DEFAULT_STYLE_MEDIUM = "3D建模風格";
+    const DEFAULT_STYLE_AESTHETIC = "T型體";
+
+    const STATUS_LABELS = {
+      pending: "等待中",
+      ready: "已完成",
+      failed: "失敗",
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function reviewStatusLabel(task) {
+      const imageGen = task && task.result_metadata && task.result_metadata.image_generation;
+      const review = imageGen && typeof imageGen.review === "object" ? imageGen.review : {};
+      const status = String(review.status || "").trim();
+      if (!status) return "";
+      if (status === "pending") return "待接受";
+      if (status === "accepted") return "已接受";
+      if (status === "rejected") return "已拒絕";
+      return status;
+    }
+
+    function setJson(id, payload) {
+      document.getElementById(id).textContent = JSON.stringify(payload, null, 2);
+    }
+
+    function setStatus(id, text, kind) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = "status" + (kind === "ok" ? " ok" : kind === "err" ? " err" : "");
+    }
+
+    async function parseResponseJson(resp) {
+      const text = await resp.text();
+      if (!text) return {};
+      try {
+        return JSON.parse(text);
+      } catch {
+        const preview = text.replace(/\\s+/g, " ").trim().slice(0, 160);
+        throw new Error(preview || `HTTP ${resp.status}`);
+      }
+    }
+
+    function apiErrorDetail(data, fallback) {
+      if (!data || data.detail === undefined || data.detail === null) return fallback;
+      return typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+    }
+
+    function characterAssetUrl(characterId, assetPath) {
+      const raw = String(assetPath || "").trim().replace(/^[/]+/, "");
+      if (!raw || raw.split("/").includes("..")) return "";
+      const encoded = raw.split("/").map(encodeURIComponent).join("/");
+      return `/api/v1/characters/${characterId}/assets/${encoded}`;
+    }
+
+    function pickCharacterThumbnail(character) {
+      const metadata = character && character.metadata && typeof character.metadata === "object"
+        ? character.metadata
+        : {};
+      const faceDetail = typeof metadata.face_detail_asset_path === "string" ? metadata.face_detail_asset_path : "";
+      const thumbnail = typeof metadata.thumbnail_asset_path === "string" ? metadata.thumbnail_asset_path : "";
+      return faceDetail || thumbnail || "";
+    }
+
+    function imagePreviewCards(task) {
+      const imageGen = task.result_metadata && task.result_metadata.image_generation
+        ? task.result_metadata.image_generation
+        : {};
+      const images = Array.isArray(imageGen.images) ? imageGen.images.slice() : [];
+      const seen = new Set(images.map((image) => image && image.asset_path).filter(Boolean));
+      const pushPath = (path, angle) => {
+        const clean = String(path || "").trim();
+        if (!clean || seen.has(clean)) return;
+        seen.add(clean);
+        images.push({ asset_path: clean, angle: angle || "" });
+      };
+      pushPath(task.face_detail_asset_path || task.result_metadata?.face_detail_asset_path || imageGen.face_detail_asset_path, "face_detail");
+      pushPath(task.representative_asset_path || task.result_metadata?.representative_asset_path || imageGen.representative_asset_path, "preview");
+      pushPath(task.thumbnail_asset_path || task.result_metadata?.thumbnail_asset_path || imageGen.thumbnail_asset_path, "thumb");
+      return images
+        .filter((image) => image && image.asset_path)
+        .map((image) => {
+          const src = characterAssetUrl(task.core_id, image.asset_path);
+          const badge = image.angle === "face_detail" ? "面部細節" : (image.angle || "unclassified");
+          return `
+            <div class="preview-card">
+              <img src="${escapeHtml(src)}" alt="${escapeHtml(task.character_name || task.core_id)}" loading="lazy" onerror="this.parentElement.style.display='none'" />
+              <div class="caption">
+                <strong>${escapeHtml(task.character_name || `#${task.core_id}`)}</strong><br/>
+                ${escapeHtml(imageGen.purpose || "identity")} / ${escapeHtml(badge)}
+              </div>
+            </div>
+          `;
+        });
+    }
+
+    function updateCharacterSelection(id, name) {
+      selectedCharacterId = id ? String(id) : "";
+      document.getElementById("characterId").value = selectedCharacterId;
+      document.getElementById("imgCharacterId").value = selectedCharacterId;
+
+      const idLabel = selectedCharacterId
+        ? `#${selectedCharacterId}${name ? " · " + name : ""}`
+        : "";
+      const idDisplay = document.getElementById("characterIdDisplay");
+      const imgDisplay = document.getElementById("imgCharacterIdDisplay");
+      if (selectedCharacterId) {
+        idDisplay.textContent = idLabel;
+        idDisplay.className = "id-badge";
+        imgDisplay.textContent = idLabel;
+        imgDisplay.className = "id-badge";
+      } else {
+        idDisplay.textContent = "尚未選擇角色";
+        idDisplay.className = "id-badge empty";
+        imgDisplay.textContent = "尚未選擇角色";
+        imgDisplay.className = "id-badge empty";
+      }
+
+      const hasId = Boolean(selectedCharacterId);
+      document.getElementById("btnLoadEditor").disabled = !hasId;
+      document.getElementById("btnSaveEditor").disabled = !hasId;
+      document.getElementById("btnVariant").disabled = !hasId;
+      document.getElementById("btnGenerate").disabled = !hasId;
+      const btnAgeSpan = document.getElementById("btnGenerateAgeSpan");
+      if (btnAgeSpan) btnAgeSpan.disabled = !hasId;
+      document.getElementById("btnCopyPrompt").disabled = !lastPrompt;
+      document.getElementById("btnQueueSelected").disabled = !hasId;
+      if (selectedCharacterId) {
+        document.getElementById("queueCoreFilter").value = selectedCharacterId;
+      }
+
+      document.querySelectorAll("#characterList .item").forEach((node) => {
+        node.classList.toggle("active", node.dataset.id === selectedCharacterId);
+      });
+    }
+
+    async function loadCharacters() {
+      const name = document.getElementById("searchName").value.trim();
+      const query = name ? `?name=${encodeURIComponent(name)}` : "";
+      setStatus("listStatus", "載入中…");
+      try {
+        const resp = await fetch(`/api/v1/characters${query}`);
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) {
+          throw new Error(apiErrorDetail(data, "載入失敗"));
+        }
+        const list = document.getElementById("characterList");
+        list.innerHTML = "";
+        if (!data || data.length === 0) {
+          list.innerHTML = '<div class="item" style="cursor:default;color:#9ca3af;">查無角色。請先在資料庫建立角色，或調整搜尋關鍵字。</div>';
+          updateCharacterSelection("", "");
+          setStatus("listStatus", "共 0 筆角色", "err");
+          return;
+        }
+        (data || []).forEach((item) => {
+          const div = document.createElement("div");
+          div.className = "item";
+          div.dataset.id = String(item.id);
+          const thumb = pickCharacterThumbnail(item);
+          const thumbHtml = thumb
+            ? `<div class="item-thumb"><img src="${characterAssetUrl(item.id, thumb)}" alt="${escapeHtml(item.name || item.id)}" loading="lazy" /></div>`
+            : `<div class="item-thumb">無圖</div>`;
+          div.innerHTML = `${thumbHtml}<div class="item-main"><strong>#${escapeHtml(item.id)} ${escapeHtml(item.name || "（未命名）")}</strong><span class="status">${escapeHtml((item.tags || []).join(", ") || "無標籤")}</span></div>`;
+          div.onclick = () => {
+            updateCharacterSelection(item.id, item.name || "");
+            loadCharacterEditor();
+            loadQueueTasks();
+          };
+          list.appendChild(div);
+        });
+        setStatus("listStatus", `共 ${data.length} 筆；點選一筆以帶入系統 ID`, "ok");
+        if (selectedCharacterId) {
+          updateCharacterSelection(selectedCharacterId, "");
+        }
+      } catch (err) {
+        setStatus("listStatus", `載入失敗：${err.message}`, "err");
+      }
+    }
+
+    function parseJsonField(id) {
+      const raw = document.getElementById(id).value.trim();
+      if (!raw) return {};
+      return JSON.parse(raw);
+    }
+
+    function pretty(value) {
+      return JSON.stringify(value || {}, null, 2);
+    }
+
+    async function loadCharacterEditor() {
+      const id = document.getElementById("characterId").value;
+      if (!id) {
+        setStatus("editorStatus", "請先從左側清單選擇角色", "err");
+        return;
+      }
+      setStatus("editorStatus", "載入中…");
+      try {
+        const resp = await fetch(`/api/v1/characters/${id}/editor`);
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) {
+          throw new Error(apiErrorDetail(data, "載入失敗"));
+        }
+        const core = data.core || {};
+        const profile = data.profile || {};
+        document.getElementById("editName").value = core.name || "";
+        document.getElementById("editCodename").value = core.codename || "";
+        document.getElementById("editBaseAge").value = core.base_age ?? "";
+        document.getElementById("editGenderSpectrum").value = core.gender_spectrum ?? "";
+        document.getElementById("editTags").value = (core.tags || []).join(", ");
+        document.getElementById("editIdentityAnchor").value = pretty(core.identity_anchor);
+        document.getElementById("editMetadata").value = pretty(core.metadata);
+        document.getElementById("editProjectName").value = profile.project_name || "";
+        document.getElementById("editProjectId").value = profile.project_id || "";
+        const stylePreset = profile.style_preset || DEFAULT_STYLE_PRESET;
+        const createdBy = profile.created_by || DEFAULT_CREATED_BY;
+        document.getElementById("editStylePreset").value = stylePreset;
+        document.getElementById("editCreatedBy").value = createdBy;
+        document.getElementById("editOutfitConfig").value = pretty(profile.outfit_config);
+        let manifestObj = profile.manifest || {};
+        if (manifestObj && typeof manifestObj === "object") {
+          manifestObj._meta = manifestObj._meta || {};
+          if (!manifestObj._meta.created_by) manifestObj._meta.created_by = createdBy;
+
+          manifestObj._style = manifestObj._style || {};
+          manifestObj._style.character_style = manifestObj._style.character_style || {};
+          manifestObj._style.character_style.visual = manifestObj._style.character_style.visual || {};
+
+          const visual = manifestObj._style.character_style.visual;
+          if (!visual.medium) visual.medium = DEFAULT_STYLE_MEDIUM;
+          if (!visual.aesthetic) visual.aesthetic = DEFAULT_STYLE_AESTHETIC;
+        }
+        document.getElementById("editManifest").value = pretty(manifestObj);
+        document.getElementById("editNotes").value = profile.notes || "";
+        updateCharacterSelection(id, core.name || "");
+        setStatus("editorStatus", "角色資料已載入，可編輯後按「儲存角色」", "ok");
+      } catch (err) {
+        setStatus("editorStatus", `載入失敗：${err.message}`, "err");
+      }
+    }
+
+    async function saveCharacterEditor() {
+      const id = document.getElementById("characterId").value;
+      if (!id) {
+        setStatus("editorStatus", "請先從左側清單選擇角色", "err");
+        return;
+      }
+      try {
+        const payload = {
+          name: document.getElementById("editName").value.trim(),
+          codename: document.getElementById("editCodename").value.trim() || null,
+          base_age: Number(document.getElementById("editBaseAge").value || 0),
+          gender_spectrum: document.getElementById("editGenderSpectrum").value === "" ? null : Number(document.getElementById("editGenderSpectrum").value),
+          tags: document.getElementById("editTags").value.split(",").map((x) => x.trim()).filter(Boolean),
+          identity_anchor: parseJsonField("editIdentityAnchor"),
+          metadata: parseJsonField("editMetadata"),
+          project_name: document.getElementById("editProjectName").value.trim() || null,
+          project_id: document.getElementById("editProjectId").value.trim() || null,
+          style_preset: document.getElementById("editStylePreset").value.trim() || null,
+          created_by: document.getElementById("editCreatedBy").value.trim() || null,
+          outfit_config: parseJsonField("editOutfitConfig"),
+          manifest: parseJsonField("editManifest"),
+          notes: document.getElementById("editNotes").value.trim() || null
+        };
+        setStatus("editorStatus", "儲存中…");
+        const resp = await fetch(`/api/v1/characters/${id}/editor`, {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) {
+          throw new Error(apiErrorDetail(data, "儲存失敗"));
+        }
+        setStatus("editorStatus", "角色儲存成功", "ok");
+        setJson("variantOutput", data);
+        await loadCharacters();
+      } catch (err) {
+        setStatus("editorStatus", `儲存失敗：${err.message}`, "err");
+      }
+    }
+
+    async function requestVariant() {
+      const id = document.getElementById("imgCharacterId").value;
+      if (!id) {
+        setStatus("imgStatus", "請先從左側清單選擇角色", "err");
+        return;
+      }
+      setStatus("imgStatus", "請求變體中…");
+      try {
+        const variant = await enqueueVariantTask(id);
+        const resp = variant.resp;
+        const data = variant.data;
+        setJson("variantOutput", data);
+        if (resp.status === 202) {
+          setStatus("imgStatus", "變體已排入佇列（202），背景處理中", "ok");
+          await loadQueueTasks();
+        } else if (resp.ok) {
+          setStatus("imgStatus", "變體已就緒，可直接生圖", "ok");
+        } else {
+          throw new Error(data.detail ? JSON.stringify(data.detail) : `HTTP ${resp.status}`);
+        }
+      } catch (err) {
+        setStatus("imgStatus", `請求變體失敗：${err.message}`, "err");
+      }
+    }
+
+    function buildVariantParams() {
+      const params = new URLSearchParams();
+      const age = document.getElementById("age").value;
+      const emotion = document.getElementById("emotion").value.trim();
+      const scene = document.getElementById("scene").value.trim();
+      const injury = document.getElementById("injury").value;
+      if (age) params.set("age", age);
+      if (emotion) params.set("emotion", emotion);
+      if (scene) params.set("scene", scene);
+      if (injury) params.set("injury", injury);
+      return params;
+    }
+
+    async function enqueueVariantTask(characterId, queueNonce) {
+      const params = buildVariantParams();
+      const nonce = queueNonce ? String(queueNonce) : "";
+      if (nonce) params.set("queue_nonce", nonce);
+      const resp = await fetch(`/api/v1/characters/${characterId}/variant?${params.toString()}`);
+      const data = await parseResponseJson(resp);
+      return { resp, data };
+    }
+
+    async function loadImagingConfig() {
+      setStatus("cfgStatus", "讀取設定中…");
+      try {
+        const resp = await fetch("/api/v1/admin/imaging-config");
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) {
+          throw new Error(apiErrorDetail(data, "讀取失敗"));
+        }
+        document.getElementById("provider").value = data.provider || "wan";
+        document.getElementById("baseUrl").value = data.base_url || "";
+        document.getElementById("model").value = data.model || "";
+        setStatus(
+          "cfgStatus",
+          `已載入。API Key：${data.has_api_key ? "已設定" : "尚未設定（生圖前請填寫）"}`,
+          data.has_api_key ? "ok" : "err"
+        );
+      } catch (err) {
+        setStatus("cfgStatus", `讀取失敗：${err.message}`, "err");
+      }
+    }
+
+    async function saveImagingConfig() {
+      const payload = {
+        provider: document.getElementById("provider").value,
+        base_url: document.getElementById("baseUrl").value.trim(),
+        model: document.getElementById("model").value.trim(),
+        persist_env: document.getElementById("persistEnv").checked
+      };
+      const apiKey = document.getElementById("apiKey").value.trim();
+      if (apiKey) payload.api_key = apiKey;
+      setStatus("cfgStatus", "儲存中…");
+      try {
+        const resp = await fetch("/api/v1/admin/imaging-config", {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) {
+          throw new Error(apiErrorDetail(data, "儲存失敗"));
+        }
+        setStatus(
+          "cfgStatus",
+          `設定已更新。API Key：${data.has_api_key ? "已設定" : "尚未設定"}`,
+          "ok"
+        );
+      } catch (err) {
+        setStatus("cfgStatus", `儲存失敗：${err.message}`, "err");
+      }
+    }
+
+    async function generateImages() {
+      const id = document.getElementById("imgCharacterId").value;
+      if (!id) {
+        setStatus("imgStatus", "請先從左側清單選擇角色", "err");
+        return;
+      }
+      setStatus("imgStatus", "正在建立生圖佇列任務…");
+      try {
+        const payload = {
+          purpose: document.getElementById("purpose").value,
+          provider: document.getElementById("provider").value,
+          base_url: document.getElementById("baseUrl").value.trim(),
+          model: document.getElementById("model").value.trim(),
+          extra: document.getElementById("extra").value.trim(),
+          age: document.getElementById("age").value ? Number(document.getElementById("age").value) : null,
+          emotion: document.getElementById("emotion").value.trim() || null,
+          scene: document.getElementById("scene").value.trim() || null,
+          injury: document.getElementById("injury").value ? Number(document.getElementById("injury").value) : null,
+          multi_angle: !["age_span", "tpose", "face_detail"].includes(document.getElementById("purpose").value),
+          persist: true
+        };
+        const apiKey = document.getElementById("apiKey").value.trim();
+        if (apiKey) payload.api_key = apiKey;
+        const resp = await fetch(`/api/v1/characters/${id}/image-queue`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CharacterOS-Panel": "enabled"
+          },
+          body: JSON.stringify(payload),
+        });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) {
+          throw new Error(apiErrorDetail(data, `HTTP ${resp.status}`));
+        }
+        setJson("imageOutput", data);
+        lastPrompt = "";
+        document.getElementById("btnCopyPrompt").disabled = true;
+        const queuedId = data.task && data.task.id
+          ? `#${data.task.id}`
+          : (data.pipeline === "age_span" ? `${data.created ?? data.total ?? 0} 筆年齡軸任務` : "");
+        setStatus(
+          "imgStatus",
+          `生圖任務已排入佇列 ${queuedId}，開始自動逐步執行`,
+          "ok"
+        );
+        await loadQueueTasks();
+        await startAutoPipeline();
+      } catch (err) {
+        setStatus("imgStatus", `生圖失敗：${err.message}`, "err");
+      }
+    }
+
+    async function generateAgeSpanAndRun() {
+      document.getElementById("purpose").value = "age_span";
+      await generateImages();
+    }
+
+    function taskAgeSpanMeta(task) {
+      const imageRequest = task && task.evolution_params && task.evolution_params._image_request;
+      if (!imageRequest || imageRequest.pipeline !== "age_span") return null;
+      return {
+        phase: imageRequest.phase || imageRequest.purpose || "",
+        age: imageRequest.age,
+        step: imageRequest.step_index,
+        total: imageRequest.total_steps,
+      };
+    }
+
+    function renderAgeSpanBanner(status) {
+      const box = document.getElementById("ageSpanBanner");
+      if (!box) return;
+      if (!status || !status.has_open_pipeline) {
+        box.style.display = "none";
+        box.innerHTML = "";
+        return;
+      }
+      const pct = status.total_steps
+        ? Math.round((status.accepted_count / status.total_steps) * 100)
+        : 0;
+      const blocked = Boolean(status.blocking_task_id);
+      box.className = "age-span-banner" + (blocked ? " warn" : "");
+      box.style.display = "block";
+      const nextHint = status.next_runnable_task_id
+        ? `下一步：任務 #${status.next_runnable_task_id}（${status.next_phase || "?"} ${status.next_age ?? "?"} 歲）· 自動執行中不必再按按鈕`
+        : "目前沒有待處理的 pending 任務";
+      box.innerHTML = `
+        <strong>年齡軸 pipeline</strong> · ${status.character_name || ("角色 #" + (status.core_id || "?"))}
+        · 已接受 ${status.accepted_count}/${status.total_steps}
+        · 待接受 ${status.ready_pending_review_count}
+        · 等待中 ${status.pending_count}
+        · 失敗 ${status.failed_count}
+        <div class="progress" title="${pct}%"><span style="width:${pct}%"></span></div>
+        <div>${blocked ? status.blocking_reason : nextHint}</div>
+      `;
+    }
+
+    async function loadAgeSpanStatus() {
+      const coreId = document.getElementById("queueCoreFilter").value.trim();
+      const params = new URLSearchParams();
+      if (coreId) params.set("core_id", coreId);
+      try {
+        const resp = await fetch(`/api/v1/admin/queue-tasks/age-span-status?${params.toString()}`);
+        if (resp.status === 404) {
+          lastAgeSpanStatus = null;
+          renderAgeSpanBanner(null);
+          return null;
+        }
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "載入年齡軸狀態失敗"));
+        lastAgeSpanStatus = data;
+        renderAgeSpanBanner(data);
+        if (data && data.core_id) {
+          await ensureAgeGallery(data.core_id);
+        }
+        return data;
+      } catch {
+        lastAgeSpanStatus = null;
+        renderAgeSpanBanner(null);
+        return null;
+      }
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "—";
+      try {
+        const dt = new Date(value);
+        if (Number.isNaN(dt.getTime())) return String(value);
+        return dt.toLocaleString("zh-TW", { hour12: false });
+      } catch {
+        return String(value);
+      }
+    }
+
+    function renderQueueStats(data) {
+      const stats = data.stats || {};
+      const mode = data.storage_mode === "database" ? "PostgreSQL" : "本機 JSON";
+      const box = document.getElementById("queueStats");
+      box.innerHTML = `
+        <span class="stat-chip mode">儲存模式：${mode}</span>
+        <span class="stat-chip pending">等待中 ${stats.total_pending ?? 0}</span>
+        <span class="stat-chip ready">已完成 ${stats.total_ready ?? 0}</span>
+        <span class="stat-chip failed">失敗 ${stats.total_failed ?? 0}</span>
+        <span class="stat-chip">平均等待 ${Math.round(stats.average_wait_time_ms || 0)} ms</span>
+        <span class="stat-chip">最久 pending ${Math.round(stats.oldest_pending_age_seconds || 0)} 秒</span>
+      `;
+    }
+
+    function taskPreviewSrc(task) {
+      const cards = imagePreviewCards(task);
+      const match = cards && cards[0] && cards[0].match(/src="([^"]+)"/);
+      return match ? match[1] : "";
+    }
+
+    function renderCurrentStep(tasks) {
+      const box = document.getElementById("queueCurrentStep");
+      if (!box) return;
+      const focusId = lastAgeSpanStatus && (lastAgeSpanStatus.next_runnable_task_id || lastAgeSpanStatus.blocking_task_id);
+      const focus = (tasks || []).find((task) => Number(task.id) === Number(focusId))
+        || (tasks || []).find((task) => task.status === "pending")
+        || (tasks || []).find((task) => task.status === "failed")
+        || (tasks || [])[0];
+      if (!focus) {
+        box.className = "current-step-card";
+        box.innerHTML = "";
+        return;
+      }
+      const ageMeta = taskAgeSpanMeta(focus);
+      const src = taskPreviewSrc(focus);
+      const title = ageMeta
+        ? `目前步驟 · #${focus.id} · ${ageMeta.phase || "age_span"} · ${ageMeta.age ?? "?"} 歲`
+        : `目前步驟 · #${focus.id}`;
+      const hint = queueAutoRun
+        ? "自動生圖中：完成後會直接入庫並接下一筆。"
+        : (focus.status === "pending"
+          ? "按「開始自動流程」即可連續執行，不必逐筆按執行。"
+          : (focus.error_message || STATUS_LABELS[focus.status] || focus.status));
+      box.className = "current-step-card visible";
+      box.innerHTML = `
+        ${src ? `<img src="${src}" alt="目前步驟預覽" />` : `<div class="preview-empty">${focus.status === "pending" ? "等待生圖…" : "尚無預覽"}</div>`}
+        <div>
+          <strong>${title}</strong>
+          <p>${hint}</p>
+          <span class="badge ${focus.status || "pending"}">${STATUS_LABELS[focus.status] || focus.status}</span>
+          ${focus.result_url ? ` <a href="${focus.result_url}" target="_blank" rel="noopener noreferrer">查看結果</a>` : ""}
+        </div>
+      `;
+    }
+
+    function setAgeSpanPhaseTab(phase) {
+      lastAgeSpanPhaseTab = phase;
+      renderAgeSpanGrid(lastAgeSpanStatus);
+    }
+
+    async function ensureAgeGallery(coreId) {
+      if (!coreId) {
+        ageGalleryByAge = {};
+        return;
+      }
+      try {
+        const resp = await fetch(`/api/v1/characters/${coreId}/age-gallery`);
+        if (!resp.ok) {
+          ageGalleryByAge = {};
+          return;
+        }
+        const data = await parseResponseJson(resp);
+        const map = {};
+        (data.items || []).forEach((item) => {
+          map[Number(item.age)] = item;
+        });
+        ageGalleryByAge = map;
+      } catch (_err) {
+        ageGalleryByAge = {};
+      }
+    }
+
+    function renderAgeDualPreview(age) {
+      const box = document.getElementById("ageDualPreview");
+      if (!box) return;
+      const coreId = Number(
+        (lastAgeSpanStatus && lastAgeSpanStatus.core_id) ||
+        document.getElementById("characterId")?.value ||
+        document.getElementById("queueCoreFilter")?.value ||
+        0
+      );
+      const item = ageGalleryByAge[Number(age)] || {};
+      const faceSrc = item.face_detail_url || characterAssetUrl(coreId, item.face_detail_asset_path);
+      const tposeSrc = item.tpose_url || characterAssetUrl(coreId, item.tpose_asset_path);
+      selectedPreviewAge = Number(age);
+      box.className = "age-dual-preview visible";
+      box.innerHTML = `
+        <div class="age-dual-pane">
+          <div class="label">${Number(age)} 歲 · 面部</div>
+          <div class="frame">${faceSrc ? `<img src="${escapeHtml(faceSrc)}" alt="${Number(age)} 歲面部" loading="lazy" />` : "尚無面部圖"}</div>
+        </div>
+        <div class="age-dual-pane">
+          <div class="label">${Number(age)} 歲 · T 型</div>
+          <div class="frame">${tposeSrc ? `<img src="${escapeHtml(tposeSrc)}" alt="${Number(age)} 歲 T 型" loading="lazy" />` : "尚無 T 型圖"}</div>
+        </div>
+      `;
+      document.querySelectorAll(".age-span-cell").forEach((btn) => {
+        btn.classList.toggle("is-selected", Number(btn.dataset.age) === Number(age));
+      });
+    }
+
+    async function selectAgePreview(age) {
+      const coreId = Number(
+        (lastAgeSpanStatus && lastAgeSpanStatus.core_id) ||
+        document.getElementById("characterId")?.value ||
+        0
+      );
+      if (coreId && !ageGalleryByAge[Number(age)]) {
+        await ensureAgeGallery(coreId);
+      }
+      renderAgeDualPreview(age);
+    }
+
+    function renderAgeSpanGrid(status) {
+      const box = document.getElementById("ageSpanGrid");
+      if (!box) return;
+      const steps = (status && Array.isArray(status.steps) ? status.steps : []);
+      if (!steps.length) {
+        box.innerHTML = "";
+        const dual = document.getElementById("ageDualPreview");
+        if (dual) {
+          dual.className = "age-dual-preview";
+          dual.innerHTML = "";
+        }
+        return;
+      }
+      const phase = lastAgeSpanPhaseTab === "tpose" ? "tpose" : "face_detail";
+      const filtered = steps.filter((step) => String(step.phase || "") === phase);
+      const currentId = status.next_runnable_task_id || status.blocking_task_id;
+      box.innerHTML = `
+        <div class="age-span-grid-header">
+          <strong>年齡軸時間軸</strong>
+          <div class="age-span-tabs">
+            <button class="${phase === "face_detail" ? "active" : ""}" onclick="setAgeSpanPhaseTab('face_detail')">面部細緻</button>
+            <button class="${phase === "tpose" ? "active" : ""}" onclick="setAgeSpanPhaseTab('tpose')">T 型外觀</button>
+          </div>
+        </div>
+        <div class="age-span-grid">
+          ${filtered.map((step) => {
+            const isCurrent = currentId && Number(step.task_id) === Number(currentId);
+            const isSelected = selectedPreviewAge != null && Number(step.age) === Number(selectedPreviewAge);
+            return `<button type="button" class="age-span-cell ${step.status || "missing"}${isCurrent ? " current" : ""}${isSelected ? " is-selected" : ""}" data-age="${step.age ?? ""}" title="${step.age} 歲 · 點選預覽面部與 T 型" onclick="selectAgePreview(${Number(step.age)})">${step.age ?? "?"}</button>`;
+          }).join("")}
+        </div>
+        <p class="age-span-hint">點選年齡格子可同時預覽該歲面部與 T 型。綠色＝已入庫，黃色＝排隊中，紅色＝失敗。</p>
+      `;
+      if (selectedPreviewAge != null) {
+        renderAgeDualPreview(selectedPreviewAge);
+      }
+    }
+
+    function renderQueueTasks(data) {
+      renderQueueStats(data);
+      const body = document.getElementById("queueTaskBody");
+      const preview = document.getElementById("queuePreview");
+      const tasks = data.tasks || [];
+      const latestReadyWithPrompt = tasks.find((task) => {
+        const imageGen = task.result_metadata && task.result_metadata.image_generation;
+        return imageGen && imageGen.prompt;
+      });
+      if (latestReadyWithPrompt) {
+        lastPrompt = latestReadyWithPrompt.result_metadata.image_generation.prompt || lastPrompt;
+        document.getElementById("btnCopyPrompt").disabled = !lastPrompt;
+      }
+      renderCurrentStep(tasks);
+      renderAgeSpanGrid(lastAgeSpanStatus);
+      if (!tasks.length) {
+        body.innerHTML = '<tr><td colspan="7" class="queue-empty">目前沒有佇列任務。選擇角色後按「建立 1–80 歲年齡軸並自動開始」。</td></tr>';
+        preview.innerHTML = "";
+        return;
+      }
+      body.innerHTML = tasks.map((task) => {
+        const status = task.status || "pending";
+        const statusLabel = STATUS_LABELS[status] || status;
+        const ageMeta = taskAgeSpanMeta(task);
+        const purpose = ageMeta
+          ? `${ageMeta.phase || "age_span"} ${ageMeta.age ?? "?"} 歲`
+          : (task.purpose || "—");
+        const name = task.character_name ? `#${task.core_id} · ${task.character_name}` : `#${task.core_id}`;
+        const isBlocking = lastAgeSpanStatus && Number(lastAgeSpanStatus.blocking_task_id) === Number(task.id);
+        const resultHtml = task.result_url
+          ? `<a href="${escapeHtml(task.result_url)}" target="_blank" rel="noopener noreferrer">查看</a>`
+          : (task.error_message ? `<span title="${escapeHtml(task.error_message)}">失敗</span>` : "—");
+        return `
+          <tr class="${isBlocking ? "queue-blocking" : ""}">
+            <td>${escapeHtml(task.id)}${isBlocking ? " ⚠" : ""}</td>
+            <td>${escapeHtml(name)}</td>
+            <td><span class="badge ${escapeHtml(status)}">${escapeHtml(statusLabel)}</span></td>
+            <td>${escapeHtml(purpose)}</td>
+            <td class="mono">${ageMeta ? `${escapeHtml(ageMeta.step ?? 0)}/${escapeHtml(ageMeta.total ?? 0)}` : escapeHtml((task.variant_hash || "").slice(0, 12))}</td>
+            <td>${escapeHtml(formatDateTime(task.created_at))}</td>
+            <td>${resultHtml}</td>
+          </tr>
+        `;
+      }).join("");
+      const previewCards = [];
+      tasks.forEach((task) => {
+        imagePreviewCards(task).forEach((card) => {
+          previewCards.push(card);
+        });
+      });
+      preview.innerHTML = previewCards.join("");
+    }
+
+    async function processQueueTask(taskId) {
+      setStatus("queueStatus", `正在處理任務 #${taskId}…`);
+      try {
+        const resp = await fetch(`/api/v1/admin/queue-tasks/${taskId}/process`, {
+          method: "POST",
+        });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) {
+          throw new Error(apiErrorDetail(data, "處理任務失敗"));
+        }
+        const task = data.task || {};
+        const status = task.status || "unknown";
+        const imageGen = task.result_metadata && task.result_metadata.image_generation;
+        if (imageGen && imageGen.prompt) {
+          lastPrompt = imageGen.prompt;
+          document.getElementById("btnCopyPrompt").disabled = false;
+          setJson("imageOutput", imageGen);
+        }
+        setStatus("queueStatus", `任務 #${taskId} 已處理，狀態：${status}`, status === "failed" ? "err" : "ok");
+        await loadQueueTasks();
+      } catch (err) {
+        setStatus("queueStatus", `處理失敗：${err.message}`, "err");
+      }
+    }
+
+    function setAutoPipelineUi(active) {
+      queueAutoRun = active;
+      const startBtn = document.getElementById("btnAutoPipeline");
+      const stopBtn = document.getElementById("btnStopAutoPipeline");
+      if (startBtn) startBtn.style.display = active ? "none" : "";
+      if (stopBtn) stopBtn.style.display = active ? "" : "none";
+    }
+
+    async function runPipelineStep() {
+      const coreId = document.getElementById("queueCoreFilter").value.trim();
+      const statusParams = new URLSearchParams();
+      if (coreId) statusParams.set("core_id", coreId);
+      try {
+        const statusResp = await fetch(`/api/v1/admin/queue-tasks/age-span-status?${statusParams.toString()}`);
+        if (statusResp.ok) {
+          lastAgeSpanStatus = await parseResponseJson(statusResp);
+          renderAgeSpanBanner(lastAgeSpanStatus);
+          if (lastAgeSpanStatus && lastAgeSpanStatus.blocking_task_id) {
+            setStatus("queueStatus", lastAgeSpanStatus.blocking_reason || "請先接受待審任務後再繼續", "err");
+            return "blocked";
+          }
+        } else if (statusResp.status === 404) {
+          lastAgeSpanStatus = null;
+          renderAgeSpanBanner(null);
+        }
+      } catch {
+        /* age-span status is optional */
+      }
+
+      const params = new URLSearchParams();
+      if (coreId) params.set("core_id", coreId);
+      const resp = await fetch(`/api/v1/admin/queue-tasks/process-next?${params.toString()}`, {
+        method: "POST",
+      });
+      const data = await parseResponseJson(resp);
+      if (!resp.ok) {
+        throw new Error(apiErrorDetail(data, "處理下一筆任務失敗"));
+      }
+      if (data.age_span) {
+        lastAgeSpanStatus = data.age_span;
+        renderAgeSpanBanner(data.age_span);
+      }
+      if (data.blocked) {
+        setStatus(
+          "queueStatus",
+          data.age_span && data.age_span.blocking_reason
+            ? data.age_span.blocking_reason
+            : "目前有任務待接受，請先接受後再繼續",
+          "err"
+        );
+        return "blocked";
+      }
+      if (!data.task) {
+        setStatus("queueStatus", "目前沒有 pending 任務可處理", "ok");
+        return "idle";
+      }
+      const imageGen = data.task.result_metadata && data.task.result_metadata.image_generation;
+      if (imageGen && imageGen.prompt) {
+        lastPrompt = imageGen.prompt;
+        document.getElementById("btnCopyPrompt").disabled = false;
+        setJson("imageOutput", imageGen);
+      }
+      const review = imageGen && imageGen.review ? String(imageGen.review.status || "") : "";
+      if (data.task.status === "failed") {
+        setStatus("queueStatus", `任務 #${data.task.id} 失敗：${data.task.error_message || "未知錯誤"}`, "err");
+        return "failed";
+      }
+      if (data.task.status === "ready" && (!review || review === "pending")) {
+        setStatus(
+          "queueStatus",
+          `任務 #${data.task.id} 已生成。請檢視預覽並按「接受入庫」；接受後會自動處理下一筆。`,
+          "ok"
+        );
+        return "await_review";
+      }
+      setStatus("queueStatus", `任務 #${data.task.id} 已處理，狀態：${data.task.status}`, "ok");
+      return "processed";
+    }
+
+    async function startAutoPipeline(options) {
+      const opts = options || {};
+      try {
+        if (opts.resetFailed) {
+          const coreId = document.getElementById("queueCoreFilter").value.trim();
+          const fromId = document.getElementById("queueFromIdFilter").value.trim();
+          const resetParams = new URLSearchParams();
+          if (coreId) resetParams.set("core_id", coreId);
+          if (fromId) resetParams.set("from_id", fromId);
+          const resetResp = await fetch(`/api/v1/admin/queue-tasks/reset-failed?${resetParams.toString()}`, {
+            method: "POST",
+          });
+          const resetData = await parseResponseJson(resetResp);
+          if (!resetResp.ok) throw new Error(apiErrorDetail(resetData, "重設 failed 任務失敗"));
+          setStatus("queueStatus", `已重設 ${resetData.reset ?? 0} 筆失敗任務`, "ok");
+        }
+        const resp = await fetch("/api/v1/admin/queue-worker/start", { method: "POST" });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "啟動後端生圖失敗"));
+        setAutoPipelineUi(true);
+        setStatus("queueStatus", "後端正在逐步生圖：一次一張，完成後自動入庫並接下一筆。", "ok");
+        await loadQueueTasks();
+      } catch (err) {
+        setAutoPipelineUi(false);
+        setStatus("queueStatus", `自動逐步執行失敗：${err.message}`, "err");
+      }
+    }
+
+    async function stopAutoPipeline() {
+      try {
+        await fetch("/api/v1/admin/queue-worker/pause", { method: "POST" });
+      } catch (err) {}
+      setAutoPipelineUi(false);
+      setStatus("queueStatus", "已暫停後端 worker。目前那一張仍會跑完。", "ok");
+    }
+
+    async function continueAutoPipelineIfActive() {
+      if (!queueAutoRun) return;
+      try {
+        await fetch("/api/v1/admin/queue-worker/start", { method: "POST" });
+        await loadQueueTasks();
+      } catch (err) {
+        setStatus("queueStatus", `喚醒後端 worker 失敗：${err.message}`, "err");
+      }
+    }
+
+    async function processNextQueueTask() {
+      setStatus("queueStatus", "正在逐步處理下一筆任務…");
+      try {
+        const result = await runPipelineStep();
+        if (result === "idle" || result === "blocked") {
+          /* message already set */
+        }
+        await loadQueueTasks();
+      } catch (err) {
+        setStatus("queueStatus", `處理失敗：${err.message}`, "err");
+      }
+    }
+
+    async function acceptQueueTask(taskId) {
+      setStatus("queueStatus", `正在接受任務 #${taskId}…`);
+      try {
+        const resp = await fetch(`/api/v1/admin/queue-tasks/${taskId}/accept`, { method: "POST" });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "接受任務失敗"));
+        setStatus("queueStatus", `任務 #${taskId} 已接受並寫回角色資料`, "ok");
+        await loadQueueTasks();
+        if (selectedCharacterId && String(data.task && data.task.core_id || "") === String(selectedCharacterId)) {
+          await loadCharacterEditor();
+        }
+        await continueAutoPipelineIfActive();
+      } catch (err) {
+        setStatus("queueStatus", `接受失敗：${err.message}`, "err");
+      }
+    }
+
+    async function rejectQueueTask(taskId) {
+      setStatus("queueStatus", `正在拒絕任務 #${taskId}…`);
+      try {
+        const resp = await fetch(`/api/v1/admin/queue-tasks/${taskId}/reject`, { method: "POST" });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "拒絕任務失敗"));
+        setStatus("queueStatus", `任務 #${taskId} 已拒絕，不會寫回角色資料`, "ok");
+        await loadQueueTasks();
+      } catch (err) {
+        setStatus("queueStatus", `拒絕失敗：${err.message}`, "err");
+      }
+    }
+
+    async function acceptAllReadyTasks() {
+      const coreId = document.getElementById("queueCoreFilter").value.trim();
+      const label = coreId ? `角色 #${coreId}` : "全部角色";
+      if (!window.confirm(`確定批次接受 ${label} 所有已完成的生圖任務？`)) return;
+      setStatus("queueStatus", "正在批次接受…");
+      try {
+        const params = new URLSearchParams();
+        if (coreId) params.set("core_id", coreId);
+        const resp = await fetch(`/api/v1/admin/queue-tasks/accept-all?${params.toString()}`, { method: "POST" });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "批次接受失敗"));
+        const errMsg = (data.errors || []).length ? `（${data.errors.length} 筆失敗）` : "";
+        setStatus("queueStatus", `已批次接受 ${data.accepted ?? 0} 筆任務${errMsg}`, "ok");
+        await loadQueueTasks();
+        if (selectedCharacterId) await loadCharacterEditor();
+        await continueAutoPipelineIfActive();
+      } catch (err) {
+        setStatus("queueStatus", `批次接受失敗：${err.message}`, "err");
+      }
+    }
+
+    async function resetQueueTask(taskId) {
+      setStatus("queueStatus", `正在重設任務 #${taskId}…`);
+      try {
+        const resp = await fetch(`/api/v1/admin/queue-tasks/${taskId}/reset`, { method: "POST" });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "重設任務失敗"));
+        setStatus("queueStatus", `任務 #${taskId} 已重設為 pending`, "ok");
+        await loadQueueTasks();
+      } catch (err) {
+        setStatus("queueStatus", `重設失敗：${err.message}`, "err");
+      }
+    }
+
+    async function resetFailedQueueTasks() {
+      const coreId = document.getElementById("queueCoreFilter").value.trim();
+      const fromId = document.getElementById("queueFromIdFilter").value.trim();
+      const params = new URLSearchParams();
+      if (coreId) params.set("core_id", coreId);
+      if (fromId) params.set("from_id", fromId);
+      setStatus("queueStatus", "正在重設 failed 任務…");
+      try {
+        const resp = await fetch(`/api/v1/admin/queue-tasks/reset-failed?${params.toString()}`, {
+          method: "POST",
+        });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "重設 failed 任務失敗"));
+        setStatus("queueStatus", `已重設 ${data.reset ?? 0} 筆 failed 任務為 pending。系統將自動逐步執行。`, "ok");
+        await loadQueueTasks();
+      } catch (err) {
+        setStatus("queueStatus", `重設失敗：${err.message}`, "err");
+      }
+    }
+
+    async function clearQueueTasks() {
+      const coreId = document.getElementById("queueCoreFilter").value.trim();
+      const label = coreId ? `角色 #${coreId}` : "全部角色";
+      if (!window.confirm(`確定清空 ${label} 的佇列任務？此操作無法復原。`)) {
+        return;
+      }
+      setStatus("queueStatus", "正在清空佇列…");
+      try {
+        const params = new URLSearchParams();
+        if (coreId) params.set("core_id", coreId);
+        const resp = await fetch(`/api/v1/admin/queue-tasks/clear?${params.toString()}`, {
+          method: "POST",
+        });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "清空佇列失敗"));
+        lastAgeSpanStatus = null;
+        renderAgeSpanBanner(null);
+        renderAgeSpanGrid(null);
+        setStatus("queueStatus", `已清空 ${data.cleared ?? 0} 筆任務。`, "ok");
+        await loadQueueTasks();
+      } catch (err) {
+        setStatus("queueStatus", `清空失敗：${err.message}`, "err");
+      }
+    }
+
+    async function processAllQueueTasks() {
+      const ok = window.confirm(
+        "年齡軸任務必須逐步完成並接受後才能繼續。批次處理在年齡軸存在時最多只會執行 1 筆。確定要繼續嗎？"
+      );
+      if (!ok) return;
+      setStatus("queueStatus", "正在批次處理 pending 任務…");
+      try {
+        const coreId = document.getElementById("queueCoreFilter").value.trim();
+        const params = new URLSearchParams();
+        params.set("limit", "1");
+        if (coreId) params.set("core_id", coreId);
+        const resp = await fetch(`/api/v1/admin/queue-tasks/process-all?${params.toString()}`, {
+          method: "POST",
+        });
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) {
+          throw new Error(apiErrorDetail(data, "批次處理任務失敗"));
+        }
+        const latestTaskWithPrompt = (Array.isArray(data.tasks) ? data.tasks : []).find((task) => {
+          const imageGen = task.result_metadata && task.result_metadata.image_generation;
+          return imageGen && imageGen.prompt;
+        });
+        if (latestTaskWithPrompt) {
+          lastPrompt = latestTaskWithPrompt.result_metadata.image_generation.prompt || lastPrompt;
+          document.getElementById("btnCopyPrompt").disabled = false;
+          setJson("imageOutput", latestTaskWithPrompt.result_metadata.image_generation);
+        }
+        setStatus("queueStatus", `本次已處理 ${data.processed ?? 0} 筆任務`, "ok");
+        await loadQueueTasks();
+      } catch (err) {
+        setStatus("queueStatus", `批次處理失敗：${err.message}`, "err");
+      }
+    }
+
+    async function loadQueueTasks() {
+      setStatus("queueStatus", "載入佇列中…");
+      try {
+        const params = new URLSearchParams();
+        const status = document.getElementById("queueStatusFilter").value;
+        const coreId = document.getElementById("queueCoreFilter").value.trim();
+        if (status) params.set("status", status);
+        if (coreId) params.set("core_id", coreId);
+        params.set("limit", "200");
+        const resp = await fetch(`/api/v1/admin/queue-tasks?${params.toString()}`);
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) {
+          throw new Error(apiErrorDetail(data, "載入佇列失敗"));
+        }
+        await loadAgeSpanStatus();
+        renderQueueTasks(data);
+        setStatus("queueStatus", `共 ${data.total ?? 0} 筆任務`, "ok");
+      } catch (err) {
+        document.getElementById("queueTaskBody").innerHTML =
+          `<tr><td colspan="7" class="queue-empty">${err.message}</td></tr>`;
+        setStatus("queueStatus", `載入失敗：${err.message}`, "err");
+      }
+    }
+
+    function filterQueueBySelected() {
+      if (!selectedCharacterId) {
+        setStatus("queueStatus", "請先選擇角色", "err");
+        return;
+      }
+      document.getElementById("queueCoreFilter").value = selectedCharacterId;
+      loadQueueTasks();
+    }
+
+    function toggleQueueAutoRefresh() {
+      const btn = document.querySelector('button[onclick="toggleQueueAutoRefresh()"]');
+      if (queueAutoRefreshTimer) {
+        clearInterval(queueAutoRefreshTimer);
+        queueAutoRefreshTimer = null;
+        if (btn) btn.textContent = "自動刷新：關";
+        setStatus("queueStatus", "已停止自動刷新", "ok");
+        return;
+      }
+      queueAutoRefreshTimer = setInterval(loadQueueTasks, 5000);
+      if (btn) btn.textContent = "自動刷新：開（5s）";
+      setStatus("queueStatus", "已啟動每 5 秒自動刷新", "ok");
+      loadQueueTasks();
+    }
+
+    async function copyPrompt() {
+      if (!lastPrompt) {
+        setStatus("imgStatus", "尚無可複製的提示詞，請先生成圖片", "err");
+        return;
+      }
+      await navigator.clipboard.writeText(lastPrompt);
+      setStatus("imgStatus", "提示詞已複製到剪貼簿", "ok");
+    }
+
+    updateCharacterSelection("", "");
+    loadCharacters();
+    loadImagingConfig();
+    loadQueueTasks();
+  </script>
+</body>
+</html>

@@ -35,6 +35,8 @@ from narratron.charpass.vault_bridge import (
 from narratron.vault.schema import Entity, EntityKind
 from narratron.vault.state_vault import StateVault, get_default_vault
 
+MAX_CHARPASS_UPLOAD_BYTES = 32 * 1024 * 1024
+
 v1_router = APIRouter()
 _packer = CharpassPacker()
 _reader = CharpassReader()
@@ -156,9 +158,11 @@ async def import_character(
     confirm: bool = Form(False),
     key: str | None = Form(None),
 ) -> dict[str, Any]:
-    blob = await file.read()
+    blob = await file.read(MAX_CHARPASS_UPLOAD_BYTES + 1)
     if not blob:
         raise HTTPException(status_code=400, detail="上傳檔案是空的")
+    if len(blob) > MAX_CHARPASS_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="上傳檔案超過 32MB 上限")
     try:
         unpacked = _reader.read(blob, key=key)
         entity = import_unpacked(

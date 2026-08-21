@@ -56,5 +56,7 @@ def upsert_env_vars(
     content = "\n".join(new_lines)
     if content and not content.endswith("\n"):
         content += "\n"
-    path.write_text(content, encoding="utf-8")
+    from characteros.utils.files import write_text_atomic
+
+    write_text_atomic(path, content)
     return path

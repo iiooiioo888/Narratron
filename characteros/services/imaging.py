@@ -661,7 +661,11 @@ class ImagingService:
         downloaded: dict[str, bytes] = {}
         with httpx.Client(timeout=120.0, follow_redirects=True) as client:
             for image in pending:
-                response = client.get(str(image.url))
+                url = str(image.url or "").strip()
+                if not url.startswith(("http://", "https://")):
+                    logger.warning("Skip non-http image URL for persist: %s", url)
+                    continue
+                response = client.get(url)
                 response.raise_for_status()
                 image.data = response.content
                 downloaded[image.filename] = response.content

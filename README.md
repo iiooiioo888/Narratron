@@ -46,7 +46,7 @@
 | 👤 **角色管理** | `CharacterOS` | 角色護照 (.charpass) 全生命週期：建立、編輯、版本控制 | `characteros/` |
 | 🎨 **生圖管線** | `Imaging` | 可插拔 provider：WAN（阿里百煉）/ OpenAI 相容 / 自訂 HTTP | `characteros/imaging/` |
 | 📊 **佇列中心** | `Queue` | 年齡軸 pipeline：1–80 歲逐步生圖，一次一張，完成自動入庫 | `characteros/services/queue*.py` |
-| 🕸️ **因果圖** | `Causal Graph` | 視覺化 Trace Log 因果鏈：實體 → 痕跡 → 分鏡有向圖 | `gui/streamlit_app.py` |
+| 🕸️ **因果圖** | `Map` | 視覺化 Trace Log 因果鏈：實體 → 痕跡 → 分鏡有向圖 | `frontend/map.md` / `characteros/static/` |
 
 ### 🔜 預計上線
 
@@ -60,86 +60,33 @@
 
 ## 門面首頁與 GUI
 
-Narratron 提供多個 GUI 介面，覆蓋所有功能點：
+用戶層畫面代號凍結為 **Pad → Timeline → Dashboard → Map → Player**。角色護照、生圖、佇列是 Dashboard 子面板，不是第六個畫面。
 
-### 🏠 門面首頁（`/`）
+### 🏠 門面（`http://localhost:8001/`）
 
-統一入口頁面，包含專案介紹、功能卡片導航、架構圖。所有子系統一頁直達。
+CharacterOS 提供完整 App Shell：左側五畫面導航、中央主內容、右側 Inspector。
 
-```
-CharacterOS 啟動後：http://localhost:8001/
-```
+| 畫面 | 雜湊 | 說明 |
+| :--- | :--- | :--- |
+| Pad 寫板 | `#Pad` | 唯一可寫入口。Parse / Direct 經 API 閘道（`localhost:8080`） |
+| Timeline 時軌 | `#Timeline` | 只讀 shots：鏡頭語言、時長、場景 |
+| Dashboard 總覽 | `#Dashboard` | 實體、算力池、外掛、KPI；子面板含角色護照 / 生圖 / 佇列 / 監控 |
+| Map 因果圖 | `#Map` | 只讀 Trace Log 節點圖，可跳到對應 shot |
+| Player 播放器 | `#Player` | 合流成品播放位；Muxer 未上線時改播分鏡序列 |
 
-### 📝 劇本解析 GUI（首頁 → #parse）
-
-貼上劇本 → 一鍵解析 → 自動顯示實體統計、因果記錄數量、資產數量。支援：
-- 中英文混合劇本
-- 場景標記（INT./EXT.）
-- 角色/道具/場景區塊
-- 參考圖 URI（`![alt](url)`）
-- 一鍵載入範例劇本
-
-### 🎬 分鏡調度 GUI（首頁 → #direct）
-
-完整劇本 → 分鏡序列時間軸。每個 shot 顯示：
-- 鏡頭語言（全景 Establishing / 特寫 Close-up / 跟拍 Tracking / 過肩 OTS）
-- 持續時間（ms）
-- 場景關聯
-
-### 👤 角色管理 GUI（首頁 → #characters）
-
-- **角色清單**：含縮圖預覽、名稱搜尋、標籤顯示
-- **編輯器**：名稱 / 年齡 / 性別光譜 / 標籤 / 風格預設 / manifest JSON
-- **護照預覽**：即時查看 .charpass 內容
-
-### 🎨 生圖管線 GUI（首頁 → #imaging）
-
-三個分頁：
-- ⚙️ **生圖設定**：Provider / Model / Base URL / API Key
-- 🎨 **生成圖片**：選角色 → 選用途 → 一鍵排入佇列
-- 🔌 **Provider 列表**：查看可用的生圖後端
-
-### 📊 佇列中心 GUI（首頁 → #queue）
-
-- **統計面板**：等待中 / 排隊中 / 已完成 / 失敗數量
-- **任務表格**：ID / 角色 / 狀態 / 用途 / 時間 / 操作
-- **圖片預覽**：生成結果直接顯示
-- **一鍵操作**：開始自動生圖 / 暫停 / 批次接受 / 重設失敗
-
-### 🕸️ 因果圖 GUI（首頁 → #graph）
-
-SVG 互動式因果關係圖：
-- 🔵 藍色節點：角色（Character）
-- 🟣 紫色節點：道具（Prop）
-- 🟢 綠色節點：場景（Scene）
-- 🟡 黃色節點：分鏡（Shot）
-- 🔴 紅色節點：因果記錄（Trace）
-
-附帶 Trace Log Inspector，點擊可展開完整 JSON。
-
-### 📡 系統監控 GUI（首頁 → #monitor）
-
-- Health Check（系統狀態）
-- 系統指標（角色數 / Profile 數 / 變體數）
-- Worker 狀態（忙碌 / 暫停 / 最近任務）
+舊書籤 `#parse` / `#direct` / `#graph` / `#characters` 仍會轉到對應畫面。
 
 ### 🖥️ CharacterOS 管理面板（`/admin/panel`）
 
-進階管理面板，包含：
-- 完整角色編輯器（Core + Profile + Manifest）
-- 生圖設定與 API Key 管理
-- 年齡軸 pipeline 可視化（1–80 歲時間軸格子）
-- 佇列任務詳細表格
-- 後端 worker 控制
+進階後台（不是用戶層畫面）：Core / Profile / Manifest、年齡軸 pipeline、佇列與 worker。
+
+### ⚛️ React 原型（`frontend/webapp/`）
+
+`npm run dev` 啟動 Vite（埠 5173，代理到 API 閘道 8080）。含多專案本地歷史、React Flow Map、Dashboard 角色護照子面板。
 
 ### 📊 Streamlit GUI（`gui/streamlit_app.py`）
 
-獨立的 Streamlit 應用，五個畫面：
-- **Pad**：寫板（劇本輸入）
-- **Timeline**：時軌（shot 序列）
-- **Dashboard**：總覽（統計 + 角色護照導入導出）
-- **Map**：因果圖（pyvis 互動式）
-- **Player**：播放器（預留）
+獨立五畫面：Pad / Timeline / Dashboard / Map / Player。Muxer 未上線時 Player 以分鏡序列播放。
 
 ```bash
 pip install -e ".[gui]"

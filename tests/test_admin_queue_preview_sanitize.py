@@ -201,6 +201,35 @@ def test_normalized_task_payload_matches_list_endpoint_shape() -> None:
     assert "final_asset_path" in payload["result_metadata"]["image_generation"]["images"][0]
 
 
+def test_task_item_redacts_api_key_from_evolution_params() -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    raw = {
+        "id": 7,
+        "core_id": 1,
+        "character_name": "test",
+        "variant_hash": "vh",
+        "evolution_params": {
+            "_image_request": {
+                "purpose": "identity",
+                "api_key": "sk-secret-should-not-leak",
+            }
+        },
+        "status": "pending",
+        "priority": 0,
+        "retry_count": 0,
+        "max_retries": 3,
+        "created_at": now,
+        "updated_at": now,
+        "result_metadata": {},
+    }
+
+    item = _task_item_from_dict(raw, "local")
+    image_request = item.evolution_params["_image_request"]
+    assert "api_key" not in image_request
+    assert image_request["has_api_key"] is True
+    assert raw["evolution_params"]["_image_request"]["api_key"] == "sk-secret-should-not-leak"
+
+
 def test_mutation_payload_sanitizes_pending_like_process_endpoint() -> None:
     """process/accept/reject 回傳與 list 端點一致；ready 且有結果時視同 accepted。"""
     now = datetime.now(timezone.utc).isoformat()

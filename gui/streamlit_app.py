@@ -248,6 +248,28 @@ def page_dashboard(api_base: str) -> None:
     c4.metric("Assets", len(assets))
 
     st.divider()
+    st.subheader("算力池（只讀）")
+    p1, p2, p3, p4 = st.columns(4)
+    p1.metric("Big Core", "待機")
+    p2.metric("Mid Core", "本階段選中")
+    p3.metric("Alt Core", "待機")
+    p4.metric("Light Core", "待機")
+    st.caption("池名凍結自 P7 Router；本階段固定 Mid Core。")
+
+    st.subheader("外掛觸發摘要")
+    st.json(
+        {
+            "P7 Router": "Alpha Q1 可觸發（固定 Mid Core）",
+            "其餘 P1–P13": "介面已凍結，執行待後續季",
+            "P9 Player": "配樂外掛，與用戶層 Player 同名不同層",
+        }
+    )
+
+    st.subheader("KPI 預留 · 連續性誤差")
+    st.metric("continuity_error", "—")
+    st.caption("Keeper（Alpha Q2）尚未回傳此欄位。")
+
+    st.divider()
     st.subheader("Entities by kind")
     st.json(by_kind)
 
@@ -325,20 +347,36 @@ def page_map() -> None:
 
 
 def page_player() -> None:
-    st.subheader("Player — 播放器（placeholder）")
+    st.subheader("Player — 播放器")
     state = st.session_state.get("__current_state") or st.session_state.get("__history_state")
     if not state:
         st.info("先去 Pad 提交 / 或在 Sidebar 選擇歷史。")
         return
 
     mux_uri = state.get("mux_uri")
-    if not mux_uri:
-        st.warning("Mux 尚未落地（/mux 在 Alpha Q1 仍為 501）。此畫面先保留介面：等待後續版本接入真實合成結果。")
-        st.json({"mux_uri": mux_uri})
+    if mux_uri:
+        st.success("已取得 mux_uri。")
+        st.write(mux_uri)
+        if str(mux_uri).startswith("http"):
+            st.video(str(mux_uri))
         return
 
-    st.success("已取得 mux_uri（若存在影片 URL/檔案路徑，將可在此播放）。")
-    st.write(mux_uri)
+    st.warning("Muxer 尚未上線（POST /mux 仍為 501）。此畫面維持 Player 代號，以下先以分鏡序列播放。")
+    shots = sorted(state.get("shots") or [], key=lambda item: item.get("order", 0))
+    if not shots:
+        st.info("目前沒有 shots。請先在 Pad 執行 Direct。")
+        return
+
+    labels = [
+        f"#{item.get('order')} · {item.get('camera_language')} · {item.get('duration_ms')}ms"
+        for item in shots
+    ]
+    picked = st.selectbox("分鏡序列", labels, index=0)
+    prefix = picked.split("·")[0].replace("#", "").strip()
+    shot = next((item for item in shots if str(item.get("order")) == prefix), shots[0])
+    st.json(shot)
+    total_ms = sum(int(item.get("duration_ms") or 0) for item in shots)
+    st.caption(f"序列總長 {total_ms}ms · 合流成品待 Alpha Q4")
 
 
 def main() -> None:

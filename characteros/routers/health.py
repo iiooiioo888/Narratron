@@ -7,12 +7,13 @@ from sqlalchemy import text
 
 from characteros.models.database import get_db
 from characteros.models.schema import HealthCheckResponse
-from characteros.storage.db_availability import mark_database_unavailable
+from characteros.storage.db_availability import mark_database_unavailable, storage_mode_label
 
 router = APIRouter(tags=["Health"])
 
 
 @router.get("/health", response_model=HealthCheckResponse)
+@router.get("/api/v1/health", response_model=HealthCheckResponse)
 def health_check(db: Session = Depends(get_db)):
     """
     健康檢查端點
@@ -36,7 +37,8 @@ def health_check(db: Session = Depends(get_db)):
         return HealthCheckResponse(
             status="healthy",
             database=db_status,
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(timezone.utc),
+            storage_mode=storage_mode_label(),
         )
 
     except Exception:
@@ -45,4 +47,5 @@ def health_check(db: Session = Depends(get_db)):
             status="degraded",
             database="disconnected",
             timestamp=datetime.now(timezone.utc),
+            storage_mode=storage_mode_label(),
         )
