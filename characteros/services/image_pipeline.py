@@ -1,43 +1,35 @@
 """人物圖像生成管線。
 
 模組分工：
-- `image_pipeline` — 入列入口（新人物 age_span / 單次用途）
-- `pipeline_coordinator` — 年齡軸 waiting/pending 協調、動態入列下一步
+- `image_pipeline` — 入列入口（按需 variant / 可選 fill_span）
+- `pipeline_coordinator` — 同一次請求內 waiting/pending 協調、動態入列下一步
 - `image_task_runner` — 單步生圖執行（local / DB 共用）
 - `queue_worker` — 後端逐步 worker（一次一張，失敗暫停）
 
-新人物（無參考圖）或明確選擇 age_span：
-  只入列「下一步」→ worker 一次生一張 → 自動入庫 → 再入列下一步。
-  順序固定：face_detail 1–80，再 tpose 1–80。
-
-已有參考圖的單次用途（identity / face_detail / tpose / outfit …）：
-  入列一筆獨立任務，同樣由 worker 自動處理。
+年齡軸是 `character_variants` 的特殊案例：`request_params = {age, emotion, scene, ...}`。
+預設只生成請求的歲數；`fill_span=true` 才補齊區間。生成前查快取，命中則直接回傳。
 """
 
 from __future__ import annotations
 
 from typing import Any
-from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
 from characteros.models.schema import ImageQueueRequest
 from characteros.services.age_span import (
+    AGE_SPAN_END,
+    AGE_SPAN_START,
     age_span_steps,
     build_age_span_evolution_params,
-    find_open_age_span_pipeline_id,
     new_pipeline_id,
     should_queue_age_span,
     step_priority,
-    tasks_for_pipeline,
 )
 from characteros.storage.db_availability import is_database_available
 from characteros.storage.local_characters import LocalCharacterService
 from characteros.storage.local_queue import LocalQueueManager
 from characteros.imaging.settings import settings as imaging_settings
-
-
-TASK_LIST_LIMIT = 400
 
 
 def _resolved_queue_provider(body: ImageQueueRequest) -> str | None:
@@ -63,21 +55,58 @@ def _resolved_queue_base_url(body: ImageQueueRequest) -> str | None:
     return configured or None
 
 
-def _list_tasks(character_id: int, *, local_mode: bool, db: Session | None) -> list[dict[str, Any]]:
+def _task_status(task: dict[str, Any] | None) -> str:
+    if not task:
+        return ""
+    return str(task.get("status") or "").strip().lower()
+
+
+def _as_task_dict(item: Any) -> dict[str, Any]:
+    if isinstance(item, dict):
+        return item
+    if hasattr(item, "to_dict"):
+        return dict(item.to_dict())
+    return {}
+
+
+def _request_variant(
+    *,
+    character_id: int,
+    evolution_params: dict[str, Any],
+    priority: int,
+    char_name: str | None,
+    local_mode: bool,
+    db: Session | None,
+    status: str = "pending",
+) -> tuple[dict[str, Any], bool]:
     if local_mode:
-        return LocalQueueManager().list_tasks(core_id=character_id, limit=TASK_LIST_LIMIT)
+        task, is_new = LocalQueueManager().request_variant_generation(
+            core_id=character_id,
+            evolution_params=evolution_params,
+            priority=priority,
+            character_name=char_name,
+            status=status,
+        )
+        return task, is_new
     from characteros.services.queue import QueueManager
 
-    return QueueManager(db).list_tasks(core_id=character_id, limit=TASK_LIST_LIMIT)
+    variant, is_new = QueueManager(db).request_variant_generation(
+        core_id=character_id,
+        evolution_params=evolution_params,
+        priority=priority,
+        status=status,
+    )
+    return variant.to_dict(), is_new
 
 
-def _ensure_following_steps(*, character_id: int, local_mode: bool, db: Session | None) -> None:
-    if local_mode:
-        LocalQueueManager().ensure_following_age_span_tasks(core_id=character_id)
-        return
-    from characteros.services.queue import QueueManager
-
-    QueueManager(db).ensure_following_age_span_tasks(core_id=character_id)
+def _target_age_for_body(body: ImageQueueRequest, *, base_age: int | None) -> int:
+    if body.age is not None:
+        return int(body.age)
+    if body.age_start is not None and (body.age_end is None or int(body.age_end) == int(body.age_start)):
+        return int(body.age_start)
+    if base_age is not None:
+        return max(AGE_SPAN_START, min(AGE_SPAN_END, int(base_age)))
+    return 25
 
 
 def _enqueue_age_span(
@@ -87,83 +116,120 @@ def _enqueue_age_span(
     char_name: str | None,
     local_mode: bool,
     db: Session | None,
+    base_age: int | None = None,
 ) -> dict[str, Any]:
-    existing_tasks = _list_tasks(character_id, local_mode=local_mode, db=db)
-    open_pipeline_id = find_open_age_span_pipeline_id(existing_tasks)
-    if open_pipeline_id:
-        _ensure_following_steps(character_id=character_id, local_mode=local_mode, db=db)
-        existing_pipeline_tasks = tasks_for_pipeline(
-            _list_tasks(character_id, local_mode=local_mode, db=db),
-            open_pipeline_id,
-        )
-        first_request = {}
-        if existing_pipeline_tasks:
-            params = existing_pipeline_tasks[0].get("evolution_params") or {}
-            image_request = params.get("_image_request") if isinstance(params, dict) else {}
-            first_request = dict(image_request) if isinstance(image_request, dict) else {}
-        total = int(first_request.get("total_steps") or len(existing_pipeline_tasks))
-        return {
-            "storage_mode": "local" if local_mode else "database",
-            "queued": True,
-            "pipeline": "age_span",
-            "pipeline_id": open_pipeline_id,
-            "is_new": False,
-            "created": 0,
-            "total": total,
-            "age_start": body.age_start,
-            "age_end": body.age_end,
-            "auto_start": True,
-            "tasks": existing_pipeline_tasks,
-        }
+    fill_span = bool(body.fill_span)
+    if fill_span:
+        if body.age_start is None or body.age_end is None:
+            raise ValueError("fill_span requires both age_start and age_end")
+        start = int(body.age_start)
+        end = int(body.age_end)
+        steps = age_span_steps(age_start=start, age_end=end, fill_span=True)
+    else:
+        target = _target_age_for_body(body, base_age=base_age)
+        steps = age_span_steps(age=target, fill_span=False)
+        start = end = target
 
     pipeline_id = new_pipeline_id()
-    steps = age_span_steps(age_start=body.age_start, age_end=body.age_end)
-    first_step = steps[0]
-    evolution_params = build_age_span_evolution_params(
-        first_step,
-        pipeline_id=pipeline_id,
-        provider=_resolved_queue_provider(body),
-        model=_resolved_queue_model(body),
-        base_url=_resolved_queue_base_url(body),
-        api_key=body.api_key,
-        extra=body.extra,
-        persist=body.persist,
-        entity_id=body.entity_id,
-    )
-    priority = step_priority(body.priority, first_step)
-    if local_mode:
-        task, is_new = LocalQueueManager().request_variant_generation(
-            core_id=character_id,
+    queued: list[dict[str, Any]] = []
+    created = 0
+    cache_hits = 0
+    first_pending: dict[str, Any] | None = None
+
+    for step in steps:
+        evolution_params = build_age_span_evolution_params(
+            step,
+            pipeline_id=pipeline_id,
+            provider=_resolved_queue_provider(body),
+            model=_resolved_queue_model(body),
+            base_url=_resolved_queue_base_url(body),
+            api_key=body.api_key,
+            extra=body.extra,
+            persist=body.persist,
+            entity_id=body.entity_id,
+            emotion=body.emotion,
+            scene=body.scene,
+            weather=body.weather,
+            injury=body.injury,
+        )
+        priority = step_priority(body.priority, step)
+        task, is_new = _request_variant(
+            character_id=character_id,
             evolution_params=evolution_params,
             priority=priority,
-            character_name=char_name,
+            char_name=char_name,
+            local_mode=local_mode,
+            db=db,
             status="pending",
         )
-        queued = [task]
-    else:
-        from characteros.services.queue import QueueManager
+        queued.append(task)
+        if is_new:
+            created += 1
+        elif _task_status(task) == "ready":
+            cache_hits += 1
+        if _task_status(task) != "ready" and first_pending is None:
+            first_pending = task
+            break
 
-        variant, is_new = QueueManager(db).request_variant_generation(
-            core_id=character_id,
-            evolution_params=evolution_params,
-            priority=priority,
-            status="pending",
-        )
-        queued = [variant.to_dict()]
-
+    all_ready = bool(queued) and all(_task_status(item) == "ready" for item in queued) and created == 0
     return {
         "storage_mode": "local" if local_mode else "database",
-        "queued": True,
+        "queued": not all_ready,
+        "cache_hit": all_ready or (created == 0 and cache_hits > 0 and first_pending is None),
         "pipeline": "age_span",
         "pipeline_id": pipeline_id,
-        "is_new": is_new,
-        "created": 1 if is_new else 0,
+        "is_new": created > 0,
+        "created": created,
         "total": len(steps),
-        "age_start": body.age_start,
-        "age_end": body.age_end,
+        "age": start if start == end else None,
+        "age_start": start,
+        "age_end": end,
+        "fill_span": fill_span,
         "auto_start": True,
         "tasks": queued,
+        "task": first_pending or (queued[0] if queued else None),
     }
+
+
+def _build_single_evolution_params(body: ImageQueueRequest) -> dict[str, Any]:
+    evolution_params: dict[str, Any] = {}
+    if body.age is not None:
+        evolution_params["age_override"] = body.age
+    if body.emotion is not None:
+        evolution_params["emotion_state"] = body.emotion
+    if body.scene is not None:
+        evolution_params["scene_context"] = body.scene
+    if body.weather is not None:
+        evolution_params["weather"] = body.weather
+    if body.injury is not None:
+        evolution_params["injury_level"] = body.injury
+    if str(body.purpose or "").strip():
+        evolution_params["purpose"] = str(body.purpose).strip()
+
+    extra = str(body.extra or "").strip()
+    if extra:
+        evolution_params["user_extra"] = extra
+
+    image_request: dict[str, Any] = {
+        "purpose": body.purpose,
+        "provider": _resolved_queue_provider(body),
+        "model": _resolved_queue_model(body),
+        "base_url": _resolved_queue_base_url(body),
+        "extra": extra,
+        "user_extra": extra,
+        "n": body.n,
+        "multi_angle": body.multi_angle,
+        "persist": body.persist,
+        "entity_id": body.entity_id,
+    }
+    if body.age is not None:
+        token = f"{int(body.age):03d}"
+        image_request["age"] = int(body.age)
+        image_request["pipeline"] = "variant"
+        image_request["asset_dir"] = f"assets/{body.purpose}/age_{token}"
+        image_request["filename_prefix"] = f"ref_{body.purpose}_age_{token}"
+    evolution_params["_image_request"] = image_request
+    return evolution_params
 
 
 def _enqueue_single(
@@ -174,63 +240,26 @@ def _enqueue_single(
     local_mode: bool,
     db: Session | None,
 ) -> dict[str, Any]:
-    evolution_params: dict[str, Any] = {}
-    if body.age is not None:
-        evolution_params["age_override"] = body.age
-    if body.emotion is not None:
-        evolution_params["emotion_state"] = body.emotion
-    if body.scene is not None:
-        evolution_params["scene_context"] = body.scene
-    if body.injury is not None:
-        evolution_params["injury_level"] = body.injury
-
-    evolution_params["_queue_nonce"] = f"img-{uuid4()}"
-    evolution_params["_image_request"] = {
-        "purpose": body.purpose,
-        "provider": _resolved_queue_provider(body),
-        "model": _resolved_queue_model(body),
-        "base_url": _resolved_queue_base_url(body),
-        "extra": body.extra,
-        "n": body.n,
-        "multi_angle": body.multi_angle,
-        "persist": body.persist,
-        "entity_id": body.entity_id,
-    }
-
-    if local_mode:
-        task, is_new = LocalQueueManager().request_variant_generation(
-            core_id=character_id,
-            evolution_params=evolution_params,
-            priority=body.priority,
-            character_name=char_name,
-        )
-        return {
-            "storage_mode": "local",
-            "queued": True,
-            "pipeline": None,
-            "is_new": is_new,
-            "created": 1 if is_new else 0,
-            "total": 1,
-            "auto_start": True,
-            "task": task,
-        }
-
-    from characteros.services.queue import QueueManager
-
-    variant, is_new = QueueManager(db).request_variant_generation(
-        core_id=character_id,
+    evolution_params = _build_single_evolution_params(body)
+    task, is_new = _request_variant(
+        character_id=character_id,
         evolution_params=evolution_params,
         priority=body.priority,
+        char_name=char_name,
+        local_mode=local_mode,
+        db=db,
     )
+    ready = _task_status(task) == "ready"
     return {
-        "storage_mode": "database",
-        "queued": True,
+        "storage_mode": "local" if local_mode else "database",
+        "queued": not ready,
+        "cache_hit": ready and not is_new,
         "pipeline": None,
         "is_new": is_new,
         "created": 1 if is_new else 0,
         "total": 1,
         "auto_start": True,
-        "task": variant.to_dict(),
+        "task": task,
     }
 
 
@@ -247,6 +276,7 @@ def enqueue_character_images(
     if full.profile and full.profile.manifest:
         manifest = dict(full.profile.manifest)
     char_name = full.core.name if full and full.core else None
+    base_age = int(full.core.base_age) if full and full.core and full.core.base_age is not None else None
     local_mode = isinstance(service, LocalCharacterService) or not is_database_available()
 
     if should_queue_age_span(body.purpose, manifest):
@@ -256,6 +286,7 @@ def enqueue_character_images(
             char_name=char_name,
             local_mode=local_mode,
             db=db,
+            base_age=base_age,
         )
     else:
         result = _enqueue_single(
@@ -268,5 +299,6 @@ def enqueue_character_images(
 
     from characteros.services.queue_worker import resume_and_wake_queue_worker
 
-    resume_and_wake_queue_worker()
+    if result.get("queued"):
+        resume_and_wake_queue_worker()
     return result

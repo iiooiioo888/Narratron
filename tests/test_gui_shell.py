@@ -28,6 +28,10 @@ def test_facade_uses_frozen_screen_names() -> None:
     assert 'id="genLive"' in html
     assert "refreshGenerationFeedback" in js
     assert "charImageGallery" in html or "loadCharImageGallery" in js
+    assert 'id="imgAge"' in html
+    assert 'id="imgEmotion"' in html
+    assert 'id="imgWeather"' in html
+    assert "不會自動跑 1–80 歲" in html
     assert "sync-from-script" in js
     assert 'location.hash.slice(1) || "Pad"' in js
     for bad in FORBIDDEN_SCREENS:
@@ -40,6 +44,10 @@ def test_panel_html_is_extracted() -> None:
     assert panel.is_file()
     text = panel.read_text(encoding="utf-8")
     assert "CharacterOS 管理面板" in text
+    assert "生成所選變體" in text
+    assert "建立 1–80 歲年齡軸" not in text
+    assert "補齊區間（fill_span，1–80）" not in text
+    assert "id=\"ageStart\"" in text
     py = (ROOT / "characteros/routers/panel.py").read_text(encoding="utf-8")
     assert "panel.html" in py
     assert "return \"\"\"<!doctype" not in py

@@ -11,6 +11,7 @@ from characteros.services.characters import CharacterService
 from characteros.services.age_span import find_next_runnable_task
 from characteros.services.pipeline_coordinator import (
     after_image_task_succeeded,
+    enqueue_next_age_span_steps,
     sync_age_span_task_states,
 )
 from characteros.services.image_task_runner import (
@@ -105,63 +106,74 @@ class QueueManager:
         profile_id = active_profile.id if active_profile else None
         manifest_content = active_profile.manifest if active_profile else None
         
-        # 3. 計算 variant_hash（含 manifest 內容感知）
+        # 3. 計算 variant_hash（語意參數 + profile_version + manifest）
         variant_hash = compute_variant_hash(core_id, profile_version, evolution_params, manifest_content)
-        
-        # 4. 檢查是否已存在
-        existing_variant = self.db.query(CharacterVariant).filter(
-            CharacterVariant.core_id == core_id,
-            CharacterVariant.variant_hash == variant_hash
-        ).first()
-        
+
+        def _lookup() -> CharacterVariant | None:
+            return self.db.query(CharacterVariant).filter(
+                CharacterVariant.core_id == core_id,
+                CharacterVariant.variant_hash == variant_hash,
+            ).first()
+
+        existing_variant = _lookup()
         if existing_variant:
-            # 已存在，直接回傳（無論 status 是 pending/ready/failed）
             logger.info(
                 f"Variant already exists: core_id={core_id}, hash={variant_hash[:16]}..., "
                 f"status={existing_variant.status}"
             )
             return existing_variant, False
-        
-        # 5. 不存在，創建新記錄（status='pending'）
-        new_variant = CharacterVariant(
-            core_id=core_id,
-            profile_id=profile_id,
-            variant_hash=variant_hash,
-            evolution_params=evolution_params,
-            status=str(status or "pending").strip() or "pending",
-            priority=priority,
-            retry_count=0,
-            max_retries=3
-        )
-        
+
+        queued_status = str(status or "pending").strip() or "pending"
+        payload = {
+            "core_id": core_id,
+            "profile_id": profile_id,
+            "variant_hash": variant_hash,
+            "evolution_params": evolution_params,
+            "status": queued_status,
+            "priority": priority,
+            "retry_count": 0,
+            "max_retries": 3,
+            "result_metadata": {"profile_version": profile_version},
+        }
+
+        bind = self.db.get_bind()
+        dialect = getattr(getattr(bind, "dialect", None), "name", "") or ""
         try:
+            if dialect == "postgresql":
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+                stmt = pg_insert(CharacterVariant).values(**payload).on_conflict_do_nothing(
+                    index_elements=["core_id", "variant_hash"]
+                )
+                result = self.db.execute(stmt)
+                self.db.commit()
+                stored = _lookup()
+                if stored is None:
+                    raise RuntimeError("variant insert succeeded but row is missing")
+                is_new = int(getattr(result, "rowcount", 0) or 0) == 1
+                if is_new:
+                    logger.info(
+                        f"New variant queued: id={stored.id}, "
+                        f"core_id={core_id}, hash={variant_hash[:16]}..."
+                    )
+                return stored, is_new
+
+            new_variant = CharacterVariant(**payload)
             self.db.add(new_variant)
             self.db.commit()
             self.db.refresh(new_variant)
-            
             logger.info(
                 f"New variant queued: id={new_variant.id}, "
                 f"core_id={core_id}, hash={variant_hash[:16]}..."
             )
-            
             return new_variant, True
-            
-        except IntegrityError as e:
-            # 競爭條件：另一個請求同時寫入了相同的 hash
-            # 回滾並重新查詢
+        except IntegrityError as exc:
             self.db.rollback()
-            logger.warning(f"IntegrityError on variant insert, re-querying: {e}")
-            
-            existing_variant = self.db.query(CharacterVariant).filter(
-                CharacterVariant.core_id == core_id,
-                CharacterVariant.variant_hash == variant_hash
-            ).first()
-            
+            logger.warning(f"IntegrityError on variant insert, re-querying: {exc}")
+            existing_variant = _lookup()
             if existing_variant:
                 return existing_variant, False
-            else:
-                # 極端情況：仍然找不到，可能是其他錯誤
-                raise
+            raise
     
     def process_pending_variant(self, variant_id: int) -> Optional[CharacterVariant]:
         """處理 pending 變體：透過 EvolutionEngine 演化並標記為 ready。
@@ -205,6 +217,7 @@ class QueueManager:
             variant.result_metadata = {
                 'evolved_manifest': evolved_manifest,
                 'profile_version': profile.version,
+                'result_image_url': variant.result_url,
             }
             variant.generation_duration_ms = elapsed_ms
             
@@ -342,7 +355,13 @@ class QueueManager:
         variant.generation_duration_ms = outcome.generation_duration_ms
         if outcome.result_url:
             variant.result_url = outcome.result_url
-        variant.result_metadata = outcome.result_metadata
+        result_metadata = dict(outcome.result_metadata or {})
+        if outcome.result_url:
+            result_metadata["result_image_url"] = outcome.result_url
+        if profile is not None:
+            result_metadata["profile_version"] = profile.version
+            result_metadata["profile_id"] = profile.id
+        variant.result_metadata = result_metadata
         if outcome.status == "failed":
             variant.retry_count = int(variant.retry_count or 0) + 1
 

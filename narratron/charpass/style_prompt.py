@@ -387,6 +387,47 @@ def _append_style_prompt_parts(
         _extend_unique(parts, "consistency notes: " + consistency_notes)
 
 
+def _append_evolution_prompt_parts(parts: list[str], manifest: dict[str, Any]) -> None:
+    """把演化層（情緒／場景／天氣／傷痕）寫進生圖 prompt，而不只是存在 metadata。"""
+    data = manifest if isinstance(manifest, dict) else {}
+    expression = data.get("_expression") if isinstance(data.get("_expression"), dict) else {}
+    emotion = str(expression.get("base_emotion") or "").strip()
+    if emotion and emotion.lower() != "neutral":
+        _extend_unique(parts, f"expression: {emotion}")
+    micros = expression.get("micro_expressions")
+    if isinstance(micros, list):
+        labels = [str(item).replace("_", " ").strip() for item in micros if str(item or "").strip()]
+        if labels:
+            _extend_unique(parts, ", ".join(labels))
+
+    weather = data.get("_weather") if isinstance(data.get("_weather"), dict) else {}
+    effects = weather.get("effects") if isinstance(weather.get("effects"), dict) else {}
+    if effects.get("prompt"):
+        _extend_unique(parts, str(effects["prompt"]))
+    else:
+        condition = str(weather.get("condition") or "").strip()
+        if condition:
+            _extend_unique(parts, f"weather: {condition}")
+
+    scene = data.get("_scene_context") if isinstance(data.get("_scene_context"), dict) else {}
+    scene_type = str(scene.get("scene_type") or "").strip()
+    env = scene.get("environmental_effects") if isinstance(scene.get("environmental_effects"), dict) else {}
+    if scene_type:
+        _extend_unique(parts, f"scene: {scene_type}")
+    if env.get("prompt"):
+        _extend_unique(parts, str(env["prompt"]))
+    damage = str(env.get("outfit_damage") or "").strip()
+    if damage and damage not in {"none", "0"}:
+        _extend_unique(parts, f"clothing damage: {damage.replace('_', ' ')}")
+
+    body = data.get("_body") if isinstance(data.get("_body"), dict) else {}
+    marks = body.get("injury_marks")
+    if isinstance(marks, list):
+        readable = [str(item).replace("_", " ").strip() for item in marks if str(item or "").strip()]
+        if readable:
+            _extend_unique(parts, "visible injuries: " + ", ".join(readable))
+
+
 def _effective_prompt_purpose(*, purpose: str, effective_angle: str) -> str:
     if effective_angle == "face_detail":
         return "face_detail"
@@ -511,6 +552,7 @@ def build_image_prompt(
         name=name,
         prompt_purpose=prompt_purpose,
     )
+    _append_evolution_prompt_parts(parts, normalized_manifest)
     _append_angle_prompt_parts(
         parts,
         slot=slot,

@@ -70,15 +70,8 @@ def assemble_request(
         return https + rest
 
     if pipeline == "age_span":
-        # 年齡軸只鎖上一步參考圖；不可再混入護照裡的成人／多視角 identity 圖。
-        ref_uris = _https_first(list(extra_uris))
-        age_value = overrides.get("age")
-        try:
-            age_number = int(age_value)
-        except (TypeError, ValueError):
-            age_number = 0
-        if not ref_uris and age_number <= 1:
-            ref_uris = _https_first(seed_uris)
+        # 有上一步／快取鎖圖就只用鎖圖；否則退回護照種子，以支援按需單齡。
+        ref_uris = _https_first(list(extra_uris)) or _https_first(seed_uris)
     else:
         ref_uris = list(extra_uris)
         for uri in _https_first(seed_uris):

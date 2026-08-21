@@ -1431,6 +1431,16 @@ async function queueImageGeneration() {
       extra: document.getElementById("imgExtra").value.trim(),
       persist: true,
     };
+    const ageInput = document.getElementById("imgAge") || document.getElementById("age");
+    const emotionInput = document.getElementById("imgEmotion") || document.getElementById("emotion");
+    const sceneInput = document.getElementById("imgScene") || document.getElementById("scene");
+    const weatherInput = document.getElementById("imgWeather") || document.getElementById("weather");
+    const injuryInput = document.getElementById("imgInjury") || document.getElementById("injury");
+    if (ageInput && ageInput.value) payload.age = Number(ageInput.value);
+    if (emotionInput && emotionInput.value.trim()) payload.emotion = emotionInput.value.trim();
+    if (sceneInput && sceneInput.value.trim()) payload.scene = sceneInput.value.trim();
+    if (weatherInput && weatherInput.value.trim()) payload.weather = weatherInput.value.trim();
+    if (injuryInput && injuryInput.value) payload.injury = Number(injuryInput.value);
     if (provider) payload.provider = provider;
     if (model) payload.model = model;
     if (baseUrl) payload.base_url = baseUrl;
@@ -1439,8 +1449,10 @@ async function queueImageGeneration() {
       headers: { "Content-Type": "application/json", "X-CharacterOS-Panel": "enabled" },
       body: JSON.stringify(payload),
     });
-    const queued = data.pipeline === "age_span"
-      ? `年齡軸已開始（目前佇列 ${data.created ?? data.total ?? 1} 步，其餘會在每張完成後自動接上）`
+    const queued = data.cache_hit
+      ? `命中變體快取${data.task && data.task.id ? ` #${data.task.id}` : ""}`
+      : data.pipeline === "age_span"
+      ? `已按需排入 ${data.created ?? data.total ?? 1} 步（年齡 ${data.age ?? data.age_start ?? "?"}）`
       : `任務已排入${data.task && data.task.id ? ` #${data.task.id}` : ""}`;
     document.getElementById("imgGenOutput").textContent = pretty(data);
     setStatus("imgGenStatus", `✓ ${name}：${queued}。正在呼叫模型，請看上方生圖進度。`, "ok");

@@ -3,12 +3,12 @@
 人物圖像生成主流程：
 
 1. **入列** — `image_pipeline.enqueue_character_images`
-   - 新人物：只建立 age_span 第 1 步（face_detail 1 歲）
-   - 已有參考圖：建立單次用途任務（identity / face_detail / tpose …）
+   - 按需：只建立請求歲數的下一步（預設 face_detail）
+   - fill_span：才依區間逐步銜接
 2. **協調** — `pipeline_coordinator`
    - 上一步入庫後才動態入列下一步；同時最多一筆 pending
 3. **執行** — 本模組 `run_queued_image_generation`
-   - 收集年齡軸參考圖 → 呼叫 ImagingService → 自動 accepted → stamp lock_url
+   - 查 character_variants 快取 → 收集參考圖 → ImagingService → 品質閘門
 4. **worker** — `queue_worker`
    - 後端一次只 process 一筆；失敗暫停，等「重設失敗並繼續」
 """
@@ -23,6 +23,7 @@ from typing import Any, Callable
 from characteros.imaging.settings import settings as imaging_settings
 from characteros.services.age_span import AgeSpanDependencyPending, prepare_queued_image_generation
 from characteros.services.imaging import ImagingService
+from characteros.services.quality_gate import evaluate_generation, max_quality_retries, quality_gate_enabled
 from characteros.services.queue_task_utils import (
     apply_auto_accept,
     build_image_result_metadata,
@@ -233,15 +234,56 @@ def execute_image_queue_task(context: ImageQueueExecution) -> ImageQueueExecutio
             persist_enabled = bool(image_request.get("persist", True))
             persist_entity_id = context.entity_id if persist_enabled else None
             credentials = resolve_imaging_credentials(image_request)
-            payload = run_queued_image_generation(
-                evolved_manifest=evolved_manifest,
-                image_request=image_request,
-                sibling_tasks=context.sibling_tasks,
-                persist_entity_id=persist_entity_id,
-                store=context.store,
-            )
-            if persist_enabled and context.save_manifest:
+            attempts = max_quality_retries(image_request)
+            payload: dict[str, Any] | None = None
+            quality_report = None
+            last_quality_reason = None
+            for attempt in range(1, attempts + 1):
+                payload = run_queued_image_generation(
+                    evolved_manifest=evolved_manifest,
+                    image_request=image_request,
+                    sibling_tasks=context.sibling_tasks,
+                    persist_entity_id=persist_entity_id,
+                    store=context.store,
+                )
+                if not quality_gate_enabled():
+                    break
+                quality_report = evaluate_generation(
+                    payload,
+                    extra_ref_uris=list(payload.get("ref_image_uris") or []) if isinstance(payload, dict) else None,
+                    provider_name=credentials.provider_name,
+                )
+                result_metadata["quality_gate"] = quality_report.to_dict()
+                result_metadata["quality_score"] = quality_report.quality_score
+                result_metadata["face_similarity"] = quality_report.face_similarity
+                if quality_report.passed:
+                    break
+                last_quality_reason = quality_report.reason
+                logger.warning(
+                    "Quality gate failed for task #%s (attempt %s/%s): %s",
+                    context.task_id,
+                    attempt,
+                    attempts,
+                    quality_report.reason,
+                )
+            else:
+                finished_at = datetime.now(timezone.utc)
+                result_metadata["processed_at"] = finished_at.isoformat()
+                return ImageQueueExecutionResult(
+                    status="failed",
+                    result_url=None,
+                    result_metadata=result_metadata,
+                    error_message=f"quality gate failed: {last_quality_reason or 'unknown'}",
+                    queue_wait_ms=max(0, int((started_at - created_at).total_seconds() * 1000)),
+                    generation_duration_ms=max(0, int((finished_at - started_at).total_seconds() * 1000)),
+                    record_patch=record_patch,
+                )
+
+            if persist_enabled and context.save_manifest and isinstance(payload, dict):
                 persist_auto_accepted_manifest(payload, context.save_manifest)
+
+            if not isinstance(payload, dict):
+                raise RuntimeError("image generation returned no payload")
 
             finished_at = datetime.now(timezone.utc)
             result_url, image_meta, _image_urls = build_auto_accepted_task_result(
@@ -255,6 +297,11 @@ def execute_image_queue_task(context: ImageQueueExecution) -> ImageQueueExecutio
             result_metadata.update(image_meta)
             result_metadata["persist_entity_id"] = persist_entity_id
             result_metadata["processed_at"] = finished_at.isoformat()
+            result_metadata["result_image_url"] = result_url
+            if quality_report is not None:
+                result_metadata["quality_gate"] = quality_report.to_dict()
+                result_metadata["quality_score"] = quality_report.quality_score
+                result_metadata["face_similarity"] = quality_report.face_similarity
             review_status = str(result_metadata.get("review_status") or "") or None
             effective_status = effective_task_status("ready", result_metadata)
             record_patch.update(
@@ -263,6 +310,7 @@ def execute_image_queue_task(context: ImageQueueExecution) -> ImageQueueExecutio
                     "thumbnail_asset_path": result_metadata.get("thumbnail_asset_path"),
                     "face_detail_asset_path": result_metadata.get("face_detail_asset_path"),
                     "face_detail_count": result_metadata.get("face_detail_count") or 0,
+                    "result_image_url": result_url,
                 }
             )
             if context.store and context.entity_id and context.output_dir:

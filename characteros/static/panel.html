@@ -29,6 +29,7 @@
     .item-main { min-width: 0; }
     .item-main strong, .item-main span { display: block; }
     .inline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .inline-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
     .status { font-size: 13px; color: #4b5563; min-height: 1.2em; }
     .status.ok { color: #059669; }
     .status.err { color: #dc2626; }
@@ -218,13 +219,14 @@
 
     <section class="card">
       <h2>變體／生圖</h2>
-      <p class="section-desc">依選中角色排入生圖任務。新人物請用年齡軸：系統會自動逐步向 AI 請求，一次一張，完成後直接入庫。</p>
+      <p class="section-desc">依選中角色按需排入生圖任務。相同年齡／情緒／場景會命中 <code>character_variants</code> 快取，不會重跑。</p>
       <div class="steps">
         <strong>建議流程</strong>
         <ol>
           <li>左側清單點選角色（ID 自動帶入）</li>
-          <li>按「建立 1–80 歲年齡軸並自動開始」</li>
-          <li>系統會先跑面部細緻 1–80 歲，再跑 T 型外觀 1–80 歲；不必逐個按執行</li>
+          <li>填入目標年齡，以及可選的情緒／場景／天氣／傷痕</li>
+          <li>按「生成所選變體」：只生成該組合；已有快取則直接回傳</li>
+          <li>需要整段圖庫時，才勾選補齊並填起始／結束歲數</li>
         </ol>
       </div>
       <label>目前選擇的角色 ID（與編輯器同步，唯讀）</label>
@@ -241,12 +243,18 @@
         <input id="scene" placeholder="場景：battle / formal_event / casual_street" />
         <input id="injury" type="number" min="0" max="1" step="0.1" placeholder="受傷程度 0～1" />
       </div>
+      <div class="inline">
+        <input id="weather" placeholder="天氣：clear / rain / snow / fog / night" />
+        <input id="ageStart" type="number" min="1" max="80" placeholder="補齊起始歲（可選）" />
+        <input id="ageEnd" type="number" min="1" max="80" placeholder="補齊結束歲（可選）" />
+      </div>
+      <label class="inline-check"><input id="fillSpan" type="checkbox" /> 補齊上述年齡區間（預設關閉；不會自動跑 1–80）</label>
       <button id="btnVariant" class="secondary" onclick="requestVariant()" disabled>請求變體（排入佇列）</button>
 
       <label>生圖用途 Purpose</label>
-      <div class="field-hint">新人物請選 <strong>age_span</strong>。identity 會產出多視角參考圖；face_detail / tpose 為單張用途。</div>
+      <div class="field-hint">age_span 預設只生成「目標年齡」的面部 + T 型，並把情緒／場景寫進變體指紋。identity 會產出多視角參考圖。</div>
       <select id="purpose">
-        <option value="age_span">age_span（新人物 1–80 歲面部 + T 型）</option>
+        <option value="age_span">age_span（指定年齡的面部 + T 型）</option>
         <option value="identity">identity（身份／臉部參考）</option>
         <option value="face_detail">face_detail（面部細緻）</option>
         <option value="tpose">tpose（T 型外觀）</option>
@@ -260,7 +268,7 @@
       <textarea id="extra" rows="3" placeholder="例如：賽博龐克霓虹、電影級側光、油畫筆觸、8K 細節、霧面膚質"></textarea>
 
       <div class="inline">
-        <button id="btnGenerateAgeSpan" onclick="generateAgeSpanAndRun()" disabled>建立 1–80 歲年齡軸並自動開始</button>
+        <button id="btnGenerateAgeSpan" onclick="generateAgeSpanAndRun()" disabled>生成所選變體</button>
         <button id="btnGenerate" class="secondary" onclick="generateImages()" disabled>排入目前用途</button>
       </div>
       <button id="btnCopyPrompt" class="secondary" onclick="copyPrompt()" disabled>複製最後提示詞</button>
@@ -671,10 +679,13 @@
       const age = document.getElementById("age").value;
       const emotion = document.getElementById("emotion").value.trim();
       const scene = document.getElementById("scene").value.trim();
+      const weatherEl = document.getElementById("weather");
+      const weather = weatherEl ? weatherEl.value.trim() : "";
       const injury = document.getElementById("injury").value;
       if (age) params.set("age", age);
       if (emotion) params.set("emotion", emotion);
       if (scene) params.set("scene", scene);
+      if (weather) params.set("weather", weather);
       if (injury) params.set("injury", injury);
       return params;
     }
@@ -756,10 +767,24 @@
           age: document.getElementById("age").value ? Number(document.getElementById("age").value) : null,
           emotion: document.getElementById("emotion").value.trim() || null,
           scene: document.getElementById("scene").value.trim() || null,
+          weather: (document.getElementById("weather") && document.getElementById("weather").value.trim()) || null,
           injury: document.getElementById("injury").value ? Number(document.getElementById("injury").value) : null,
+          fill_span: Boolean(document.getElementById("fillSpan") && document.getElementById("fillSpan").checked),
           multi_angle: !["age_span", "tpose", "face_detail"].includes(document.getElementById("purpose").value),
           persist: true
         };
+        if (payload.fill_span) {
+          const startEl = document.getElementById("ageStart");
+          const endEl = document.getElementById("ageEnd");
+          const start = startEl && startEl.value ? Number(startEl.value) : NaN;
+          const end = endEl && endEl.value ? Number(endEl.value) : NaN;
+          if (!Number.isFinite(start) || !Number.isFinite(end)) {
+            setStatus("imgStatus", "補齊區間需同時填起始歲與結束歲", "err");
+            return;
+          }
+          payload.age_start = start;
+          payload.age_end = end;
+        }
         const apiKey = document.getElementById("apiKey").value.trim();
         if (apiKey) payload.api_key = apiKey;
         const resp = await fetch(`/api/v1/characters/${id}/image-queue`, {
@@ -1050,7 +1075,7 @@
       renderCurrentStep(tasks);
       renderAgeSpanGrid(lastAgeSpanStatus);
       if (!tasks.length) {
-        body.innerHTML = '<tr><td colspan="7" class="queue-empty">目前沒有佇列任務。選擇角色後按「建立 1–80 歲年齡軸並自動開始」。</td></tr>';
+        body.innerHTML = '<tr><td colspan="7" class="queue-empty">目前沒有佇列任務。選擇角色後填入年齡，按「按需生成所選年齡」。</td></tr>';
         preview.innerHTML = "";
         return;
       }

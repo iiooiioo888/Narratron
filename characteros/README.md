@@ -133,11 +133,14 @@ curl http://localhost:8001/api/v1/characters/1 | jq
 ### 4. 請求變體生成（80 歲的林默）
 
 ```bash
-# 首次請求：回傳 202 Accepted（排入佇列）
+# 首次請求：只生成 80 歲，回傳 202 Accepted（排入佇列）
 curl -i "http://localhost:8001/api/v1/characters/1/variant?age=80"
 
-# 再次請求：若已生成完成，回傳 200 OK + 變體資訊
+# 再次請求：若已生成完成，回傳 200 OK + 變體資訊（命中 character_variants）
 curl "http://localhost:8001/api/v1/characters/1/variant?age=80"
+
+# 多維度：80 歲、悲傷、雨天
+curl -i "http://localhost:8001/api/v1/characters/1/variant?age=80&emotion=sad&weather=rain"
 ```
 
 ### 5. 依角色風格生圖（預設 `null` provider，只組 prompt 不打網路）
@@ -252,6 +255,8 @@ characteros/                 # 與 gui/、narratron/ 相同：目錄名 = Python
 - [x] 執行 `GET /api/v1/characters/999` 回傳 `404 Not Found`
 - [x] 執行 `GET /api/v1/characters/1/variant?age=80` 首次回傳 `202 Accepted` + `queue_id`
 - [x] 同一請求重複發送多次，只寫入一筆 pending 記錄（冪等性保護）
+- [x] 按需生成：`age=80` 不強制跑 1→80
+- [x] 變體快取綁定 `profile_version`；Profile 變更後舊圖自動失效
 
 ## 資料庫架構
 
@@ -270,10 +275,11 @@ characteros/                 # 與 gui/、narratron/ 相同：目錄名 = Python
 
 ## 下一步（Sprint 2）
 
+- [x] Profile 版本變更時的快取失效機制
+- [x] 更多演化規則（情緒、場景、天氣、傷痕）
+- [x] 按需變體生成 + `character_variants` 快取復用
 - [ ] 實作 Redis 分散式鎖
 - [ ] 優化佇列管理（優先級排序）
-- [ ] Profile 版本變更時的快取失效機制
-- [ ] 更多演化規則（情緒、場景、傷痕）
 
 ## 授權
 

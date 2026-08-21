@@ -170,51 +170,87 @@ def request_variant(
     age: Optional[int] = Query(None, ge=0, le=150, description="目標年齡"),
     emotion: Optional[str] = Query(None, description="情緒狀態"),
     scene: Optional[str] = Query(None, description="場景描述"),
+    weather: Optional[str] = Query(None, description="天氣環境"),
     injury: Optional[float] = Query(None, ge=0.0, le=1.0, description="受傷程度"),
+    purpose: Optional[str] = Query(
+        None,
+        description="生圖用途：face_detail / tpose / age_span / identity；有 age 時預設 face_detail",
+    ),
     priority: int = Query(0, ge=0, le=10, description="優先級"),
     queue_nonce: Optional[str] = Query(
         None,
-        description="強制排入新的隊列任務 nonce（用於生圖點擊追蹤，避免 hash 冪等忽略重複請求）",
+        description="僅除錯用：強制產生新任務。預設依 variant_hash 冪等復用快取。",
     ),
     service: CharacterBackend = Depends(get_character_backend),
     db: Session = Depends(get_db),
 ):
     """
-    請求角色的進化變體
-    
+    請求角色的進化變體（按需、快取復用）
+
     **核心邏輯**：
     1. 檢查角色是否存在（不存在則 404）
-    2. 計算演化參數的 variant_hash
-    3. 若變體已存在且 ready → 回傳 200 + 完整變體資訊
+    2. 以 core_id + profile_version + 語意參數計算 variant_hash
+    3. 若變體已存在且 ready → 回傳 200 + 完整變體資訊（含 result_url）
     4. 若變體已存在但 pending → 回傳 202 + queue_id
     5. 若變體不存在 → 寫入 pending 佇列，回傳 202 + queue_id
-    
+
     **演化參數**：
-    - `age`: 目標年齡（覆蓋基準年齡）
+    - `age`: 目標年齡（覆蓋基準年齡；只生成該歲，不跑 1→80）
     - `emotion`: 情緒狀態（neutral, happy, sad, angry, fearful, determined）
     - `scene`: 場景上下文（battle, formal_event, casual_street, post_apocalyptic）
+    - `weather`: 天氣（clear, rain, snow, fog, night, storm）
     - `injury`: 受傷程度（0.0-1.0）
+    - `purpose`: 生圖用途
     - `priority`: 生成優先級（0-10）
-    
-    **回應碼**：
-    - `200 OK`: 變體已生成完成
-    - `202 Accepted`: 變體已排入佇列，等待背景處理
-    - `404 Not Found`: 角色不存在
     """
-    # 1. 組建演化參數
-    evolution_params = {}
+    resolved_purpose = str(purpose or "").strip() or ("face_detail" if age is not None else "identity")
+    evolution_params: dict = {}
     if age is not None:
-        evolution_params['age_override'] = age
+        evolution_params["age_override"] = age
     if emotion is not None:
-        evolution_params['emotion_state'] = emotion
+        evolution_params["emotion_state"] = emotion
     if scene is not None:
-        evolution_params['scene_context'] = scene
+        evolution_params["scene_context"] = scene
+    if weather is not None:
+        evolution_params["weather"] = weather
     if injury is not None:
-        evolution_params['injury_level'] = injury
+        evolution_params["injury_level"] = injury
+    evolution_params["purpose"] = resolved_purpose
     if queue_nonce:
-        # 併入 variant_hash 計算，確保每次點擊都能在佇列面板新增一筆任務。
-        evolution_params['_queue_nonce'] = queue_nonce
-    
+        evolution_params["_queue_nonce"] = queue_nonce
+
+    if resolved_purpose == "age_span" or (age is not None and resolved_purpose in {"face_detail", "tpose", "age_span"}):
+        from characteros.services.age_span import (
+            FACE_PHASE,
+            TPOSE_PHASE,
+            age_span_steps,
+            build_age_span_evolution_params,
+            new_pipeline_id,
+        )
+
+        target_age = age
+        if target_age is None:
+            preview = service.get_character_by_id(character_id)
+            target_age = int(preview.core.base_age) if preview.core and preview.core.base_age is not None else 25
+        steps = age_span_steps(age=int(target_age), fill_span=False)
+        if resolved_purpose == TPOSE_PHASE:
+            steps = [item for item in steps if item.get("phase") == TPOSE_PHASE] or steps[-1:]
+        elif resolved_purpose == FACE_PHASE:
+            steps = [item for item in steps if item.get("phase") == FACE_PHASE] or steps[:1]
+        step = steps[0]
+        evolution_params = build_age_span_evolution_params(
+            step,
+            pipeline_id=new_pipeline_id(),
+            extra="",
+            persist=True,
+            emotion=emotion,
+            scene=scene,
+            weather=weather,
+            injury=injury,
+        )
+        if queue_nonce:
+            evolution_params["_queue_nonce"] = queue_nonce
+
     if isinstance(service, LocalCharacterService) or not is_database_available():
         from datetime import datetime, timezone
 
@@ -254,6 +290,9 @@ def request_variant(
                 created_at=_as_dt(task.get("created_at")),
                 updated_at=_as_dt(task.get("updated_at")),
             )
+        from characteros.services.queue_worker import resume_and_wake_queue_worker
+
+        resume_and_wake_queue_worker()
         raise HTTPException(
             status_code=status.HTTP_202_ACCEPTED,
             detail={
@@ -279,25 +318,25 @@ def request_variant(
     
     # 3. 根據狀態決定回應
     if variant.status == 'ready':
-        # 已生成完成，回傳 200
         return CharacterVariantResponse.model_validate(variant)
-    else:
-        # pending 或 failed，回傳 202
-        # （failed 的變體理論上不應被用戶直接請求，此處僅做保護）
-        raise HTTPException(
-            status_code=status.HTTP_202_ACCEPTED,
-            detail={
-                "message": "Variant generation queued",
-                "queue_id": variant.id,
-                "variant_hash": variant.variant_hash,
-                "status": variant.status,
-                "estimated_wait_seconds": 300
-            },
-            headers={
-                "Retry-After": "300",
-                "Location": f"/api/v1/characters/{character_id}/variant"
-            }
-        )
+
+    from characteros.services.queue_worker import resume_and_wake_queue_worker
+
+    resume_and_wake_queue_worker()
+    raise HTTPException(
+        status_code=status.HTTP_202_ACCEPTED,
+        detail={
+            "message": "Variant generation queued",
+            "queue_id": variant.id,
+            "variant_hash": variant.variant_hash,
+            "status": variant.status,
+            "estimated_wait_seconds": 300,
+        },
+        headers={
+            "Retry-After": "300",
+            "Location": f"/api/v1/characters/{character_id}/variant",
+        },
+    )
 
 
 @router.get("/{character_id}/variants", response_model=List[CharacterVariantResponse])
@@ -388,19 +427,22 @@ def queue_character_image_generation(
     service: CharacterBackend = Depends(get_character_backend),
     db: Session = Depends(get_db),
 ):
-    """把生圖工作排入佇列；年齡軸一次只開放下一步，後端 worker 自動銜接。"""
+    """把生圖工作排入佇列；預設按需生成目標變體，fill_span 才補齊指定區間。"""
     panel_header = request.headers.get("X-CharacterOS-Panel", "").strip().lower()
     if panel_header != "enabled":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="生圖佇列僅允許從 GUI 面板操作（/admin/panel）",
         )
-    return enqueue_character_images(
-        character_id=character_id,
-        body=body,
-        service=service,
-        db=db,
-    )
+    try:
+        return enqueue_character_images(
+            character_id=character_id,
+            body=body,
+            service=service,
+            db=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.get("/{character_id}/editor", response_model=CharacterEditorResponse)

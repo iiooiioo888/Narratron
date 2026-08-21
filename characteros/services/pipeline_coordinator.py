@@ -3,15 +3,16 @@
 人物圖像生成主流程（local / DB 共用）：
 
 1. **入列**（image_pipeline.enqueue_character_images）
-   - 新人物 age_span：只入列第 1 步（face_detail 1 歲），其餘 159 步尚未建立。
+   - 按需：只入列請求歲數的下一步（通常是 face_detail）。
+   - fill_span：才會依區間逐步銜接。
 2. **後端 worker**（queue_worker）
-   - 一次只 process 一筆 pending；失敗即暫停，等使用者「重設失敗並繼續」。
+   - 一次只 process 一筆 pending；失敗即暫停。
 3. **單步生圖**（local_queue / queue.process_*）
-   - 依 age_span 規則收集參考圖 → ImagingService → 自動 accepted → stamp lock_url。
+   - 優先復用 character_variants 快取；未命中才呼叫 ImagingService。
 4. **銜接下一步**（本模組 enqueue_next_age_span_steps）
-   - 上一步入庫後才動態建立下一筆；status 依 initial_queue_status（waiting / pending）。
+   - 僅限本次請求規劃的步驟（同歲 T 型，或 fill_span 的下一歲）。
 5. **正規化**（normalize_age_span_queue）
-   - 每個 pipeline 同時最多一筆 pending，避免 160 張一起跑。
+   - 每個 pipeline 同時最多一筆 pending。
 """
 
 from __future__ import annotations

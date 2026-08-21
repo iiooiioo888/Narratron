@@ -225,6 +225,16 @@ class LocalQueueManager:
             )
         return str(entity_id)
 
+    def _profile_context(self, core_id: int) -> tuple[int, dict[str, Any] | None]:
+        try:
+            full = LocalCharacterService(self.root).get_character_by_id(core_id)
+        except HTTPException:
+            return 1, None
+        profile = full.profile
+        version = int(profile.version) if profile and profile.version else 1
+        manifest = dict(profile.manifest) if profile and isinstance(profile.manifest, dict) else None
+        return max(1, version), manifest
+
     def request_variant_generation(
         self,
         core_id: int,
@@ -235,7 +245,15 @@ class LocalQueueManager:
         status: str | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """排入或回傳既有任務；回傳 (task_dict, is_new)。"""
-        variant_hash = compute_variant_hash(core_id, profile_version, evolution_params)
+        resolved_version, manifest_content = self._profile_context(core_id)
+        if resolved_version:
+            profile_version = resolved_version
+        variant_hash = compute_variant_hash(
+            core_id,
+            profile_version,
+            evolution_params,
+            manifest_content,
+        )
         with self._lock:
             data = self._load()
             tasks: list[dict[str, Any]] = data["tasks"]
@@ -263,7 +281,7 @@ class LocalQueueManager:
                 "status": str(status or "pending").strip() or "pending",
                 "priority": priority,
                 "result_url": None,
-                "result_metadata": {},
+                "result_metadata": {"profile_version": profile_version},
                 "error_message": None,
                 "retry_count": 0,
                 "max_retries": 3,
@@ -436,6 +454,10 @@ class LocalQueueManager:
             task["generation_duration_ms"] = outcome.generation_duration_ms
             if outcome.result_url:
                 task["result_url"] = outcome.result_url
+                metadata = task.get("result_metadata") if isinstance(task.get("result_metadata"), dict) else {}
+                metadata["result_image_url"] = outcome.result_url
+                metadata.setdefault("profile_version", task.get("profile_version") or 1)
+                task["result_metadata"] = metadata
             if outcome.status == "failed":
                 task["retry_count"] = int(task.get("retry_count") or 0) + 1
             task["updated_at"] = _utcnow().isoformat()

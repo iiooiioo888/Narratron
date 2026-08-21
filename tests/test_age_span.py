@@ -1,4 +1,4 @@
-"""新人物年齡軸：1–80 歲連貫面部細緻圖，再接 T 型外觀圖。"""
+"""年齡軸：按需單齡變體；fill_span 才補齊區間。"""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from characteros.services.age_span import (
     new_pipeline_id,
     prepare_queued_image_generation,
     recover_stale_running_tasks,
+    resolve_age_span_ages,
     should_queue_age_span,
     step_priority,
     summarize_age_span_pipeline,
@@ -61,7 +62,7 @@ def local_root(tmp_path: Path) -> Path:
 
 
 def test_age_span_steps_are_faces_then_tpose() -> None:
-    steps = age_span_steps(age_start=1, age_end=3)
+    steps = age_span_steps(age_start=1, age_end=3, fill_span=True)
     assert [item["purpose"] for item in steps] == [
         "face_detail",
         "face_detail",
@@ -71,6 +72,7 @@ def test_age_span_steps_are_faces_then_tpose() -> None:
         "tpose",
     ]
     assert [item["age"] for item in steps] == [1, 2, 3, 1, 2, 3]
+    assert steps[0]["fill_span"] is True
     assert steps[0]["depends_on"] is None
     assert initial_queue_status(steps[0]) == "pending"
     assert initial_queue_status(steps[1]) == "waiting"
@@ -80,7 +82,7 @@ def test_age_span_steps_are_faces_then_tpose() -> None:
 
 
 def test_summarize_pipeline_headline_when_running() -> None:
-    steps = age_span_steps(age_start=1, age_end=2)
+    steps = age_span_steps(age_start=1, age_end=2, fill_span=True)
     params = build_age_span_evolution_params(
         steps[0],
         pipeline_id=new_pipeline_id(),
@@ -106,8 +108,19 @@ def test_summarize_pipeline_headline_when_running() -> None:
     assert summary["accepted_count"] == 0
 
 
+def test_on_demand_age_span_is_single_age() -> None:
+    steps = age_span_steps(age=80)
+    assert len(steps) == 2
+    assert [item["purpose"] for item in steps] == ["face_detail", "tpose"]
+    assert [item["age"] for item in steps] == [80, 80]
+    assert steps[0]["fill_span"] is False
+    assert steps[0]["depends_on"] is None
+    assert steps[1]["age_start"] == 80
+    assert steps[1]["age_end"] == 80
+
+
 def test_full_age_span_covers_one_to_eighty() -> None:
-    steps = age_span_steps()
+    steps = age_span_steps(age_start=1, age_end=80, fill_span=True)
     assert len(steps) == 160
     assert steps[0]["age"] == 1
     assert steps[79]["age"] == 80
@@ -115,8 +128,8 @@ def test_full_age_span_covers_one_to_eighty() -> None:
     assert steps[-1]["age"] == 80
 
 
-def test_new_character_without_images_uses_age_span() -> None:
-    assert should_queue_age_span("identity", {"_identity": {"name": "卡爾"}})
+def test_new_character_without_images_does_not_force_age_span() -> None:
+    assert not should_queue_age_span("identity", {"_identity": {"name": "卡爾"}})
     assert should_queue_age_span("age_span", {"_identity": {"ref_images": [{"path": "assets/x.png"}]}})
     assert not should_queue_age_span("identity", {"_identity": {"ref_images": [{"path": "assets/x.png"}]}})
     assert not should_queue_age_span("outfit", {"_identity": {"name": "卡爾"}})
@@ -273,7 +286,7 @@ def test_queue_age_span_enqueues_only_the_next_step(local_root: Path) -> None:
     core_id = listed["items"][0].id
     pipeline_id = new_pipeline_id()
     queue = LocalQueueManager(local_root)
-    first_step = age_span_steps(age_start=1, age_end=2)[0]
+    first_step = age_span_steps(age_start=1, age_end=2, fill_span=True)[0]
     task, is_new = queue.request_variant_generation(
         core_id=core_id,
         evolution_params=build_age_span_evolution_params(
@@ -316,7 +329,7 @@ def test_process_age_span_injects_previous_refs(local_root: Path) -> None:
     core_id = listed["items"][0].id
     pipeline_id = new_pipeline_id()
     queue = LocalQueueManager(local_root)
-    first_step = age_span_steps(age_start=1, age_end=2)[0]
+    first_step = age_span_steps(age_start=1, age_end=2, fill_span=True)[0]
     queue.request_variant_generation(
         core_id=core_id,
         evolution_params=build_age_span_evolution_params(
@@ -373,7 +386,7 @@ def test_process_age_span_faces_before_tpose(local_root: Path) -> None:
     core_id = listed["items"][0].id
     pipeline_id = new_pipeline_id()
     queue = LocalQueueManager(local_root)
-    first_step = age_span_steps(age_start=1, age_end=2)[0]
+    first_step = age_span_steps(age_start=1, age_end=2, fill_span=True)[0]
     queue.request_variant_generation(
         core_id=core_id,
         evolution_params=build_age_span_evolution_params(
@@ -465,13 +478,14 @@ def test_age_span_evolution_params_never_store_api_key() -> None:
     )
     image_request = params["_image_request"]
     assert "api_key" not in image_request
+    assert "_queue_nonce" not in params
 
 
 def test_running_task_blocks_other_generation(local_root: Path) -> None:
     service = LocalCharacterService(local_root)
     core_id = service.list_characters()["items"][0].id
     queue = LocalQueueManager(local_root)
-    first_step = age_span_steps(age_start=1, age_end=2)[0]
+    first_step = age_span_steps(age_start=1, age_end=2, fill_span=True)[0]
     task, _ = queue.request_variant_generation(
         core_id=core_id,
         evolution_params=build_age_span_evolution_params(
@@ -505,4 +519,170 @@ def test_stale_running_recovers_to_pending() -> None:
     recovered = recover_stale_running_tasks(tasks, max_age_s=1)
     assert recovered
     assert tasks[0]["status"] == "pending"
+
+
+def test_on_demand_face_uses_identity_seed_when_no_previous_age() -> None:
+    refs = collect_age_span_ref_uris(
+        [],
+        {"pipeline_id": "ondemand", "phase": "face_detail", "age": 80},
+        seed_uris=["https://cdn.example/linmo-adult.png"],
+    )
+    assert refs == ["https://cdn.example/linmo-adult.png"]
+
+
+def test_on_demand_queue_does_not_create_other_ages(local_root: Path) -> None:
+    service = LocalCharacterService(local_root)
+    core_id = service.list_characters()["items"][0].id
+    queue = LocalQueueManager(local_root)
+    step = age_span_steps(age=80)[0]
+    task, is_new = queue.request_variant_generation(
+        core_id=core_id,
+        evolution_params=build_age_span_evolution_params(
+            step,
+            pipeline_id=new_pipeline_id(),
+            provider="null",
+        ),
+        priority=step_priority(0, step),
+        character_name="測試角色",
+        status="pending",
+    )
+    assert is_new
+    processed = queue.process_next(character_service=service, core_id=core_id)
+    assert processed is not None
+    assert processed["status"] == "ready"
+    assert processed["evolution_params"]["_image_request"]["age"] == 80
+    follow = [item for item in queue.list_tasks(core_id=core_id, limit=20) if item["id"] != processed["id"]]
+    assert len(follow) == 1
+    assert follow[0]["evolution_params"]["_image_request"]["age"] == 80
+    assert follow[0]["evolution_params"]["_image_request"]["phase"] == "tpose"
+    ages = {
+        int((item.get("evolution_params") or {}).get("_image_request", {}).get("age") or 0)
+        for item in queue.list_tasks(core_id=core_id, limit=20)
+    }
+    assert ages == {80}
+
+
+def test_same_age_request_reuses_variant_cache(local_root: Path) -> None:
+    service = LocalCharacterService(local_root)
+    core_id = service.list_characters()["items"][0].id
+    queue = LocalQueueManager(local_root)
+    step = age_span_steps(age=45)[0]
+    first, first_new = queue.request_variant_generation(
+        core_id=core_id,
+        evolution_params=build_age_span_evolution_params(step, pipeline_id="pipe-a", provider="null"),
+        character_name="測試角色",
+    )
+    second, second_new = queue.request_variant_generation(
+        core_id=core_id,
+        evolution_params=build_age_span_evolution_params(step, pipeline_id="pipe-b", provider="null"),
+        character_name="測試角色",
+    )
+    assert first_new is True
+    assert second_new is False
+    assert first["id"] == second["id"]
+    assert first["variant_hash"] == second["variant_hash"]
+
+
+def test_range_without_fill_span_stays_on_demand() -> None:
+    ages, span_mode = resolve_age_span_ages(age_start=1, age_end=80, fill_span=False)
+    assert ages == [1]
+    assert span_mode is False
+    steps = age_span_steps(age_start=1, age_end=80)
+    assert [item["age"] for item in steps] == [1, 1]
+    assert steps[0]["fill_span"] is False
+
+
+def test_fill_span_requires_explicit_range() -> None:
+    with pytest.raises(ValueError, match="age_start and age_end"):
+        resolve_age_span_ages(fill_span=True)
+    with pytest.raises(ValueError, match="age_start and age_end"):
+        age_span_steps(fill_span=True)
+
+
+def test_weather_and_emotion_are_separate_variants(local_root: Path) -> None:
+    service = LocalCharacterService(local_root)
+    core_id = service.list_characters()["items"][0].id
+    queue = LocalQueueManager(local_root)
+    step = age_span_steps(age=80)[0]
+    rain, rain_new = queue.request_variant_generation(
+        core_id=core_id,
+        evolution_params=build_age_span_evolution_params(
+            step,
+            pipeline_id="pipe-rain",
+            provider="null",
+            weather="rain",
+            emotion="sad",
+        ),
+        character_name="測試角色",
+    )
+    sun, sun_new = queue.request_variant_generation(
+        core_id=core_id,
+        evolution_params=build_age_span_evolution_params(
+            step,
+            pipeline_id="pipe-sun",
+            provider="null",
+            weather="sunny",
+            emotion="sad",
+        ),
+        character_name="測試角色",
+    )
+    again, again_new = queue.request_variant_generation(
+        core_id=core_id,
+        evolution_params=build_age_span_evolution_params(
+            step,
+            pipeline_id="pipe-rain-2",
+            provider="null",
+            weather="rain",
+            emotion="sad",
+        ),
+        character_name="測試角色",
+    )
+    assert rain_new is True
+    assert sun_new is True
+    assert again_new is False
+    assert rain["id"] != sun["id"]
+    assert rain["variant_hash"] != sun["variant_hash"]
+    assert again["id"] == rain["id"]
+
+
+def test_rain_refs_prefer_matching_weather() -> None:
+    tasks = [
+        {
+            "id": 1,
+            "status": "ready",
+            "evolution_params": {
+                "weather": "sunny",
+                "_image_request": {
+                    "pipeline": "age_span",
+                    "pipeline_id": "a",
+                    "phase": "face_detail",
+                    "purpose": "face_detail",
+                    "age": 79,
+                    "weather": "sunny",
+                },
+            },
+            "result_metadata": {"image_generation": {"images": [{"url": "https://cdn.example/sunny.png"}]}},
+        },
+        {
+            "id": 2,
+            "status": "ready",
+            "evolution_params": {
+                "weather": "rain",
+                "_image_request": {
+                    "pipeline": "age_span",
+                    "pipeline_id": "b",
+                    "phase": "face_detail",
+                    "purpose": "face_detail",
+                    "age": 79,
+                    "weather": "rain",
+                },
+            },
+            "result_metadata": {"image_generation": {"images": [{"url": "https://cdn.example/rain.png"}]}},
+        },
+    ]
+    refs = collect_age_span_ref_uris(
+        tasks,
+        {"pipeline_id": "c", "phase": "face_detail", "age": 80, "weather": "rain"},
+    )
+    assert refs == ["https://cdn.example/rain.png"]
 

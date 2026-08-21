@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,6 +49,15 @@ def entity_id_from_name(name: str) -> str:
     if not cleaned:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="角色名稱不可為空")
     return f"character-{cleaned[:200]}"
+
+
+def _editor_fingerprint(manifest: dict[str, Any] | None) -> str:
+    data = copy.deepcopy(manifest) if isinstance(manifest, dict) else {}
+    meta = data.get("_meta")
+    if isinstance(meta, dict):
+        for key in ("updated_at", "created_at", "profile_version"):
+            meta.pop(key, None)
+    return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def _seed_passport_manifest(
@@ -580,11 +591,15 @@ class LocalCharacterService:
             }
 
         notes = extensions.get("notes") if isinstance(extensions, dict) else None
+        try:
+            version = max(1, int(meta.get("profile_version") or 1))
+        except (TypeError, ValueError):
+            version = 1
 
         return CharacterProfileResponse(
             id=character_id,
             core_id=character_id,
-            version=1,
+            version=version,
             is_active=True,
             project_name=meta.get("project_name"),
             project_id=meta.get("project_id"),
@@ -907,13 +922,20 @@ class LocalCharacterService:
         body: CharacterEditorUpdateRequest,
     ) -> CharacterEditorResponse:
         entity_id = self._entity_id_for(character_id)
-        manifest = strip_local_sidecar(dict(self._read_manifest(entity_id)))
+        existing = strip_local_sidecar(dict(self._read_manifest(entity_id)))
+        manifest = strip_local_sidecar(dict(existing))
 
         meta = manifest.setdefault("_meta", {})
         identity = manifest.setdefault("_identity", {})
         blend = identity.setdefault("blend", {})
         style = manifest.setdefault("_style", {})
         body_section = manifest.setdefault("_body", {})
+        previous_version = 1
+        try:
+            previous_version = max(1, int(meta.get("profile_version") or 1))
+        except (TypeError, ValueError):
+            previous_version = 1
+        old_fingerprint = _editor_fingerprint(existing)
 
         meta["character_name"] = body.name
         meta["entity_id"] = entity_id
@@ -955,6 +977,9 @@ class LocalCharacterService:
         if body.notes is not None:
             extensions = manifest.setdefault("_extensions", {})
             extensions["notes"] = body.notes
+
+        if _editor_fingerprint(manifest) != old_fingerprint:
+            meta["profile_version"] = previous_version + 1
 
         self._write_manifest_json(entity_id, manifest)
         return self.get_editor_payload(character_id)

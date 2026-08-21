@@ -1,12 +1,9 @@
-"""新人物年齡軸生圖。
+"""年齡軸生圖：character_variants 的一個特殊案例（request_params.age）。
 
-流程（一次只向 AI 請求一張，完成並入庫後才排下一步）：
+預設按需生成：使用者請求 `?age=80` 只產生該歲的面部／T 型，不強制跑 1→80。
+若明確 `fill_span=true`（或 age_end > age_start），才以區間逐步銜接。
 
-1. 面部細緻圖：1 歲 → 80 歲。第 1 歲用護照種子圖（若有）；之後每歲只鎖「上一歲臉」。
-2. T 型外觀圖：1 歲 → 80 歲。每歲鎖「同歲臉」＋「上一歲 T 型」（1 歲沒有上一歲 T 型）。
-
-WAN 只吃可公開抓取的 http(s) 參考圖，因此每步必須把 provider 回傳的遠端 URL
-寫成 lock_url，下一步優先用它，而不是本機資產路徑。
+參考圖採「軟鎖定」：有上一歲快取就用；沒有就退回護照種子圖，不為了連貫而補生成中間歲數。
 """
 
 from __future__ import annotations
@@ -14,6 +11,8 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Any
 from uuid import uuid4
+
+from characteros.utils.hash import canonical_evolution_params
 
 AGE_SPAN_START = 1
 AGE_SPAN_END = 80
@@ -78,47 +77,87 @@ FACE_PHASE = "face_detail"
 TPOSE_PHASE = "tpose"
 
 
+def resolve_age_span_ages(
+    *,
+    age: int | None = None,
+    age_start: int | None = None,
+    age_end: int | None = None,
+    fill_span: bool = False,
+) -> tuple[list[int], bool]:
+    """回傳要生成的歲數列表，以及是否為區間補齊模式。
+
+    預設按需：只回傳目標歲數。`fill_span=True` 才展開區間，且必須同時給 age_start／age_end。
+    """
+    start_raw = age_start
+    end_raw = age_end
+    if fill_span:
+        if start_raw is None or end_raw is None:
+            raise ValueError("fill_span requires both age_start and age_end")
+        start = max(AGE_SPAN_START, int(start_raw))
+        end = min(AGE_SPAN_END, int(end_raw))
+        if end < start:
+            raise ValueError("age_end must be greater than or equal to age_start")
+        return list(range(start, end + 1)), True
+    if age is not None:
+        target = int(age)
+    elif start_raw is not None:
+        target = int(start_raw)
+    elif end_raw is not None:
+        target = int(end_raw)
+    else:
+        raise ValueError("on-demand age_span requires a target age")
+    target = max(AGE_SPAN_START, min(AGE_SPAN_END, target))
+    return [target], False
+
+
 def age_span_steps(
     *,
-    age_start: int = AGE_SPAN_START,
-    age_end: int = AGE_SPAN_END,
+    age: int | None = None,
+    age_start: int | None = None,
+    age_end: int | None = None,
+    fill_span: bool = False,
 ) -> list[dict[str, Any]]:
-    start = max(AGE_SPAN_START, int(age_start))
-    end = min(AGE_SPAN_END, int(age_end))
-    if end < start:
-        raise ValueError("age_end must be greater than or equal to age_start")
-    ages = list(range(start, end + 1))
+    ages, span_mode = resolve_age_span_ages(
+        age=age,
+        age_start=age_start,
+        age_end=age_end,
+        fill_span=fill_span,
+    )
+    start = ages[0]
+    end = ages[-1]
     total = len(ages) * 2
     last_face_age = ages[-1]
     steps: list[dict[str, Any]] = []
-    for offset, age in enumerate(ages):
+    for offset, current_age in enumerate(ages):
         steps.append(
             {
                 "phase": FACE_PHASE,
                 "purpose": FACE_PHASE,
-                "age": age,
+                "age": current_age,
                 "age_start": start,
                 "age_end": end,
+                "fill_span": span_mode,
                 "step_index": offset,
                 "total_steps": total,
                 "angle": "face_detail",
-                "depends_on": None if offset == 0 else {"phase": FACE_PHASE, "age": age - 1},
+                "depends_on": None if offset == 0 else {"phase": FACE_PHASE, "age": current_age - 1},
             }
         )
-    for offset, age in enumerate(ages):
+    for offset, current_age in enumerate(ages):
         steps.append(
             {
                 "phase": TPOSE_PHASE,
                 "purpose": TPOSE_PHASE,
-                "age": age,
+                "age": current_age,
                 "age_start": start,
                 "age_end": end,
+                "fill_span": span_mode,
                 "step_index": len(ages) + offset,
                 "total_steps": total,
                 "angle": "tpose",
                 "depends_on": {"phase": FACE_PHASE, "age": last_face_age}
                 if offset == 0
-                else {"phase": TPOSE_PHASE, "age": age - 1},
+                else {"phase": TPOSE_PHASE, "age": current_age - 1},
             }
         )
     return steps
@@ -138,33 +177,68 @@ def character_needs_age_span(manifest: dict[str, Any] | None) -> bool:
 
 
 def should_queue_age_span(purpose: str, manifest: dict[str, Any] | None) -> bool:
-    normalized = str(purpose or "").strip()
-    if normalized == AGE_SPAN_PIPELINE:
+    """只有明確選擇 age_span 才走年齡變體管線；不再因「新人物無參考圖」而強制 1→80。"""
+    _ = manifest
+    return str(purpose or "").strip() == AGE_SPAN_PIPELINE
+
+
+def is_span_fill(image_request: dict[str, Any] | None) -> bool:
+    req = image_request if isinstance(image_request, dict) else {}
+    if bool(req.get("fill_span")):
         return True
-    return normalized in AGE_SPAN_PURPOSES and character_needs_age_span(manifest)
+    try:
+        start = int(req.get("age_start") or 0)
+        end = int(req.get("age_end") or 0)
+    except (TypeError, ValueError):
+        return False
+    return end > start
 
 
 def _age_token(age: int) -> str:
     return f"{int(age):03d}"
 
 
-def age_span_prompt_extra(*, phase: str, age: int, user_extra: str = "") -> str:
+def age_span_prompt_extra(
+    *,
+    phase: str,
+    age: int,
+    user_extra: str = "",
+    emotion: str | None = None,
+    scene: str | None = None,
+    weather: str | None = None,
+    injury: float | None = None,
+) -> str:
     parts = [
         f"exactly {age} years old, age {age}",
         "same named person as the reference images",
-        "year-by-year lifespan continuity",
         "biologically plausible aging only, no redesign, no different person",
     ]
     if phase == FACE_PHASE:
         parts.append(
             "extreme facial close-up, highly detailed face, one face only, "
-            "identity lock to the previous age face"
+            "identity lock to the reference face"
         )
     else:
         parts.append(
             "full-body T-pose, match the matching-age face reference, "
             "same body identity across consecutive ages"
         )
+    emotion_text = str(emotion or "").strip()
+    if emotion_text:
+        parts.append(f"expression: {emotion_text}")
+    scene_text = str(scene or "").strip()
+    if scene_text:
+        parts.append(f"scene: {scene_text}")
+    weather_text = str(weather or "").strip()
+    if weather_text:
+        parts.append(f"weather: {weather_text}")
+    if injury is not None:
+        try:
+            level = float(injury)
+        except (TypeError, ValueError):
+            level = 0.0
+        if level > 0:
+            parts.append(f"visible injury level {level:.2f}")
     cleaned_user = str(user_extra or "").strip()
     if cleaned_user:
         parts.append(cleaned_user)
@@ -193,21 +267,43 @@ def build_age_span_evolution_params(
     extra: str = "",
     persist: bool = True,
     entity_id: str | None = None,
+    emotion: str | None = None,
+    scene: str | None = None,
+    weather: str | None = None,
+    injury: float | None = None,
 ) -> dict[str, Any]:
     # api_key 仍接受以相容舊呼叫端，但絕不寫入佇列 JSON。
     _ = api_key
     age = int(step["age"])
     purpose = str(step["purpose"])
     token = _age_token(age)
-    age_start = int(step.get("age_start") or AGE_SPAN_START)
-    age_end = int(step.get("age_end") or AGE_SPAN_END)
+    age_start = int(step.get("age_start") or age)
+    age_end = int(step.get("age_end") or age)
+    fill_span = bool(step.get("fill_span"))
     user_extra = str(extra or "").strip()
+    emotion_text = str(emotion or "").strip() or None
+    scene_text = str(scene or "").strip() or None
+    weather_text = str(weather or "").strip() or None
+    injury_value: float | None = None
+    if injury is not None:
+        try:
+            injury_value = max(0.0, min(1.0, float(injury)))
+        except (TypeError, ValueError):
+            injury_value = None
     image_request: dict[str, Any] = {
         "purpose": purpose,
         "provider": provider,
         "model": model,
         "base_url": base_url,
-        "extra": age_span_prompt_extra(phase=str(step["phase"]), age=age, user_extra=user_extra),
+        "extra": age_span_prompt_extra(
+            phase=str(step["phase"]),
+            age=age,
+            user_extra=user_extra,
+            emotion=emotion_text,
+            scene=scene_text,
+            weather=weather_text,
+            injury=injury_value,
+        ),
         "user_extra": user_extra,
         "n": 1,
         "multi_angle": False,
@@ -219,19 +315,32 @@ def build_age_span_evolution_params(
         "age": age,
         "age_start": age_start,
         "age_end": age_end,
+        "fill_span": fill_span,
         "step_index": step["step_index"],
         "total_steps": step["total_steps"],
-        "depends_on": step.get("depends_on"),
+        "depends_on": step.get("depends_on") if fill_span else None,
         "angle": step.get("angle"),
         "asset_dir": f"assets/{purpose}/age_{token}",
         "filename_prefix": f"ref_{purpose}_age_{token}",
+        "emotion": emotion_text,
+        "scene": scene_text,
+        "weather": weather_text,
+        "injury": injury_value,
     }
-    # api_key 不寫入佇列 JSON；執行時由 imaging settings / 環境變數提供
-    return {
+    params: dict[str, Any] = {
         "age_override": age,
-        "_queue_nonce": f"{pipeline_id}-{purpose}-age-{token}",
+        "purpose": purpose,
         "_image_request": image_request,
     }
+    if emotion_text:
+        params["emotion_state"] = emotion_text
+    if scene_text:
+        params["scene_context"] = scene_text
+    if weather_text:
+        params["weather"] = weather_text
+    if injury_value:
+        params["injury_level"] = injury_value
+    return params
 
 
 def phase_label(phase: str | None) -> str:
@@ -288,6 +397,27 @@ def _task_is_accepted(task: dict[str, Any]) -> bool:
     return bool(_collect_image_uris(task))
 
 
+def _condition_key(image_request: dict[str, Any] | None, evolution_params: dict[str, Any] | None = None) -> tuple:
+    """外觀條件指紋：相同年齡但不同情緒／場景／天氣必須分開。"""
+    params = dict(evolution_params or {})
+    if image_request and "_image_request" not in params:
+        params["_image_request"] = image_request
+    canonical = canonical_evolution_params(params)
+    injury = canonical.get("injury_level")
+    injury_token: float | None = None
+    if injury not in (None, ""):
+        try:
+            injury_token = round(float(injury), 2)
+        except (TypeError, ValueError):
+            injury_token = None
+    return (
+        str(canonical.get("emotion_state") or "").strip().lower(),
+        str(canonical.get("scene_context") or "").strip().lower(),
+        str(canonical.get("weather") or "").strip().lower(),
+        injury_token,
+    )
+
+
 def find_pipeline_task(
     tasks: list[dict[str, Any]],
     *,
@@ -295,16 +425,45 @@ def find_pipeline_task(
     phase: str,
     age: int,
 ) -> dict[str, Any] | None:
+    return find_age_phase_task(tasks, phase=phase, age=age, pipeline_id=pipeline_id)
+
+
+def find_age_phase_task(
+    tasks: list[dict[str, Any]],
+    *,
+    phase: str,
+    age: int,
+    pipeline_id: str | None = None,
+    match_request: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """找指定歲數／用途的任務。優先相同演化條件，再同 pipeline，最後跨快取軟鎖定身份。"""
+    matches: list[dict[str, Any]] = []
     for task in tasks:
         image_request = _task_image_request(task)
-        if str(image_request.get("pipeline_id") or "") != pipeline_id:
+        task_phase = str(image_request.get("phase") or image_request.get("purpose") or "")
+        if task_phase != phase:
             continue
-        if str(image_request.get("phase") or image_request.get("purpose") or "") != phase:
+        try:
+            task_age = int(image_request.get("age") or 0)
+        except (TypeError, ValueError):
             continue
-        if int(image_request.get("age") or 0) != int(age):
+        if task_age != int(age):
             continue
-        return task
-    return None
+        matches.append(task)
+    if not matches:
+        return None
+    want = _condition_key(match_request)
+
+    def _score(task: dict[str, Any]) -> tuple:
+        req = _task_image_request(task)
+        same_cond = 0 if _condition_key(req, task.get("evolution_params")) == want else 1
+        same_pipe = 0 if pipeline_id and str(req.get("pipeline_id") or "") == pipeline_id else 1
+        accepted = 0 if _task_is_accepted(task) else 1
+        ready = 0 if _task_is_ready(task) else 1
+        return (same_cond, same_pipe, accepted, ready, -int(task.get("id") or 0))
+
+    matches.sort(key=_score)
+    return matches[0]
 
 
 def extract_public_image_url(payload: dict[str, Any] | None) -> str | None:
@@ -444,34 +603,54 @@ def collect_age_span_ref_uris(
     pipeline_id = str(image_request.get("pipeline_id") or "").strip()
     phase = str(image_request.get("phase") or image_request.get("purpose") or "").strip()
     age = int(image_request.get("age") or 0)
-    if not pipeline_id or age < 1:
+    if age < 1:
         return []
     seed = _https_only(list(seed_uris or [])) or _prefer_http_uris(list(seed_uris or []))
 
     def _face_lock(target_age: int) -> list[str]:
-        task = find_pipeline_task(tasks, pipeline_id=pipeline_id, phase=FACE_PHASE, age=target_age)
+        task = find_age_phase_task(
+            tasks,
+            phase=FACE_PHASE,
+            age=target_age,
+            pipeline_id=pipeline_id or None,
+            match_request=image_request,
+        )
         return _lock_uris_from_task(task) or _lock_uris_from_manifest(
             manifest, phase=FACE_PHASE, age=target_age
         )
 
     def _tpose_lock(target_age: int) -> list[str]:
-        task = find_pipeline_task(tasks, pipeline_id=pipeline_id, phase=TPOSE_PHASE, age=target_age)
+        task = find_age_phase_task(
+            tasks,
+            phase=TPOSE_PHASE,
+            age=target_age,
+            pipeline_id=pipeline_id or None,
+            match_request=image_request,
+        )
         return _lock_uris_from_task(task) or _lock_uris_from_manifest(
             manifest, phase=TPOSE_PHASE, age=target_age
         )
 
-    if phase == FACE_PHASE:
-        if age <= 1:
-            return seed[:2]
-        return _face_lock(age - 1)[:2]
+    def _nearest_younger(lock_fn, target_age: int) -> list[str]:
+        for previous in range(int(target_age) - 1, 0, -1):
+            uris = lock_fn(previous)
+            if uris:
+                return uris
+        return []
 
-    uris = list(_face_lock(age)[:1])
-    if age > 1:
-        for uri in _tpose_lock(age - 1):
-            if uri not in uris:
-                uris.append(uri)
-            if len(uris) >= 2:
-                break
+    if phase == FACE_PHASE:
+        previous = _nearest_younger(_face_lock, age)
+        return (previous or seed)[:2]
+
+    uris = list(_face_lock(age)[:1] or _nearest_younger(_face_lock, age)[:1] or seed[:1])
+    previous_tpose = _tpose_lock(age - 1) if age > 1 else []
+    if not previous_tpose and age > 1:
+        previous_tpose = _nearest_younger(_tpose_lock, age)
+    for uri in previous_tpose:
+        if uri not in uris:
+            uris.append(uri)
+        if len(uris) >= 2:
+            break
     return uris[:2]
 
 
@@ -481,25 +660,38 @@ def ensure_age_span_dependencies(
 ) -> None:
     if str(image_request.get("pipeline") or "") != AGE_SPAN_PIPELINE:
         return
+    pipeline_id = str(image_request.get("pipeline_id") or "").strip()
+    current_phase = str(image_request.get("phase") or image_request.get("purpose") or "").strip()
+    current_age = int(image_request.get("age") or 0)
+    if not is_span_fill(image_request):
+        if current_phase == TPOSE_PHASE and current_age >= 1:
+            matching_face = find_age_phase_task(
+                tasks,
+                phase=FACE_PHASE,
+                age=current_age,
+                pipeline_id=pipeline_id or None,
+            )
+            if matching_face and not _task_is_accepted(matching_face):
+                raise AgeSpanDependencyPending(
+                    f"年齡軸 T 型體需先完成 face_detail {current_age} 歲"
+                )
+        return
     depends_on = image_request.get("depends_on")
     if not isinstance(depends_on, dict):
         return
-    pipeline_id = str(image_request.get("pipeline_id") or "").strip()
     phase = str(depends_on.get("phase") or "").strip()
     age = int(depends_on.get("age") or 0)
-    previous = find_pipeline_task(tasks, pipeline_id=pipeline_id, phase=phase, age=age)
+    previous = find_age_phase_task(tasks, phase=phase, age=age, pipeline_id=pipeline_id or None)
     if not previous or not _task_is_accepted(previous):
         raise AgeSpanDependencyPending(
             f"年齡軸任務需先完成 {phase} {age} 歲，以維持連貫外觀"
         )
-    current_phase = str(image_request.get("phase") or image_request.get("purpose") or "").strip()
-    current_age = int(image_request.get("age") or 0)
     if current_phase == TPOSE_PHASE and current_age >= 1:
-        matching_face = find_pipeline_task(
+        matching_face = find_age_phase_task(
             tasks,
-            pipeline_id=pipeline_id,
             phase=FACE_PHASE,
             age=current_age,
+            pipeline_id=pipeline_id or None,
         )
         if not matching_face or not _task_is_accepted(matching_face):
             raise AgeSpanDependencyPending(
@@ -549,10 +741,11 @@ def prepare_queued_image_generation(
 
 
 def following_step(image_request: dict[str, Any]) -> dict[str, Any] | None:
-    """目前步驟完成後，下一筆應生成的年齡軸步驟（面部全部完成才進入 T 型）。"""
-    start = int(image_request.get("age_start") or AGE_SPAN_START)
-    end = int(image_request.get("age_end") or AGE_SPAN_END)
-    steps = age_span_steps(age_start=start, age_end=end)
+    """目前步驟完成後，下一筆應生成的步驟。按需模式只銜接同歲 T 型；區間模式才往下一歲走。"""
+    fill_span = is_span_fill(image_request)
+    start = int(image_request.get("age_start") or image_request.get("age") or AGE_SPAN_START)
+    end = int(image_request.get("age_end") or image_request.get("age") or start)
+    steps = age_span_steps(age_start=start, age_end=end, fill_span=fill_span)
     index = int(image_request.get("step_index") or 0)
     if index < 0 or index + 1 >= len(steps):
         return None
@@ -573,6 +766,10 @@ def evolution_params_from_previous(
         extra=str(previous_request.get("user_extra") or ""),
         persist=bool(previous_request.get("persist", True)),
         entity_id=previous_request.get("entity_id"),
+        emotion=previous_request.get("emotion") or previous_request.get("emotion_state"),
+        scene=previous_request.get("scene") or previous_request.get("scene_context"),
+        weather=previous_request.get("weather"),
+        injury=previous_request.get("injury") or previous_request.get("injury_level"),
     )
 
 
@@ -800,8 +997,9 @@ def _build_pipeline_steps(pipeline_tasks: list[dict[str, Any]]) -> list[dict[str
     if not pipeline_tasks:
         return []
     first_request = _task_image_request(pipeline_tasks[0])
-    start = int(first_request.get("age_start") or AGE_SPAN_START)
-    end = int(first_request.get("age_end") or AGE_SPAN_END)
+    fill_span = is_span_fill(first_request)
+    start = int(first_request.get("age_start") or first_request.get("age") or AGE_SPAN_START)
+    end = int(first_request.get("age_end") or first_request.get("age") or start)
     by_key: dict[tuple[str, int], dict[str, Any]] = {}
     for task in pipeline_tasks:
         image_request = _task_image_request(task)
@@ -811,7 +1009,7 @@ def _build_pipeline_steps(pipeline_tasks: list[dict[str, Any]]) -> list[dict[str
         )
         by_key[key] = task
     steps: list[dict[str, Any]] = []
-    for planned in age_span_steps(age_start=start, age_end=end):
+    for planned in age_span_steps(age_start=start, age_end=end, fill_span=fill_span):
         task = by_key.get((str(planned["phase"]), int(planned["age"])))
         if task is None:
             steps.append(

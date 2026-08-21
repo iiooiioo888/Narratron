@@ -106,6 +106,7 @@ class VariantEvolutionParams(BaseModel):
     age_override: Optional[int] = Field(None, ge=0, le=150, description="年齡覆蓋值")
     emotion_state: Optional[str] = Field(None, description="情緒狀態")
     scene_context: Optional[str] = Field(None, description="場景上下文")
+    weather: Optional[str] = Field(None, description="天氣環境")
     injury_level: Optional[float] = Field(None, ge=0.0, le=1.0, description="受傷程度")
     body_modification: Optional[Dict[str, Any]] = Field(default_factory=dict, description="身體變化")
     custom_params: Dict[str, Any] = Field(default_factory=dict, description="自訂參數")
@@ -116,6 +117,7 @@ class CharacterVariantRequest(BaseModel):
     age: Optional[int] = Field(None, ge=0, le=150, description="目標年齡")
     emotion: Optional[str] = Field(None, description="情緒狀態")
     scene: Optional[str] = Field(None, description="場景描述")
+    weather: Optional[str] = Field(None, description="天氣環境")
     injury: Optional[float] = Field(None, ge=0.0, le=1.0, description="受傷程度")
     modifications: Optional[Dict[str, Any]] = Field(default_factory=dict, description="身體變化")
     priority: int = Field(0, ge=0, le=10, description="優先級 (0-10)")
@@ -391,7 +393,7 @@ class QueueWorkerStatusResponse(BaseModel):
 
 
 class AgeSpanPipelineStatusResponse(BaseModel):
-    """年齡軸 pipeline 進度（1–80 面部 + 1–80 T 型，完成即自動入庫）"""
+    """年齡軸／變體 pipeline 進度（按需單齡；fill_span 時才是指定區間）"""
     pipeline_id: Optional[str] = None
     core_id: Optional[int] = None
     character_name: Optional[str] = None
@@ -488,10 +490,12 @@ class ImageQueueRequest(BaseModel):
     persist: bool = Field(True, description="是否將圖片與完整回應寫回角色資料夾")
     entity_id: Optional[str] = Field(None, description="指定持久化 entity_id")
     age: Optional[int] = Field(None, ge=0, le=150, description="目標年齡")
-    age_start: int = Field(1, ge=1, le=80, description="年齡軸起始歲數")
-    age_end: int = Field(80, ge=1, le=80, description="年齡軸結束歲數")
+    age_start: Optional[int] = Field(None, ge=1, le=80, description="年齡軸起始歲數（fill_span 時使用）")
+    age_end: Optional[int] = Field(None, ge=1, le=80, description="年齡軸結束歲數（fill_span 時使用）")
+    fill_span: bool = Field(False, description="是否補齊指定 age_start–age_end 區間；預設關閉，且不會自動假設 1–80")
     emotion: Optional[str] = Field(None, description="情緒狀態")
     scene: Optional[str] = Field(None, description="場景描述")
+    weather: Optional[str] = Field(None, description="天氣環境")
     injury: Optional[float] = Field(None, ge=0.0, le=1.0, description="受傷程度")
     priority: int = Field(0, ge=0, le=10, description="佇列優先級")
     auto_accept: bool = Field(True, description="生圖完成後自動接受入庫（年齡軸建議開啟）")
