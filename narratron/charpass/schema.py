@@ -532,7 +532,7 @@ class NarrativeStyle(LayerBase):
     tone: str = ""
     speech_pattern: str = ""
     diction: str = ""
-    register: str = ""
+    register_: str = Field("", alias="register")
     sample_lines: list[str] = Field(default_factory=list)
     note: str = ""
 

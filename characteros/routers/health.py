@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from characteros.models.database import get_db
 from characteros.models.schema import HealthCheckResponse
@@ -27,21 +28,15 @@ def health_check(db: Session = Depends(get_db)):
     - `degraded`: 部分服務異常但不影響核心功能
     - `unhealthy`: 嚴重錯誤，無法提供服務
     """
-    db_status = "disconnected"
-    
     try:
-        # 測試資料庫連線
         db.execute(text("SELECT 1"))
-        db_status = "connected"
-
         return HealthCheckResponse(
             status="healthy",
-            database=db_status,
+            database="connected",
             timestamp=datetime.now(timezone.utc),
             storage_mode=storage_mode_label(),
         )
-
-    except Exception:
+    except SQLAlchemyError:
         mark_database_unavailable()
         return HealthCheckResponse(
             status="degraded",

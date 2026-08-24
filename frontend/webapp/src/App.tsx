@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import ReactFlow, { Background, Controls, MiniMap } from 'reactflow'
 import 'reactflow/dist/style.css'
 
+import { supabase, getSession } from './utils/supabase'
+import type { Session } from '@supabase/supabase-js'
 import { CharpassPanel } from './CharpassPanel'
 import { buildFlowGraph } from './graph'
 import {
@@ -166,6 +168,16 @@ function isPageId(value: string): value is PageId {
 }
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null)
+
+  useEffect(() => {
+    getSession().then(setSession).catch(() => {})
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
+      setSession(sess)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
   const initialWorkspace = useMemo(() => loadWorkspace(), [])
   const [projects, setProjects] = useState<ProjectRecord[]>(initialWorkspace.projects)
   const [activeProjectId, setActiveProjectId] = useState<string | undefined>(
@@ -191,14 +203,17 @@ export default function App() {
   const activeProject = projects.find((project) => project.id === activeProjectId)
   const selectedRun = getSelectedRun(activeProject)
   const currentState = selectedRun?.state
-  const shots = [...(currentState?.shots ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const shots = useMemo(
+    () => [...(currentState?.shots ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    [currentState?.shots],
+  )
   const traces = currentState?.traces ?? []
   const entities = currentState?.entities ?? []
-  const selectedShot = shots.find((shot) => shot.id === selectedShotId) ?? shots[0]
-  const selectedTrace = traces.find((trace) => trace.id === selectedTraceId) ?? traces[0]
+  const selectedShot = useMemo(() => shots.find((shot) => shot.id === selectedShotId) ?? shots[0], [shots, selectedShotId])
+  const selectedTrace = useMemo(() => traces.find((trace) => trace.id === selectedTraceId) ?? traces[0], [traces, selectedTraceId])
   const graph = useMemo(() => buildFlowGraph(currentState ?? {}), [currentState])
-  const characters = entities.filter((entity) => entity.kind === 'character')
-  const selectedCharacter = characters.find((entity) => entity.id === selectedCharId) ?? characters[0]
+  const characters = useMemo(() => entities.filter((entity) => entity.kind === 'character'), [entities])
+  const selectedCharacter = useMemo(() => characters.find((entity) => entity.id === selectedCharId) ?? characters[0], [characters, selectedCharId])
   const scriptLen = script.length
   const scriptOk = Boolean(script.trim()) && scriptLen <= SCRIPT_LIMIT
   const timelineReady = shots.length > 0
@@ -209,8 +224,11 @@ export default function App() {
   const bootCharacter = asRecord(bootstrap.character)
   const bootWorld = asRecord(bootstrap.world)
   const bootCurve = asRecord(bootstrap.age_curve)
-  const totalMs = shots.reduce((sum, shot) => sum + shotDuration(shot), 0)
-  const elapsedMs = shots.slice(0, playIndex).reduce((sum, shot) => sum + shotDuration(shot), 0)
+  const totalMs = useMemo(() => shots.reduce((sum, shot) => sum + shotDuration(shot), 0), [shots])
+  const elapsedMs = useMemo(
+    () => shots.slice(0, playIndex).reduce((sum, shot) => sum + shotDuration(shot), 0),
+    [shots, playIndex],
+  )
 
   useEffect(() => {
     const applyHash = () => {
@@ -822,6 +840,9 @@ export default function App() {
           <p className="eyebrow">Narratron</p>
           <h1>GUI Prototype</h1>
           <p className="muted">Pad → Timeline → Dashboard → Map → Player</p>
+          <p className="muted" style={{ fontSize: '0.7rem', marginTop: 4 }}>
+            Supabase: {session ? '🟢 Connected' : '⚪ Offline'}
+          </p>
         </div>
 
         <div className="panel sidebar-panel">

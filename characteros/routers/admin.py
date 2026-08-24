@@ -3,12 +3,31 @@
 from __future__ import annotations
 
 import copy
+import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+
+_security = HTTPBearer(auto_error=False)
+
+
+def _require_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_security),
+) -> None:
+    """Admin 端點簡易 Bearer Token 門禁。未設定 ADMIN_API_KEY 時放行。"""
+    expected = os.environ.get("CHARACTEROS_ADMIN_API_KEY", "").strip()
+    if not expected:
+        return
+    if not credentials or credentials.credentials != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing admin API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 from characteros.imaging.settings import settings
 from characteros.models.database import get_db
@@ -38,7 +57,11 @@ from characteros.storage.local_characters import LocalCharacterService
 from characteros.services.queue_task_utils import effective_task_status
 from characteros.storage.local_queue import LocalQueueManager
 
-router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
+router = APIRouter(
+    prefix="/api/v1/admin",
+    tags=["Admin"],
+    dependencies=[Depends(_require_admin)],
+)
 
 
 def _raw_task_dict(task: Any) -> dict | None:
@@ -795,7 +818,7 @@ def get_imaging_config(db: Session = Depends(get_db)):
     if is_database_available():
         try:
             settings.load_from_db(db)
-        except Exception:
+        except SQLAlchemyError:
             mark_database_unavailable()
 
     snap = settings.snapshot()
@@ -828,7 +851,7 @@ def update_imaging_config(body: ImagingConfigUpdateRequest, db: Session = Depend
                 model=snap.model,
                 has_api_key=snap.has_api_key,
             )
-        except Exception:
+        except SQLAlchemyError:
             mark_database_unavailable()
 
     snap = settings.update_env_only(

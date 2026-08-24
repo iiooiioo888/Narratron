@@ -5,20 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
+    "build:pages": "GITHUB_PAGES=true vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
-    "typescript": "~6.0.2",
+    "typescript": "~5.6.0",
     "vite": "^8.2.0"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
+    "dagre": "^0.8.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "reactflow": "^11.11.4",
-    "dagre": "^0.8.5"
+    "reactflow": "^11.11.4"
   }
 }

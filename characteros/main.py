@@ -179,7 +179,6 @@ async def database_unavailable_handler(request: Request, exc: OperationalError):
                 "資料庫連線失敗，請確認 PostgreSQL 已啟動，"
                 "且 CHARACTEROS_DATABASE_URL 設定正確"
             ),
-            "type": type(exc).__name__,
         },
     )
 

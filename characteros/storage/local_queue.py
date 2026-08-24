@@ -38,6 +38,7 @@ QUEUE_FILENAME = ".characteros-queue.json"
 
 _LOCKS: dict[str, threading.RLock] = {}
 _LOCKS_GUARD = threading.Lock()
+_MAX_LOCKS = 64
 
 
 def _lock_for(path: Path) -> threading.RLock:
@@ -45,6 +46,9 @@ def _lock_for(path: Path) -> threading.RLock:
     with _LOCKS_GUARD:
         lock = _LOCKS.get(key)
         if lock is None:
+            # 防止記憶體洩漏：超過上限時清理無人持有的鎖
+            if len(_LOCKS) >= _MAX_LOCKS:
+                _LOCKS.clear()
             lock = threading.RLock()
             _LOCKS[key] = lock
         return lock
@@ -792,32 +796,31 @@ class LocalQueueManager:
 
     def get_queue_stats(self) -> dict[str, Any]:
         tasks = self._load()["tasks"]
-        pending = [t for t in tasks if t.get("status") == "pending"]
-        waiting = [t for t in tasks if t.get("status") == "waiting"]
-        running = [t for t in tasks if t.get("status") == "running"]
-        ready = [t for t in tasks if t.get("status") == "ready"]
-        failed = [t for t in tasks if t.get("status") == "failed"]
-
-        waits = [
-            float(t["queue_wait_ms"])
-            for t in tasks
-            if t.get("queue_wait_ms") is not None
-        ]
-        avg_wait = sum(waits) / len(waits) if waits else 0.0
-
-        oldest_age = 0.0
-        if pending:
-            oldest = min(_parse_dt(t.get("created_at")) for t in pending)
-            oldest_age = (_utcnow() - oldest).total_seconds()
-
+        counts: dict[str, int] = {}
+        waits: list[float] = []
+        oldest_pending: datetime | None = None
+        now = _utcnow()
+        for t in tasks:
+            s = str(t.get("status") or "").strip()
+            counts[s] = counts.get(s, 0) + 1
+            qw = t.get("queue_wait_ms")
+            if qw is not None:
+                try:
+                    waits.append(float(qw))
+                except (TypeError, ValueError):
+                    pass
+            if s == "pending":
+                created = _parse_dt(t.get("created_at"))
+                if oldest_pending is None or created < oldest_pending:
+                    oldest_pending = created
         return {
-            "total_pending": len(pending),
-            "total_waiting": len(waiting),
-            "total_running": len(running),
-            "total_ready": len(ready),
-            "total_failed": len(failed),
-            "average_wait_time_ms": avg_wait,
-            "oldest_pending_age_seconds": oldest_age,
+            "total_pending": counts.get("pending", 0),
+            "total_waiting": counts.get("waiting", 0),
+            "total_running": counts.get("running", 0),
+            "total_ready": counts.get("ready", 0),
+            "total_failed": counts.get("failed", 0),
+            "average_wait_time_ms": (sum(waits) / len(waits)) if waits else 0.0,
+            "oldest_pending_age_seconds": (now - oldest_pending).total_seconds() if oldest_pending else 0.0,
         }
 
     def ensure_character_exists(self, core_id: int, character_name: str | None = None) -> None:

@@ -40,9 +40,11 @@ def _write_atomic(path: Path, writer: Callable[[Path], None]) -> None:
     try:
         tmp.replace(path)
     except OSError as exc:
+        if is_no_space_error(exc):
+            tmp.unlink(missing_ok=True)
+            raise
+        # replace 失敗（非磁碟滿）：直接寫目標檔，再清暫存
         try:
-            if is_no_space_error(exc):
-                raise
             writer(path)
         finally:
             tmp.unlink(missing_ok=True)
