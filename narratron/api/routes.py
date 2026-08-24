@@ -33,6 +33,7 @@ class HealthResponse(BaseModel):
 class ScriptPayload(BaseModel):
     script: str = Field(min_length=1)
     persist: bool = True
+    bootstrap_overrides: dict[str, Any] | None = None
 
 
 def _vault() -> StateVault:
@@ -71,10 +72,17 @@ def _not_implemented(agent: str, quarter: str, description: str) -> None:
     )
 
 
+def _agent_state(payload: ScriptPayload) -> AgentState:
+    bootstrap = None
+    if payload.bootstrap_overrides:
+        bootstrap = {"overrides": payload.bootstrap_overrides}
+    return AgentState(script=payload.script, bootstrap=bootstrap)
+
+
 @router.post("/parse")
 def parse(payload: ScriptPayload) -> dict[str, Any]:
     vault = _vault() if payload.persist else None
-    state = Parser(vault=vault, persist=payload.persist).parse(AgentState(script=payload.script))
+    state = Parser(vault=vault, persist=payload.persist).parse(_agent_state(payload))
     return state.model_dump(mode="json")
 
 
@@ -83,7 +91,7 @@ def direct(payload: ScriptPayload) -> dict[str, Any]:
     vault = _vault() if payload.persist else None
     parser = Parser(vault=vault, persist=payload.persist)
     state = Director(vault=vault, persist=payload.persist, parser=parser).direct(
-        AgentState(script=payload.script)
+        _agent_state(payload)
     )
     return state.model_dump(mode="json")
 

@@ -47,3 +47,19 @@ def test_parser_without_persist_does_not_need_vault() -> None:
     state = Parser(persist=False).parse(AgentState(script="角色：\n- 安娜\n"))
     assert any(item.name == "安娜" for item in state.entities)
     assert state.traces
+
+
+def test_parser_does_not_invent_characters_from_action_lines() -> None:
+    script = """
+莉娜走進廢棄工廠
+她停在鐵門前
+卡爾從陰影裡走出來
+兩人對視
+莉娜說我們該走了
+""".strip()
+    state = Parser(persist=False).parse(AgentState(script=script))
+    names = {item.name for item in state.entities if item.kind is EntityKind.CHARACTER}
+    assert "莉娜" in names
+    assert "卡爾" in names
+    assert "她停在鐵門前" not in names
+    assert "兩人對視" not in names

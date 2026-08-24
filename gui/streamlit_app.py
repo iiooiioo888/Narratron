@@ -207,11 +207,25 @@ def page_timeline() -> None:
         st.info("目前 shots 為空。通常是 Parse-only；請使用 Direct 生成 shots。")
         return
 
-    shots_sorted = sorted(shots, key=lambda s: (s.get("scene_id"), s.get("order", 0)))
-    shot_labels = [f"{s.get('id')[:8]} | #{s.get('order')} | {s.get('camera_language')}" for s in shots_sorted]
-    idx = st.selectbox("選擇 shot", shot_labels, index=0)
-    prefix = idx.split("|")[0].strip()
-    shot = next((s for s in shots_sorted if str(s.get("id", "")).startswith(prefix)), shots_sorted[0])
+    shots_sorted = sorted(shots, key=lambda s: s.get("order", 0))
+    shot_ids = [str(item.get("id") or "") for item in shots_sorted]
+    selected_id = st.selectbox(
+        "選擇 shot",
+        shot_ids,
+        index=0,
+        format_func=lambda shot_id: next(
+            (
+                f"#{item.get('order')} | {item.get('camera_language')} | {shot_id}"
+                for item in shots_sorted
+                if str(item.get("id") or "") == shot_id
+            ),
+            shot_id,
+        ),
+    )
+    shot = next(
+        (item for item in shots_sorted if str(item.get("id") or "") == selected_id),
+        shots_sorted[0],
+    )
 
     st.subheader("Shot Detail")
     st.json(shot)

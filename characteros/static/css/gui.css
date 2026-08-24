@@ -858,6 +858,14 @@ table.queue th { background: var(--surface); position: sticky; top: 0; z-index: 
 .next-card p { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
 .next-card ul { margin: 0 0 10px 18px; color: var(--muted); font-size: 13px; }
 
+.bootstrap-card {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.06);
+}
+.bootstrap-card .form-group { margin-bottom: 10px; }
+.bootstrap-card input,
+.bootstrap-card textarea { width: 100%; }
+
 .json-fold { margin-top: 12px; }
 .json-fold summary {
   cursor: pointer;

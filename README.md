@@ -44,6 +44,7 @@
 | 🗄️ **狀態庫** | `State Vault` | PostgreSQL JSONB 或本機記憶體，儲存實體/分鏡/資產 | `narratron/vault/` |
 | 📋 **因果記錄** | `Trace Log` | 每一步操作都有因果記錄（cause → effect），為因果壓縮包奠基 | `narratron/vault/trace_log.py` |
 | 👤 **角色管理** | `CharacterOS` | 角色護照 (.charpass) 全生命週期：建立、編輯、版本控制 | `characteros/` |
+| 🌱 **敘事自舉** | `Narrative Bootstrap` | 一句話角色簡述 → 世界觀擬合、護照初稿、年齡曲線與種子劇本 | `narratron/narrative/` |
 | 🎨 **生圖管線** | `Imaging` | 可插拔 provider：WAN（阿里百煉）/ OpenAI 相容 / 自訂 HTTP | `characteros/imaging/` |
 | 📊 **佇列中心** | `Queue` | 年齡軸 pipeline：1–80 歲逐步生圖，一次一張，完成自動入庫 | `characteros/services/queue*.py` |
 | 🕸️ **因果圖** | `Map` | 視覺化 Trace Log 因果鏈：實體 → 痕跡 → 分鏡有向圖 | `frontend/map.md` / `characteros/static/` |

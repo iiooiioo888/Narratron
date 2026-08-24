@@ -90,13 +90,11 @@
             </ol>
             <div class="form-group">
               <label>劇本內容</label>
-              <div class="hint">空內容禁用送出；上限 20,000 字。不直接改 State Vault。</div>
-              <textarea id="padScript" rows="14" placeholder="INT. 廢棄工廠 — 夜
+              <div class="hint">可貼完整劇本，或只寫一句話角色簡述（例如：一名年齡為8歲的小女孩，可愛風格，公主風）。上限 20,000 字。</div>
+              <textarea id="padScript" rows="14" placeholder="一名年齡為8歲的小女孩，可愛風格，公主風
 
-角色
-- 卡爾（傷疤覆蓋左臉，手持鏽蝕鐵棍）
-- 艾拉（繃帶纏繞右臂）
-
+或貼完整劇本：
+INT. 廢棄工廠 — 夜
 卡爾：我們必須在天亮前離開這裡。"></textarea>
               <div class="hint" id="padCount">0 / 20000</div>
             </div>
@@ -107,8 +105,9 @@
               <button class="btn btn-primary" id="btnDirect" type="button" onclick="runDirect()" disabled>Direct 拆分鏡</button>
               <button class="btn btn-secondary" id="btnParse" type="button" onclick="runParse()" disabled>僅 Parse</button>
               <button class="btn btn-secondary btn-sm" type="button" onclick="loadSampleScript()">載入範例</button>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="loadBriefSample()">載入一句話</button>
             </div>
-            <p class="hint">Direct 已含 Parser。只有要先確認實體、暫不拆分鏡時才用「僅 Parse」。</p>
+            <p class="hint">一句話會先自舉成角色宇宙再拆分鏡。Direct 已含 Parser。</p>
             <div class="status-bar" id="padStatus"></div>
             <div class="stat-row" id="padStats"></div>
             <div id="padNext"></div>

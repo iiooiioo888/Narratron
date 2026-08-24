@@ -24,7 +24,7 @@ const DASH_ALIASES = {
   monitor: "monitor",
 };
 const PAGE_META = {
-  Pad: { title: "Pad 寫板", sub: "寫劇本，按 Direct 拆分鏡（會一併解析實體）" },
+  Pad: { title: "Pad 寫板", sub: "寫劇本或一句話角色簡述，按 Direct 拆分鏡（會一併解析實體）" },
   Timeline: { title: "Timeline 時軌", sub: "只讀檢視 Director 輸出的 shots" },
   Dashboard: { title: "Dashboard 總覽", sub: "角色護照、生圖與佇列都在此子面板" },
   Map: { title: "Map 因果圖", sub: "只讀 Trace Log 視覺化" },
@@ -51,6 +51,7 @@ const PLUGIN_MATRIX = [
   ["P12", "Exporter", "轉檔", "生成後"],
   ["P13", "Maker", "製本", "生成後"],
 ];
+const SAMPLE_BRIEF = "一名年齡為8歲的小女孩，可愛風格，公主風";
 const SAMPLE_SCRIPT = `INT. 廢棄工廠 — 夜
 
 角色
@@ -256,12 +257,16 @@ function parsedCharacters() {
   return entities().filter((item) => String(item.kind || "").toLowerCase() === "character");
 }
 
+function passportCharacters() {
+  return parsedCharacters().filter((item) => String(item.payload?.role || "") !== "supporting");
+}
+
 function missingParsedPassports() {
   const existing = new Set(allCharacters.map((item) => String(item.name || "").trim()));
   return parsedCharacters().filter((item) => {
     const name = String(item.name || "").trim();
     return name && !existing.has(name);
-  });
+  }).filter((item) => String(item.payload?.role || "") !== "supporting");
 }
 
 function recommendedAction() {
@@ -443,6 +448,12 @@ function loadSampleScript() {
   persistSession();
 }
 
+function loadBriefSample() {
+  document.getElementById("padScript").value = SAMPLE_BRIEF;
+  updatePadButtons();
+  persistSession();
+}
+
 function renderPadStats(data) {
   const ents = data.entities || [];
   const trs = data.traces || [];
@@ -473,7 +484,7 @@ function renderPadResult() {
     box.innerHTML = "";
     return;
   }
-  const chars = parsedCharacters();
+  const chars = passportCharacters();
   const shotCount = shots().length;
   const mode = lastDirectState ? "direct" : "parse";
   const title = mode === "direct" ? "分鏡已完成" : "實體已解析";
@@ -487,11 +498,53 @@ function renderPadResult() {
          <button class="btn btn-secondary" type="button" onclick="goDash('imaging')">開始生圖</button>`
       : `<button class="btn btn-primary" type="button" onclick="runDirect()">接著 Direct 拆分鏡</button>
          <button class="btn btn-secondary" type="button" onclick="syncParsedCharactersThenPassport()">先寫入角色護照</button>`;
-  box.innerHTML = `<div class="next-card primary">
+  box.innerHTML = `${renderBootstrapCard(data)}<div class="next-card primary">
     <h3>${title}</h3>
     <p>${shotCount} 個 shot · ${chars.length} 個角色 · ${entities().length} 個實體</p>
     ${charList}
     <div class="btn-row">${nextButtons}</div>
+  </div>`;
+}
+
+function renderBootstrapCard(data) {
+  const boot = data && data.bootstrap;
+  if (!boot || !boot.active) return "";
+  const character = boot.character || {};
+  const world = boot.world || {};
+  const curve = boot.age_curve || {};
+  const habits = (character.habits || []).join("\n");
+  const keyframes = (curve.keyframes || []).join("、") || "—";
+  const logicOnly = (curve.logic_only || []).join("、") || "尚未觸及";
+  return `<div class="next-card bootstrap-card" id="bootstrapCard">
+    <h3>敘事自舉預覽 · 可直接改</h3>
+    <p>${escapeHtml(world.name || "童話王國")} · ${escapeHtml(character.name || "")}（${escapeHtml(String(character.age ?? ""))}歲）${character.alias ? ` · ${escapeHtml(character.alias)}` : ""}</p>
+    <div class="form-group">
+      <label>名字</label>
+      <input id="bootName" value="${escapeHtml(character.name || "")}">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>MBTI</label>
+        <input id="bootMbti" value="${escapeHtml(character.mbti || "")}">
+      </div>
+      <div class="form-group">
+        <label>內在矛盾</label>
+        <input id="bootFlaw" value="${escapeHtml(character.inner_flaw || "")}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>性格</label>
+      <textarea id="bootPersonality" rows="2">${escapeHtml(character.personality || "")}</textarea>
+    </div>
+    <div class="form-group">
+      <label>習慣（一行一條；改完會級聯更新種子劇本與因果鏈）</label>
+      <textarea id="bootHabits" rows="3">${escapeHtml(habits)}</textarea>
+    </div>
+    <p class="muted">年齡曲線：現在 ${escapeHtml(String(curve.present ?? character.age ?? ""))} 歲高精度；關鍵幀 ${escapeHtml(String(keyframes))}；${escapeHtml(String(logicOnly))} 僅文字預留，不跑 1–80。</p>
+    <div class="btn-row">
+      <button class="btn btn-primary" type="button" onclick="applyBootstrapEdits()">套用並重跑 Direct</button>
+      <button class="btn btn-secondary" type="button" onclick="useSeedScript()">用生成劇本覆寫寫板</button>
+    </div>
   </div>`;
 }
 
@@ -530,18 +583,23 @@ async function runParse() {
   }
 }
 
-async function runDirect() {
-  const script = document.getElementById("padScript").value.trim();
+async function runDirect(bootstrapOverrides) {
+  const boot = (currentState() || {}).bootstrap;
+  const script = (bootstrapOverrides && boot && boot.original_brief)
+    ? String(boot.original_brief)
+    : document.getElementById("padScript").value.trim();
   if (!script || script.length > SCRIPT_LIMIT) return;
   const persist = document.getElementById("padPersist").checked;
   setStatus("padStatus", "分鏡調度中…", "loading");
   setLoading(true);
   lastError = "";
   try {
+    const payload = { script, persist };
+    if (bootstrapOverrides) payload.bootstrap_overrides = bootstrapOverrides;
     const data = await api(NARRATRON_API, "/direct", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ script, persist }),
+      body: JSON.stringify(payload),
     });
     lastDirectState = data;
     persistSession();
@@ -553,6 +611,7 @@ async function runDirect() {
       endpoint: "POST /direct",
       shots: (data.shots || []).length,
       traces: (data.traces || []).length,
+      bootstrap: Boolean(data.bootstrap && data.bootstrap.active),
     });
     inspectorOpen = false;
     applyInspectorVisibility();
@@ -563,6 +622,38 @@ async function runDirect() {
   } finally {
     setLoading(false);
   }
+}
+
+function collectBootstrapOverrides() {
+  const habits = (document.getElementById("bootHabits")?.value || "")
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return {
+    name: (document.getElementById("bootName")?.value || "").trim(),
+    mbti: (document.getElementById("bootMbti")?.value || "").trim(),
+    personality: (document.getElementById("bootPersonality")?.value || "").trim(),
+    inner_flaw: (document.getElementById("bootFlaw")?.value || "").trim(),
+    habits,
+  };
+}
+
+async function applyBootstrapEdits() {
+  const boot = (currentState() || {}).bootstrap;
+  if (!boot || !boot.original_brief) {
+    setStatus("padStatus", "沒有可套用的自舉預覽", "err");
+    return;
+  }
+  await runDirect(collectBootstrapOverrides());
+}
+
+function useSeedScript() {
+  const boot = (currentState() || {}).bootstrap;
+  if (!boot || !boot.seed_script) return;
+  document.getElementById("padScript").value = boot.seed_script;
+  updatePadButtons();
+  persistSession();
+  setStatus("padStatus", "已用生成的種子劇本覆寫寫板，可再微調後 Direct。", "ok");
 }
 
 function renderTimeline() {
@@ -995,8 +1086,25 @@ async function createCharacterFromForm() {
 }
 
 async function syncParsedCharacters() {
-  const names = parsedCharacters().map((item) => item.name).filter(Boolean);
-  if (!names.length) {
+  const passports = passportCharacters()
+    .map((item) => {
+      const payload = item.payload || {};
+      const charpass = payload.charpass && typeof payload.charpass === "object" ? payload.charpass : null;
+      const identity = charpass && charpass._identity ? charpass._identity : {};
+      const meta = charpass && charpass._meta ? charpass._meta : {};
+      const ageRaw = identity.age_appearance;
+      const age = Number(ageRaw);
+      return {
+        name: String(item.name || "").trim(),
+        notes: payload.note || meta.notes || undefined,
+        tags: Array.isArray(meta.tags) ? meta.tags : [],
+        base_age: Number.isFinite(age) ? age : undefined,
+        gender_spectrum: typeof identity.gender_spectrum === "number" ? identity.gender_spectrum : undefined,
+        manifest: charpass || undefined,
+      };
+    })
+    .filter((item) => item.name);
+  if (!passports.length) {
     setStatus("charListStatus", "劇本尚未解析到角色。請先 Direct，或手動新增。", "err");
     return [];
   }
@@ -1005,7 +1113,10 @@ async function syncParsedCharacters() {
     const data = await api(CHAROS_API, "/api/v1/characters/sync-from-script", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ names }),
+      body: JSON.stringify({
+        names: passports.map((item) => item.name),
+        passports,
+      }),
     });
     await loadCharacters();
     const first = (data.items || [])[0];

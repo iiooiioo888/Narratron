@@ -25,6 +25,7 @@ const PAGE_ZH: Record<PageId, string> = {
 }
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 const SCRIPT_LIMIT = 20000
+const SAMPLE_BRIEF = '一名年齡為8歲的小女孩，可愛風格，公主風'
 const SAMPLE_SCRIPT = `INT. 廢棄工廠 — 夜
 
 角色
@@ -129,7 +130,7 @@ function beatOf(shot?: ShotRecord): string {
 
 async function callApi(
   mode: RunMode,
-  body: { script: string; persist: boolean },
+  body: { script: string; persist: boolean; bootstrap_overrides?: Record<string, unknown> },
 ): Promise<NarratronState> {
   const endpoint = mode === 'parse' ? '/parse' : '/direct'
   const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -181,6 +182,11 @@ export default function App() {
   const [selectedCharId, setSelectedCharId] = useState<string | undefined>()
   const [playing, setPlaying] = useState(false)
   const [playIndex, setPlayIndex] = useState(0)
+  const [bootName, setBootName] = useState('')
+  const [bootMbti, setBootMbti] = useState('')
+  const [bootFlaw, setBootFlaw] = useState('')
+  const [bootPersonality, setBootPersonality] = useState('')
+  const [bootHabits, setBootHabits] = useState('')
 
   const activeProject = projects.find((project) => project.id === activeProjectId)
   const selectedRun = getSelectedRun(activeProject)
@@ -198,6 +204,11 @@ export default function App() {
   const timelineReady = shots.length > 0
   const mapReady = traces.length > 0 || shots.length > 0
   const playerReady = shots.length > 0 || Boolean(currentState?.mux_uri)
+  const bootstrap = asRecord(currentState?.bootstrap)
+  const bootActive = bootstrap.active === true
+  const bootCharacter = asRecord(bootstrap.character)
+  const bootWorld = asRecord(bootstrap.world)
+  const bootCurve = asRecord(bootstrap.age_curve)
   const totalMs = shots.reduce((sum, shot) => sum + shotDuration(shot), 0)
   const elapsedMs = shots.slice(0, playIndex).reduce((sum, shot) => sum + shotDuration(shot), 0)
 
@@ -232,6 +243,18 @@ export default function App() {
     }, duration)
     return () => window.clearTimeout(timer)
   }, [playing, playIndex, currentState, runKey])
+
+  useEffect(() => {
+    if (!bootActive) {
+      return
+    }
+    setBootName(String(bootCharacter.name || ''))
+    setBootMbti(String(bootCharacter.mbti || ''))
+    setBootFlaw(String(bootCharacter.inner_flaw || ''))
+    setBootPersonality(String(bootCharacter.personality || ''))
+    const habits = bootCharacter.habits
+    setBootHabits(Array.isArray(habits) ? habits.map((item) => String(item)).join('\n') : '')
+  }, [runKey, bootActive])
 
   function updateWorkspace(nextProjects: ProjectRecord[], nextActiveProjectId = activeProjectId) {
     setProjects(nextProjects)
@@ -270,15 +293,23 @@ export default function App() {
     setPlaying(false)
   }
 
-  async function handleSubmit(mode: RunMode) {
-    if (!activeProject || !scriptOk) {
+  async function handleSubmit(mode: RunMode, overrides?: Record<string, unknown>) {
+    if (!activeProject) {
+      return
+    }
+    const source = String(overrides ? bootstrap.original_brief || script : script).trim()
+    if (!source || source.length > SCRIPT_LIMIT) {
       return
     }
 
     setLoadingMode(mode)
     setError(null)
     try {
-      const state = await callApi(mode, { script, persist })
+      const state = await callApi(mode, {
+        script: source,
+        persist,
+        ...(overrides ? { bootstrap_overrides: overrides } : {}),
+      })
       const nextProjects = projects.map((project) =>
         project.id === activeProject.id ? appendRun(project, { mode, script, persist, state }) : project,
       )
@@ -344,7 +375,7 @@ export default function App() {
         <div className="section-header">
           <div>
             <h2>Pad</h2>
-            <p>寫板是唯一可寫入口。日常請用 Direct：會一併解析實體並拆分鏡。</p>
+            <p>寫板是唯一可寫入口。可貼完整劇本，或只寫一句話角色簡述。</p>
           </div>
           <span className="pill pill-accent">Alpha Q1 API</span>
         </div>
@@ -354,7 +385,7 @@ export default function App() {
           <textarea
             value={script}
             onChange={(event) => setScript(event.target.value)}
-            placeholder="輸入角色、道具、場景與分鏡描述..."
+            placeholder="一名年齡為8歲的小女孩，可愛風格，公主風"
           />
         </label>
         <p className={`hint-inline ${scriptLen > SCRIPT_LIMIT ? 'warn' : ''}`}>
@@ -394,7 +425,68 @@ export default function App() {
           <button className="ghost" onClick={() => setScript(SAMPLE_SCRIPT)}>
             載入範例
           </button>
+          <button className="ghost" onClick={() => setScript(SAMPLE_BRIEF)}>
+            載入一句話
+          </button>
         </div>
+        {bootActive ? (
+          <div className="next-card">
+            <h3>敘事自舉預覽 · 可直接改</h3>
+            <p>
+              {String(bootWorld.name || '童話王國')} · {String(bootCharacter.name || '')}（
+              {String(bootCharacter.age ?? '')}歲）
+            </p>
+            <label className="field">
+              <span>名字</span>
+              <input value={bootName} onChange={(event) => setBootName(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>MBTI</span>
+              <input value={bootMbti} onChange={(event) => setBootMbti(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>內在矛盾</span>
+              <input value={bootFlaw} onChange={(event) => setBootFlaw(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>性格</span>
+              <textarea value={bootPersonality} onChange={(event) => setBootPersonality(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>習慣（一行一條）</span>
+              <textarea value={bootHabits} onChange={(event) => setBootHabits(event.target.value)} />
+            </label>
+            <p className="hint-inline">
+              年齡曲線：現在 {String(bootCurve.present ?? bootCharacter.age ?? '')} 歲；關鍵幀{' '}
+              {Array.isArray(bootCurve.keyframes) ? bootCurve.keyframes.join('、') : '—'}
+              ；其餘僅文字預留，不跑 1–80。
+            </p>
+            <div className="button-row">
+              <button
+                className="primary"
+                onClick={() =>
+                  handleSubmit('direct', {
+                    name: bootName,
+                    mbti: bootMbti,
+                    inner_flaw: bootFlaw,
+                    personality: bootPersonality,
+                    habits: bootHabits.split('\n').map((item) => item.trim()).filter(Boolean),
+                  })
+                }
+                disabled={!activeProject || loadingMode !== null}
+              >
+                套用並重跑 Direct
+              </button>
+              <button
+                className="ghost"
+                onClick={() => setScript(String(bootstrap.seed_script || ''))}
+                disabled={!bootstrap.seed_script}
+              >
+                用生成劇本覆寫寫板
+              </button>
+            </div>
+          </div>
+        ) : null}
         {currentState ? (
           <div className="next-card">
             <h3>{shots.length ? '分鏡已完成' : '實體已解析'}</h3>

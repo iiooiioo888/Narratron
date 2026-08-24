@@ -29,6 +29,8 @@ from characteros.services.branch_summary import (
 )
 from narratron.charpass.schema import LOCAL_CURRENT_FILE, empty_manifest_dict, strip_local_sidecar
 from narratron.charpass.store import CharpassStore, sidecar_manifest
+from narratron.charpass.vault_bridge import overlay_manifest
+from narratron.narrative.bootstrap import resolve_ensure_identity
 
 INDEX_FILENAME = ".characteros-index.json"
 
@@ -68,14 +70,17 @@ def _seed_passport_manifest(
     gender_spectrum: float | None = None,
     tags: list[str] | None = None,
     notes: str | None = None,
+    manifest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    manifest = empty_manifest_dict()
-    meta = manifest.setdefault("_meta", {})
-    identity = manifest.setdefault("_identity", {})
+    seeded = empty_manifest_dict()
+    if isinstance(manifest, dict) and manifest:
+        seeded = overlay_manifest(seeded, manifest)
+    meta = seeded.setdefault("_meta", {})
+    identity = seeded.setdefault("_identity", {})
     meta["character_name"] = name
     meta["entity_id"] = entity_id
-    meta["created_at"] = now
+    meta["created_at"] = meta.get("created_at") or now
     meta["updated_at"] = now
     if tags:
         meta["tags"] = list(tags)
@@ -86,7 +91,7 @@ def _seed_passport_manifest(
     identity["age_appearance"] = str(base_age)
     if gender_spectrum is not None:
         identity["gender_spectrum"] = gender_spectrum
-    return manifest
+    return seeded
 
 
 def _parse_dt(value: Any) -> datetime:
@@ -650,10 +655,26 @@ class LocalCharacterService:
         gender_spectrum: Optional[float] = None,
         tags: Optional[list[str]] = None,
         notes: Optional[str] = None,
+        brief: Optional[str] = None,
+        manifest: Optional[dict[str, Any]] = None,
     ) -> tuple[CharacterCoreResponse, bool]:
-        cleaned = str(name or "").strip()
+        resolved = resolve_ensure_identity(
+            str(name or "").strip(),
+            brief=brief,
+            base_age=base_age,
+            gender_spectrum=gender_spectrum,
+            tags=tags,
+            notes=notes,
+            manifest=manifest,
+        )
+        cleaned = str(resolved["name"] or "").strip()
         if not cleaned:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="角色名稱不可為空")
+        base_age = int(resolved["base_age"])
+        gender_spectrum = resolved["gender_spectrum"]
+        tags = list(resolved["tags"] or [])
+        notes = resolved["notes"]
+        manifest = resolved["manifest"]
 
         existing = self._find_character_by_name(cleaned)
         if existing:
@@ -668,15 +689,16 @@ class LocalCharacterService:
             cid = int((index.get("reverse") or {})[folder.name])
             return self.get_character_by_id(cid).core, False
 
-        manifest = _seed_passport_manifest(
+        passport = _seed_passport_manifest(
             cleaned,
             folder.name,
             base_age=base_age,
             gender_spectrum=gender_spectrum,
             tags=tags,
             notes=notes,
+            manifest=manifest,
         )
-        self.store.write_manifest(entity_id, manifest, snapshot_history=False)
+        self.store.write_manifest(entity_id, passport, snapshot_history=False)
         index = self._sync_index(self._load_index())
         self._save_index(index)
         cid = int((index.get("reverse") or {})[folder.name])

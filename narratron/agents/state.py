@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from narratron.hardware.pools import HardwarePool
@@ -22,3 +24,4 @@ class AgentState(BaseModel):
     selected_pool: HardwarePool = HardwarePool.L1
     media_uris: list[str] = Field(default_factory=list)
     mux_uri: str | None = None
+    bootstrap: dict[str, Any] | None = None

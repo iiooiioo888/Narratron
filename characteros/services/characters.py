@@ -29,6 +29,8 @@ from characteros.services.branch_summary import (
 )
 from narratron.charpass.schema import empty_manifest_dict
 from narratron.charpass.store import CharpassStore
+from narratron.charpass.vault_bridge import overlay_manifest
+from narratron.narrative.bootstrap import resolve_ensure_identity
 
 
 def _augment_core_with_manifest(core: CharacterCore, manifest: dict[str, Any] | None) -> CharacterCoreResponse:
@@ -390,10 +392,26 @@ class CharacterService:
         gender_spectrum: Optional[float] = None,
         tags: Optional[List[str]] = None,
         notes: Optional[str] = None,
+        brief: Optional[str] = None,
+        manifest: Optional[Dict[str, Any]] = None,
     ) -> tuple[CharacterCoreResponse, bool]:
-        cleaned = str(name or "").strip()
+        resolved = resolve_ensure_identity(
+            str(name or "").strip(),
+            brief=brief,
+            base_age=base_age,
+            gender_spectrum=gender_spectrum,
+            tags=tags,
+            notes=notes,
+            manifest=manifest,
+        )
+        cleaned = str(resolved["name"] or "").strip()
         if not cleaned:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="角色名稱不可為空")
+        base_age = int(resolved["base_age"])
+        gender_spectrum = resolved["gender_spectrum"]
+        tags = list(resolved["tags"] or [])
+        notes = resolved["notes"]
+        incoming_manifest = resolved["manifest"] if isinstance(resolved["manifest"], dict) else None
 
         query = self.db.query(CharacterCore)
         existing = query.filter(CharacterCore.name == cleaned).first()
@@ -401,17 +419,19 @@ class CharacterService:
             existing = query.filter(func.lower(CharacterCore.name) == cleaned.lower()).first()
         if existing:
             profile = self.get_active_profile(existing.id)
-            manifest = profile.manifest if profile and isinstance(profile.manifest, dict) else None
-            return _augment_core_with_manifest(existing, manifest), False
+            profile_manifest = profile.manifest if profile and isinstance(profile.manifest, dict) else None
+            return _augment_core_with_manifest(existing, profile_manifest), False
 
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         entity_id = f"character-{cleaned[:200]}"
-        manifest = empty_manifest_dict()
-        meta = manifest.setdefault("_meta", {})
-        identity = manifest.setdefault("_identity", {})
+        seeded = empty_manifest_dict()
+        if incoming_manifest:
+            seeded = overlay_manifest(seeded, incoming_manifest)
+        meta = seeded.setdefault("_meta", {})
+        identity = seeded.setdefault("_identity", {})
         meta["character_name"] = cleaned
         meta["entity_id"] = entity_id
-        meta["created_at"] = now
+        meta["created_at"] = meta.get("created_at") or now
         meta["updated_at"] = now
         if tags:
             meta["tags"] = list(tags)
@@ -438,12 +458,12 @@ class CharacterService:
             core_id=core.id,
             version=1,
             is_active=True,
-            manifest=manifest,
+            manifest=seeded,
         )
         self.db.add(profile)
         self.db.commit()
         self.db.refresh(core)
-        return _augment_core_with_manifest(core, manifest), True
+        return _augment_core_with_manifest(core, seeded), True
     
     def get_active_profile(self, core_id: int) -> Optional[CharacterProfile]:
         """

@@ -39,11 +39,13 @@ class CharacterCoreResponse(CharacterCoreBase):
 class CharacterEnsureRequest(BaseModel):
     """建立或取得角色：同名則回傳既有護照，不另開分身。"""
 
-    name: str = Field(..., min_length=1, max_length=255, description="角色名稱")
+    name: str = Field(..., min_length=1, max_length=255, description="角色名稱；若是一句話簡述會自動膨脹成護照")
     base_age: int = Field(25, ge=0, le=150, description="基準年齡")
     gender_spectrum: Optional[float] = Field(None, ge=0.0, le=1.0, description="性別光譜 (0=女性，1=男性)")
     tags: List[str] = Field(default_factory=list, description="標籤列表")
     notes: Optional[str] = Field(None, max_length=2000, description="備註（例如從劇本摘錄的外觀）")
+    brief: Optional[str] = Field(None, max_length=800, description="角色一句話簡述；提供時走敘事自舉")
+    manifest: Optional[Dict[str, Any]] = Field(None, description="可選的護照初稿，建立時寫入 Profile")
 
 
 class CharacterEnsureResponse(CharacterCoreResponse):
@@ -52,10 +54,22 @@ class CharacterEnsureResponse(CharacterCoreResponse):
     created: bool = False
 
 
+class CharacterSyncPassport(BaseModel):
+    """從劇本／自舉結果寫入護照的單筆資料。"""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    base_age: Optional[int] = Field(None, ge=0, le=150)
+    gender_spectrum: Optional[float] = Field(None, ge=0.0, le=1.0)
+    tags: List[str] = Field(default_factory=list)
+    notes: Optional[str] = Field(None, max_length=4000)
+    manifest: Optional[Dict[str, Any]] = None
+
+
 class CharacterSyncRequest(BaseModel):
     """把劇本解析出的角色名寫入護照。"""
 
     names: List[str] = Field(default_factory=list, description="角色名稱列表")
+    passports: List[CharacterSyncPassport] = Field(default_factory=list, description="可選：帶護照初稿一併寫入")
 
 
 class CharacterSyncResponse(BaseModel):

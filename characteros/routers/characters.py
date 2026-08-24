@@ -24,6 +24,7 @@ from characteros.models.schema import (
     CharacterEnsureResponse,
     CharacterSyncRequest,
     CharacterSyncResponse,
+    CharacterSyncPassport,
 )
 from characteros.services.characters import CharacterService
 from characteros.services.queue import QueueManager
@@ -112,6 +113,8 @@ def ensure_character(
         gender_spectrum=body.gender_spectrum,
         tags=body.tags,
         notes=body.notes,
+        brief=body.brief,
+        manifest=body.manifest,
     )
     payload = core.model_dump()
     payload["created"] = created
@@ -127,15 +130,30 @@ def sync_characters_from_script(
     items: list[CharacterCoreResponse] = []
     created_count = 0
     seen: set[str] = set()
+    incoming: list[CharacterSyncPassport] = list(body.passports or [])
+    named = {str(item.name or "").strip() for item in incoming}
     for raw in body.names:
         name = str(raw or "").strip()
+        if not name or name in named:
+            continue
+        incoming.append(CharacterSyncPassport(name=name))
+        named.add(name)
+    for passport in incoming:
+        name = str(passport.name or "").strip()
         if not name:
             continue
         key = name.lower() if name.isascii() else name
         if key in seen:
             continue
         seen.add(key)
-        core, created = service.ensure_character(name)
+        core, created = service.ensure_character(
+            name,
+            base_age=passport.base_age if passport.base_age is not None else 25,
+            gender_spectrum=passport.gender_spectrum,
+            tags=passport.tags,
+            notes=passport.notes,
+            manifest=passport.manifest,
+        )
         items.append(core)
         if created:
             created_count += 1
