@@ -66,6 +66,9 @@ narratron = ["py.typed", "charpass/schema.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = ["--basetemp=.pytest-tmp/run"]
+tmp_path_retention_count = 1
+tmp_path_retention_policy = "none"
 
 [tool.ruff]
 line-length = 100

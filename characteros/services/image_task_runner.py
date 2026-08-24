@@ -35,6 +35,7 @@ from characteros.services.variant_processor import (
     sanitize_evolution_params,
     utcnow_iso,
 )
+from characteros.utils.files import is_no_space_error
 from narratron.charpass.store import CharpassStore
 
 logger = logging.getLogger(__name__)
@@ -349,9 +350,14 @@ def execute_image_queue_task(context: ImageQueueExecution) -> ImageQueueExecutio
         )
     except Exception as exc:
         logger.exception("Image queue task #%s failed: %s", context.task_id, exc)
+        message = (
+            "磁碟空間不足，無法寫入生成結果"
+            if is_no_space_error(exc)
+            else str(exc)
+        )
         return ImageQueueExecutionResult(
             status="failed",
             result_url=None,
             result_metadata=result_metadata,
-            error_message=str(exc),
+            error_message=message,
         )

@@ -21,8 +21,14 @@ _SECTION = re.compile(
     r"^(角色|人物|道具|場景|Characters?|Props?|Scenes?)[：:\s]*$",
     re.IGNORECASE,
 )
+_INLINE_SECTION = re.compile(
+    r"^(角色|人物|道具|場景|Characters?|Props?|Scenes?)[：:]\s*(.+)$",
+    re.IGNORECASE,
+)
+_LIST_ITEM = re.compile(r"^[-*•]\s+(.+)$")
 _MOVE = re.compile(r"走|跑|衝|冲|跟|walk|run|rush|dash", re.IGNORECASE)
 _SPEAK = re.compile(r"[：:]|說|道|dialogue", re.IGNORECASE)
+_SENTENCE_END = re.compile(r"[。！？.!?…][\"'」』）)]*$")
 
 
 def _now() -> datetime:
@@ -45,6 +51,18 @@ def _camera(beat: str, index: int, speaking: bool, character_count: int) -> str:
     if character_count >= 2:
         return "過肩 Over-the-shoulder"
     return "中景 Medium"
+
+
+def _is_speaking_beat(beat: str, characters: list[Entity]) -> bool:
+    text = beat.lstrip()
+    for character in characters:
+        name = character.name.strip()
+        if not name or not text.startswith(name):
+            continue
+        remainder = text[len(name) :]
+        if remainder.startswith(("：", ":")) or remainder[:1].isspace():
+            return True
+    return False
 
 
 class Director:
@@ -105,7 +123,7 @@ class Director:
                 beats = [scene.name]
             for index, beat in enumerate(beats):
                 order += 1
-                speaking = any(char.name and char.name in beat for char in characters)
+                speaking = _is_speaking_beat(beat, characters)
                 camera = _camera(beat, index, speaking, len(characters))
                 shot = Shot(
                     id=f"shot-{order:04d}",
@@ -137,17 +155,25 @@ class Director:
     ) -> list[tuple[Entity, list[str]]]:
         lines = script.replace("\r\n", "\n").split("\n")
         buckets: list[tuple[Entity, list[str]]] = [(default_scene, [])]
-        in_cast_list = False
+        in_metadata_list = False
         for raw in lines:
             line = raw.strip()
-            if not line or line.upper() in {"FADE IN:", "FADE IN"}:
+            if not line or line.upper() in {
+                "FADE IN:",
+                "FADE IN",
+                "FADE OUT.",
+                "FADE OUT",
+            }:
                 continue
             if _SECTION.match(line):
-                in_cast_list = True
+                in_metadata_list = True
+                continue
+            if _INLINE_SECTION.match(line):
+                in_metadata_list = False
                 continue
             heading = _SCENE_HEADING.match(line)
             if heading and not line.startswith("-") and not line.startswith("*"):
-                in_cast_list = False
+                in_metadata_list = False
                 title = _scene_title(heading.group(1))
                 matched = self._match_scene(title, scenes) or default_scene
                 if buckets[-1][1] or buckets[-1][0].id != matched.id:
@@ -155,8 +181,12 @@ class Director:
                 else:
                     buckets[-1] = (matched, [])
                 continue
-            if in_cast_list:
-                continue
+            if in_metadata_list:
+                if _LIST_ITEM.match(line):
+                    continue
+                # 清單後第一個非清單行就是正文；不可等到下一個場景標題，
+                # 否則「標題 → metadata → 對白」格式會遺失整段劇情。
+                in_metadata_list = False
             if line.startswith("參考圖") or line.startswith("!["):
                 continue
             buckets[-1][1].append(line)
@@ -187,7 +217,7 @@ class Director:
                 continue
             buf.append(line)
             joined = " ".join(buf)
-            if len(joined) >= 24 or line.endswith("。") or line.endswith("."):
+            if len(joined) >= 24 or _SENTENCE_END.search(line):
                 beats.append(joined)
                 buf = []
         if buf:

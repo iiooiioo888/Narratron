@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
-
-os.environ.setdefault("VAULT_BACKEND", "memory")
 
 import pytest
 

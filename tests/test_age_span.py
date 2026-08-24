@@ -61,6 +61,11 @@ def local_root(tmp_path: Path) -> Path:
     return root
 
 
+def test_tmp_path_stays_on_project_disk(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parent.parent / ".pytest-tmp"
+    assert tmp_path.resolve().is_relative_to(root.resolve()), tmp_path
+
+
 def test_age_span_steps_are_faces_then_tpose() -> None:
     steps = age_span_steps(age_start=1, age_end=3, fill_span=True)
     assert [item["purpose"] for item in steps] == [
@@ -313,7 +318,7 @@ def test_queue_age_span_enqueues_only_the_next_step(local_root: Path) -> None:
 
     processed = queue.process_next(character_service=service, core_id=core_id)
     assert processed is not None
-    assert processed["status"] == "ready"
+    assert processed["status"] == "ready", processed.get("error_message")
     follow = [item for item in queue.list_tasks(core_id=core_id, limit=20) if item["id"] != processed["id"]]
     assert len(follow) == 1
     next_req = follow[0]["evolution_params"]["_image_request"]
@@ -347,7 +352,7 @@ def test_process_age_span_injects_previous_refs(local_root: Path) -> None:
     assert len(waiting) == 0
     first = queue.process_next(character_service=service, core_id=core_id)
     assert first is not None
-    assert first["status"] == "ready"
+    assert first["status"] == "ready", first.get("error_message")
     assert first["evolution_params"]["_image_request"]["age"] == 1
     prompt = first["result_metadata"]["image_generation"]["prompt"]
     assert "exactly 1 years old" in prompt
@@ -549,7 +554,7 @@ def test_on_demand_queue_does_not_create_other_ages(local_root: Path) -> None:
     assert is_new
     processed = queue.process_next(character_service=service, core_id=core_id)
     assert processed is not None
-    assert processed["status"] == "ready"
+    assert processed["status"] == "ready", processed.get("error_message")
     assert processed["evolution_params"]["_image_request"]["age"] == 80
     follow = [item for item in queue.list_tasks(core_id=core_id, limit=20) if item["id"] != processed["id"]]
     assert len(follow) == 1

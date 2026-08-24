@@ -64,3 +64,49 @@ INT. 廢墟教堂 - NIGHT
     assert len(state.shots) >= 2
     assert state.shots[0].camera_language == "全景 Establishing"
     assert state.shots[1].camera_language == "跟拍 Tracking"
+
+
+def test_director_keeps_body_after_metadata_lists() -> None:
+    """前端範例格式的 metadata 清單不可吞掉後續對白。"""
+    script = """
+INT. 廢棄工廠 — 夜
+
+角色
+- 卡爾（傷疤覆蓋左臉）
+- 艾拉（繃帶纏繞右臂）
+
+道具
+- 無線電
+
+場景
+- 廢棄工廠：昏暗的吊燈搖晃
+
+卡爾：（壓低聲音）守衛換班了，我們有十分鐘。
+艾拉：（檢查無線電）信號很弱，但夠用！
+""".strip()
+
+    state = Director(persist=False).direct(AgentState(script=script))
+
+    beats = [str(shot.payload.get("beat", "")) for shot in state.shots]
+    assert len(state.shots) == 2
+    assert any("守衛換班了" in beat for beat in beats)
+    assert any("信號很弱" in beat for beat in beats)
+    assert all("傷疤覆蓋左臉" not in beat for beat in beats)
+    assert all("昏暗的吊燈" not in beat for beat in beats)
+
+
+def test_director_does_not_treat_named_action_as_dialogue() -> None:
+    script = """
+角色：
+- 莉娜
+- 卡爾
+
+INT. 廢墟教堂 - NIGHT
+祭壇上的燭火忽明忽暗。
+莉娜走向祭壇。
+""".strip()
+
+    state = Director(persist=False).direct(AgentState(script=script))
+
+    assert len(state.shots) == 2
+    assert state.shots[1].camera_language == "跟拍 Tracking"

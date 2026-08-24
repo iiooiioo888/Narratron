@@ -246,26 +246,14 @@ class CharpassStore:
         return (max(indexes) + 1) if indexes else 1
 
     def _write_bytes_atomic(self, path: Path, payload: bytes) -> None:
-        tmp = path.with_name(f"{path.name}.tmp")
-        tmp.write_bytes(payload)
-        try:
-            tmp.replace(path)
-        except OSError:
-            try:
-                path.write_bytes(payload)
-            finally:
-                tmp.unlink(missing_ok=True)
+        from characteros.utils.files import write_bytes_atomic
+
+        write_bytes_atomic(path, payload)
 
     def _write_text_atomic(self, path: Path, text: str) -> None:
-        tmp = path.with_name(f"{path.name}.tmp")
-        tmp.write_text(text, encoding="utf-8")
-        try:
-            tmp.replace(path)
-        except OSError:
-            try:
-                path.write_text(text, encoding="utf-8")
-            finally:
-                tmp.unlink(missing_ok=True)
+        from characteros.utils.files import write_text_atomic
+
+        write_text_atomic(path, text)
 
     def _write_local_current(self, folder: Path, blob: bytes) -> Path | None:
         """寫入本機可讀 JSON `current.charpass`；輸入可為 ZIP 或 JSON。"""
