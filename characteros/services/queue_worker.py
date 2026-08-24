@@ -85,20 +85,17 @@ def _current_running_snapshot() -> dict[str, Any] | None:
 
 def worker_status() -> dict[str, Any]:
     paused = _local_paused()
-    pending = 0
-    waiting = 0
-    running = 0
-    failed = 0
+    stats: dict[str, Any] = {}
     try:
         from characteros.storage.local_queue import LocalQueueManager
 
         stats = LocalQueueManager().get_queue_stats()
-        pending = int(stats.get("total_pending") or 0)
-        waiting = int(stats.get("total_waiting") or 0)
-        running = int(stats.get("total_running") or 0)
-        failed = int(stats.get("total_failed") or 0)
     except Exception:
         pass
+    pending = int(stats.get("total_pending") or 0)
+    waiting = int(stats.get("total_waiting") or 0)
+    running = int(stats.get("total_running") or 0)
+    failed = int(stats.get("total_failed") or 0)
     current = _current_running_snapshot()
     return {
         "paused": paused,
