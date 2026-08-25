@@ -151,6 +151,7 @@ def _enqueue_age_span(
             scene=body.scene,
             weather=body.weather,
             injury=body.injury,
+            lora=getattr(body, "lora", None),
         )
         priority = step_priority(body.priority, step)
         task, is_new = _request_variant(
@@ -222,6 +223,9 @@ def _build_single_evolution_params(body: ImageQueueRequest) -> dict[str, Any]:
         "persist": body.persist,
         "entity_id": body.entity_id,
     }
+    lora = str(getattr(body, "lora", None) or "").strip()
+    if lora:
+        image_request["lora"] = lora
     if body.age is not None:
         token = f"{int(body.age):03d}"
         image_request["age"] = int(body.age)

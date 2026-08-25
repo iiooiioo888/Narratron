@@ -182,6 +182,9 @@ def normalize_ref_uris_for_api(
 
 WAN_MAX_REF_IMAGES = 9
 
+# 與 characteros.imaging.qwen_edit_adapters.QWEN_EDIT_MAX_REF_IMAGES 對齊
+QWEN_EDIT_MAX_REF_IMAGES = 2
+
 _ANGLE_PRIORITY = {
     "front": 0,
     "three_quarter": 1,
@@ -195,8 +198,11 @@ _ANGLE_PRIORITY = {
 
 
 def provider_ref_image_limit(provider: str) -> int | None:
-    if str(provider or "").strip().lower() == "wan":
+    name = str(provider or "").strip().lower()
+    if name == "wan":
         return WAN_MAX_REF_IMAGES
+    if name in {"qwen_edit", "qwen-edit", "qwen"}:
+        return QWEN_EDIT_MAX_REF_IMAGES
     return None
 
 

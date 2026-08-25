@@ -1733,6 +1733,18 @@ button.ghost:hover:not(:disabled),
   line-height: 1.45;
 }
 
+.field.inline-check {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-direction: row;
+}
+
+.field.inline-check input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+}
+
 .pill.branch-kind-image-gen {
   background: rgba(14, 165, 233, 0.14);
   border-color: rgba(56, 189, 248, 0.3);

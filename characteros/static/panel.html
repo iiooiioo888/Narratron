@@ -193,28 +193,56 @@
     </section>
 
     <section class="card">
-      <h2>生圖設定（WAN／OpenAI 相容）</h2>
+      <h2>生圖設定（WAN／OpenAI／Qwen Edit）</h2>
       <p class="section-desc">設定第三方生圖 API；儲存後僅供本面板「生成圖片」使用，不開放公開 API 直連。</p>
       <button onclick="loadImagingConfig()">讀取目前設定</button>
       <label>Provider（生圖後端）</label>
-      <div class="field-hint">wan＝阿里百煉；openai＝OpenAI 相容；http＝自訂 webhook；null＝只組 prompt 不呼叫網路（測試用）。</div>
+      <div class="field-hint">wan＝阿里百煉；openai＝OpenAI 相容；qwen_edit＝Qwen Image Edit 2511+LoRA（需本機 7860）；http＝自訂 webhook；null＝只組 prompt。</div>
       <select id="provider">
         <option value="wan">wan（阿里百煉 WAN）</option>
         <option value="openai">openai（OpenAI 相容介面）</option>
+        <option value="qwen_edit">qwen_edit（Qwen Image Edit + LoRA）</option>
         <option value="http">http（自訂 HTTP webhook）</option>
         <option value="null">null（僅組 prompt，不打 API）</option>
       </select>
       <label>Base URL（API 端點）</label>
-      <div class="field-hint">WAN 可填 compatible-mode/v1；留空則使用已儲存的設定。</div>
+      <div class="field-hint">WAN 填 compatible-mode/v1；qwen_edit 填 http://127.0.0.1:7860；留空則使用已儲存設定。</div>
       <input id="baseUrl" value="https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1" />
       <label>Model（模型名稱）</label>
-      <div class="field-hint">例如 wan2.7-image-pro；依 provider 文件填寫。</div>
+      <div class="field-hint">例如 wan2.7-image-pro 或 Qwen-Image-Edit-2511。</div>
       <input id="model" value="wan2.7-image-pro" />
       <label>API Key（留空代表不修改已儲存的金鑰）</label>
       <input id="apiKey" type="password" placeholder="sk-… 或百煉 API Key" />
       <label><input id="persistEnv" type="checkbox" checked style="width:auto;margin-right:6px;" /> 同步寫入專案根目錄 .env</label>
       <button onclick="saveImagingConfig()">儲存生圖設定</button>
       <div id="cfgStatus" class="status"></div>
+    </section>
+
+    <section class="card">
+      <h2>Qwen Image Edit（圖生圖 + LoRA）</h2>
+      <p class="section-desc">
+        對接
+        <a href="https://github.com/PRITHIVSAKTHIUR/Qwen-Image-Edit-2511-LoRAs-Fast-Lazy-Load" target="_blank" rel="noopener">
+          Qwen-Image-Edit-2511-LoRAs-Fast-Lazy-Load
+        </a>
+        。需先有身份參考圖；多角度請選 Multiple-Angles。
+      </p>
+      <label>目前角色 ID（與左側同步）</label>
+      <div id="qwenEntityDisplay" class="id-badge empty">尚未選擇角色</div>
+      <label>LoRA</label>
+      <select id="qwenLora"></select>
+      <label>編輯指令</label>
+      <textarea id="qwenPrompt" rows="3" placeholder="Transform into anime. / Rotate the camera 45 degrees to the right."></textarea>
+      <div class="inline">
+        <input id="qwenSteps" type="number" min="1" max="50" value="4" placeholder="steps" />
+        <input id="qwenGuidance" type="number" min="0" max="20" step="0.1" value="1.0" placeholder="guidance" />
+        <input id="qwenSeed" type="number" min="0" value="0" placeholder="seed（0=隨機）" />
+      </div>
+      <label><input id="qwenPersist" type="checkbox" style="width:auto;margin-right:6px;" /> 寫回本機護照</label>
+      <button onclick="runQwenEdit()">執行 Qwen Edit</button>
+      <button onclick="loadQwenLoras()">重新載入 LoRA 列表</button>
+      <div id="qwenStatus" class="status"></div>
+      <pre id="qwenOutput">{}</pre>
     </section>
 
     <section class="card">
@@ -474,16 +502,25 @@
         : "";
       const idDisplay = document.getElementById("characterIdDisplay");
       const imgDisplay = document.getElementById("imgCharacterIdDisplay");
+      const qwenDisplay = document.getElementById("qwenEntityDisplay");
       if (selectedCharacterId) {
         idDisplay.textContent = idLabel;
         idDisplay.className = "id-badge";
         imgDisplay.textContent = idLabel;
         imgDisplay.className = "id-badge";
+        if (qwenDisplay) {
+          qwenDisplay.textContent = idLabel;
+          qwenDisplay.className = "id-badge";
+        }
       } else {
         idDisplay.textContent = "尚未選擇角色";
         idDisplay.className = "id-badge empty";
         imgDisplay.textContent = "尚未選擇角色";
         imgDisplay.className = "id-badge empty";
+        if (qwenDisplay) {
+          qwenDisplay.textContent = "尚未選擇角色";
+          qwenDisplay.className = "id-badge empty";
+        }
       }
 
       const hasId = Boolean(selectedCharacterId);
@@ -1475,9 +1512,100 @@
       setStatus("imgStatus", "提示詞已複製到剪貼簿", "ok");
     }
 
+    async function loadQwenLoras() {
+      const select = document.getElementById("qwenLora");
+      if (!select) return;
+      try {
+        const resp = await fetch("/api/v1/imaging/qwen-edit/loras");
+        const data = await parseResponseJson(resp);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "載入 LoRA 失敗"));
+        const current = select.value || "Photo-to-Anime";
+        select.innerHTML = "";
+        (data || []).forEach((item) => {
+          const opt = document.createElement("option");
+          opt.value = item.name;
+          opt.textContent = item.description
+            ? `${item.name} — ${item.description}`
+            : item.name;
+          select.appendChild(opt);
+        });
+        if ([...select.options].some((o) => o.value === current)) {
+          select.value = current;
+        } else if ([...select.options].some((o) => o.value === "Photo-to-Anime")) {
+          select.value = "Photo-to-Anime";
+        }
+        setStatus("qwenStatus", `已載入 ${select.options.length} 個 LoRA`, "ok");
+      } catch (err) {
+        setStatus("qwenStatus", `LoRA 載入失敗：${err.message}`, "err");
+      }
+    }
+
+    async function runQwenEdit() {
+      if (!selectedCharacterId) {
+        setStatus("qwenStatus", "請先從左側清單選擇角色（需已有身份參考圖）", "err");
+        return;
+      }
+      const prompt = document.getElementById("qwenPrompt").value.trim();
+      if (!prompt) {
+        setStatus("qwenStatus", "請填寫編輯指令", "err");
+        return;
+      }
+      // 面板角色 ID 是數字 core_id；護照 entity_id 從 editor 讀
+      setStatus("qwenStatus", "解析角色護照…");
+      try {
+        const editorResp = await fetch(`/api/v1/characters/${selectedCharacterId}/editor`);
+        const editor = await parseResponseJson(editorResp);
+        if (!editorResp.ok) throw new Error(apiErrorDetail(editor, "讀取角色失敗"));
+        const manifest = (editor.profile && editor.profile.manifest) || {};
+        const meta = manifest._meta || {};
+        const identity = manifest._identity || {};
+        const entityId =
+          meta.entity_id ||
+          identity.entity_id ||
+          (identity.name ? `character-${identity.name}` : "");
+        if (!entityId) {
+          throw new Error("護照缺少 entity_id，無法收集參考圖");
+        }
+        const payload = {
+          prompt,
+          lora: document.getElementById("qwenLora").value || "Photo-to-Anime",
+          entity_id: entityId,
+          steps: Number(document.getElementById("qwenSteps").value || 4),
+          guidance_scale: Number(document.getElementById("qwenGuidance").value || 1),
+          seed: Number(document.getElementById("qwenSeed").value || 0),
+          randomize_seed: Number(document.getElementById("qwenSeed").value || 0) === 0,
+          persist: document.getElementById("qwenPersist").checked,
+          purpose: "edit",
+        };
+        const baseUrl = document.getElementById("baseUrl").value.trim();
+        const provider = document.getElementById("provider").value;
+        if (provider === "qwen_edit" && baseUrl) payload.base_url = baseUrl;
+        setStatus("qwenStatus", "呼叫 Qwen Edit 中（可能需數十秒）…");
+        const resp = await fetch("/api/v1/imaging/qwen-edit", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CharacterOS-Panel": "enabled",
+          },
+          body: JSON.stringify(payload),
+        });
+        const data = await parseResponseJson(resp);
+        setJson("qwenOutput", data);
+        if (!resp.ok) throw new Error(apiErrorDetail(data, "編輯失敗"));
+        setStatus(
+          "qwenStatus",
+          `完成：LoRA=${data.lora || payload.lora}，圖片 ${((data.images || []).length)} 張`,
+          "ok"
+        );
+      } catch (err) {
+        setStatus("qwenStatus", `失敗：${err.message}`, "err");
+      }
+    }
+
     updateCharacterSelection("", "");
     loadCharacters();
     loadImagingConfig();
+    loadQwenLoras();
     loadQueueTasks();
   </script>
 </body>

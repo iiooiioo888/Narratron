@@ -17,6 +17,7 @@ _PROVIDER_INFO: list[dict[str, str]] = [
     {"name": "http", "display_name": "HTTP Webhook"},
     {"name": "openai", "display_name": "OpenAI Images"},
     {"name": "wan", "display_name": "WAN 2.7（百煉原生 API）"},
+    {"name": "qwen_edit", "display_name": "Qwen Image Edit（2511 + LoRA）"},
 ]
 
 
@@ -31,12 +32,14 @@ def _get_factory() -> dict[str, Callable[..., ImageGenProvider]]:
         from characteros.imaging.providers.http_webhook import HttpWebhookImageProvider
         from characteros.imaging.providers.null import NullImageProvider
         from characteros.imaging.providers.openai_images import OpenAIImagesProvider
+        from characteros.imaging.providers.qwen_edit import QwenEditImageProvider
         from characteros.imaging.providers.wan import WanImageProvider
         _FACTORY.update({
             "null": NullImageProvider,
             "http": HttpWebhookImageProvider,
             "openai": OpenAIImagesProvider,
             "wan": WanImageProvider,
+            "qwen_edit": QwenEditImageProvider,
         })
     return _FACTORY
 
@@ -50,7 +53,7 @@ def get_provider(name: str | None = None, **kwargs: Any) -> ImageGenProvider:
     if resolved == "http":
         endpoint = kwargs.get("base_url")
         return factory(endpoint=endpoint) if endpoint else factory()
-    if resolved in {"openai", "wan"}:
+    if resolved in {"openai", "wan", "qwen_edit"}:
         return factory(
             api_key=kwargs.get("api_key"),
             base_url=kwargs.get("base_url"),

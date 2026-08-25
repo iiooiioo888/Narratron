@@ -418,6 +418,9 @@ def generate_character_images(
     # API key 優先從 header 讀取，避免明文出現在請求體／瀏覽器歷史
     api_key = request.headers.get("X-Image-Gen-Api-Key", "") or body.api_key or ""
     try:
+        extra_fields = {}
+        if getattr(body, "lora", None):
+            extra_fields["lora"] = body.lora
         payload = ImagingService().generate_for_manifest(
             manifest,
             purpose=body.purpose,
@@ -429,6 +432,7 @@ def generate_character_images(
             api_key=api_key,
             persist_entity_id=persist_id,
             multi_angle=body.multi_angle,
+            extra_fields=extra_fields or None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

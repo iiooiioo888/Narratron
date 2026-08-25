@@ -45,7 +45,7 @@
 | 📋 **因果記錄** | `Trace Log` | 每一步操作都有因果記錄（cause → effect），為因果壓縮包奠基 | `narratron/vault/trace_log.py` |
 | 👤 **角色管理** | `CharacterOS` | 角色護照 (.charpass) 全生命週期：建立、編輯、版本控制 | `characteros/` |
 | 🌱 **敘事自舉** | `Narrative Bootstrap` | 一句話角色簡述 → 世界觀擬合、護照初稿、年齡曲線與種子劇本 | `narratron/narrative/` |
-| 🎨 **生圖管線** | `Imaging` | 可插拔 provider：WAN（阿里百煉）/ OpenAI 相容 / 自訂 HTTP | `characteros/imaging/` |
+| 🎨 **生圖管線** | `Imaging` | 可插拔 provider：WAN／OpenAI／Qwen Image Edit（2511+LoRA）／HTTP | `characteros/imaging/` |
 | 📊 **佇列中心** | `Queue` | 年齡軸 pipeline：1–80 歲逐步生圖，一次一張，完成自動入庫 | `characteros/services/queue*.py` |
 | 🕸️ **因果圖** | `Map` | 視覺化 Trace Log 因果鏈：實體 → 痕跡 → 分鏡有向圖 | `frontend/map.md` / `characteros/static/` |
 
@@ -238,6 +238,8 @@ Narratron 採用 graceful degradation 設計：
 | `GET` | `/api/v1/characters/{id}/variants` | 列出所有變體 |
 | `POST` | `/api/v1/characters/{id}/image-queue` | 排入生圖佇列 |
 | `GET` | `/api/v1/imaging/providers` | 列出可用生圖 provider |
+| `GET` | `/api/v1/imaging/qwen-edit/loras` | 列出 Qwen-Image-Edit-2511 可用 LoRA |
+| `POST` | `/api/v1/imaging/qwen-edit` | 呼叫 Qwen-Image-Edit-2511 圖生圖編輯 |
 
 #### 佇列管理
 
@@ -263,6 +265,17 @@ Narratron 採用 graceful degradation 設計：
 | `GET` | `/api/v1/admin/metrics` | 系統指標 |
 | `GET` | `/api/v1/admin/imaging-config` | 讀取生圖設定 |
 | `PUT` | `/api/v1/admin/imaging-config` | 更新生圖設定 |
+
+### Qwen Image Edit 接入（2511 + LoRA）
+
+Narratron 已內建 `qwen_edit` provider，可直接對接上游專案：
+[Qwen-Image-Edit-2511-LoRAs-Fast-Lazy-Load](https://github.com/PRITHIVSAKTHIUR/Qwen-Image-Edit-2511-LoRAs-Fast-Lazy-Load)。
+
+1. 啟動上游服務（預設 `http://127.0.0.1:7860`）  
+2. 設定 `.env`：`CHARACTEROS_IMAGE_GEN_PROVIDER=qwen_edit`（或在 API 請求覆蓋 provider）  
+3. 先呼叫 `GET /api/v1/imaging/qwen-edit/loras` 查 LoRA，再以 `POST /api/v1/imaging/qwen-edit` 送出編輯任務  
+
+> 注意：Qwen Edit 是圖生圖流程，至少需要一張 `ref_image_uris` 或提供已有身份圖的 `entity_id`。
 
 ---
 

@@ -1597,6 +1597,15 @@ export function CharpassPanel(props: CharpassPanelProps) {
   const [model, setModel] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [extraPrompt, setExtraPrompt] = useState('')
+  const [lora, setLora] = useState('Photo-to-Anime')
+  const [qwenLoras, setQwenLoras] = useState<Array<{ name: string; description?: string }>>([])
+  const [qwenPrompt, setQwenPrompt] = useState('Transform into anime while preserving character identity.')
+  const [qwenSteps, setQwenSteps] = useState(4)
+  const [qwenGuidance, setQwenGuidance] = useState(1)
+  const [qwenSeed, setQwenSeed] = useState(0)
+  const [qwenPersist, setQwenPersist] = useState(false)
+  const [qwenBusy, setQwenBusy] = useState(false)
+  const [qwenMessage, setQwenMessage] = useState<string | null>(null)
   const [queueStatusFilter, setQueueStatusFilter] = useState('')
   const [queueOnlySelected, setQueueOnlySelected] = useState(true)
   const [queueAutoRun, setQueueAutoRun] = useState(false)
@@ -1669,6 +1678,39 @@ export function CharpassPanel(props: CharpassPanelProps) {
     }
     setCharacterSummaries(next)
   }, [apiBase])
+
+  const loadQwenLoras = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase}/api/v1/imaging/qwen-edit/loras`)
+      if (!response.ok) {
+        return
+      }
+      const body = (await response.json()) as Array<{ name?: string; description?: string }>
+      if (!Array.isArray(body)) {
+        return
+      }
+      const items = body
+        .map((item) => ({
+          name: String(item.name || '').trim(),
+          description: String(item.description || '').trim() || undefined,
+        }))
+        .filter((item) => item.name)
+      setQwenLoras(items)
+      setLora((current) => {
+        if (items.some((item) => item.name === current)) {
+          return current
+        }
+        const preferred = items.find((item) => item.name === 'Photo-to-Anime') || items[0]
+        return preferred?.name || current
+      })
+    } catch {
+      // LoRA 列表為進階功能；失敗不阻斷主流程
+    }
+  }, [apiBase])
+
+  useEffect(() => {
+    void loadQwenLoras()
+  }, [loadQwenLoras])
 
   const patchCharacterSummaryFromCharpass = useCallback(
     (characterId: string, charpass: Record<string, unknown>) => {
@@ -2198,6 +2240,7 @@ export function CharpassPanel(props: CharpassPanelProps) {
           priority: 0,
           age_start: 1,
           age_end: 80,
+          ...(provider === 'qwen_edit' && lora ? { lora } : {}),
         }),
       })
       if (!response.ok) {
@@ -2217,6 +2260,74 @@ export function CharpassPanel(props: CharpassPanelProps) {
       onError(queueError instanceof Error ? queueError.message : '建立生圖佇列任務失敗')
     } finally {
       setImageBusy(false)
+    }
+  }
+
+  async function runQwenEdit() {
+    if (!selectedCharacter) {
+      onError('請先選擇角色')
+      return
+    }
+    const prompt = qwenPrompt.trim()
+    if (!prompt) {
+      onError('請填寫 Qwen Edit 編輯指令')
+      return
+    }
+    setQwenBusy(true)
+    setQwenMessage(null)
+    onError(null)
+    try {
+      const charpassResp = await fetch(`${apiBase}/api/v1/characters/${selectedCharacter.id}/charpass`)
+      if (!charpassResp.ok) {
+        throw new Error((await charpassResp.text()) || `HTTP ${charpassResp.status}`)
+      }
+      const charpassBody = (await charpassResp.json()) as { charpass?: Record<string, unknown> }
+      const manifest = asRecord(charpassBody.charpass)
+      const meta = asRecord(manifest._meta)
+      const identity = asRecord(manifest._identity)
+      const entityId =
+        firstNonEmptyString(meta.entity_id, identity.entity_id) ||
+        (firstNonEmptyString(identity.name) ? `character-${String(identity.name).trim()}` : '')
+      if (!entityId) {
+        throw new Error('護照缺少 entity_id，無法收集參考圖')
+      }
+      const payload: Record<string, unknown> = {
+        prompt,
+        lora: lora || 'Photo-to-Anime',
+        entity_id: entityId,
+        steps: qwenSteps,
+        guidance_scale: qwenGuidance,
+        seed: qwenSeed,
+        randomize_seed: qwenSeed === 0,
+        persist: qwenPersist,
+        purpose: 'edit',
+      }
+      if (baseUrl.trim()) {
+        payload.base_url = baseUrl.trim()
+      }
+      const response = await fetch(`${apiBase}/api/v1/imaging/qwen-edit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CharacterOS-Panel': 'enabled',
+        },
+        body: JSON.stringify(payload),
+      })
+      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>
+      if (!response.ok) {
+        const detail = firstNonEmptyString(data.detail, JSON.stringify(data)) || `HTTP ${response.status}`
+        throw new Error(detail)
+      }
+      const imageCount = Array.isArray(data.images) ? data.images.length : 0
+      setQwenMessage(`完成：LoRA=${String(data.lora || lora)}，圖片 ${imageCount} 張`)
+      if (qwenPersist) {
+        await loadCharacterSummaries()
+        await reloadCharacterCharpass(selectedCharacter.id)
+      }
+    } catch (editError) {
+      onError(editError instanceof Error ? editError.message : 'Qwen Edit 失敗')
+    } finally {
+      setQwenBusy(false)
     }
   }
 
@@ -2826,16 +2937,45 @@ export function CharpassPanel(props: CharpassPanelProps) {
                   </label>
                   <label className="field">
                     <span>Provider</span>
-                    <input value={provider} onChange={(event) => setProvider(event.target.value)} placeholder="wan" />
+                    <select value={provider} onChange={(event) => setProvider(event.target.value)}>
+                      <option value="wan">wan（阿里百煉）</option>
+                      <option value="openai">openai</option>
+                      <option value="qwen_edit">qwen_edit（Qwen Image Edit + LoRA）</option>
+                      <option value="http">http webhook</option>
+                      <option value="null">null（僅組 prompt）</option>
+                    </select>
                   </label>
                   <label className="field">
                     <span>Model</span>
-                    <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="沿用後端預設" />
+                    <input
+                      value={model}
+                      onChange={(event) => setModel(event.target.value)}
+                      placeholder={provider === 'qwen_edit' ? 'Qwen-Image-Edit-2511' : '沿用後端預設'}
+                    />
                   </label>
                   <label className="field">
                     <span>Base URL</span>
-                    <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="沿用後端預設" />
+                    <input
+                      value={baseUrl}
+                      onChange={(event) => setBaseUrl(event.target.value)}
+                      placeholder={provider === 'qwen_edit' ? 'http://127.0.0.1:7860' : '沿用後端預設'}
+                    />
                   </label>
+                  {provider === 'qwen_edit' ? (
+                    <label className="field">
+                      <span>LoRA（佇列生圖）</span>
+                      <select value={lora} onChange={(event) => setLora(event.target.value)}>
+                        {(qwenLoras.length
+                          ? qwenLoras
+                          : [{ name: 'Photo-to-Anime', description: '寫實轉動漫' }]
+                        ).map((item) => (
+                          <option key={item.name} value={item.name}>
+                            {item.description ? `${item.name} — ${item.description}` : item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                 </div>
                 <label className="field">
                   <span>額外提示詞</span>
@@ -2853,6 +2993,98 @@ export function CharpassPanel(props: CharpassPanelProps) {
                     複製最新提示詞
                   </button>
                 </div>
+              </details>
+
+              <details className="queue-advanced">
+                <summary className="queue-advanced-summary">
+                  Qwen Image Edit
+                  <span className="subtle">多角度／風格 LoRA／超分（需本機 7860）</span>
+                </summary>
+                <p className="field-hint">
+                  對接{' '}
+                  <a
+                    href="https://github.com/PRITHIVSAKTHIUR/Qwen-Image-Edit-2511-LoRAs-Fast-Lazy-Load"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Qwen-Image-Edit-2511-LoRAs-Fast-Lazy-Load
+                  </a>
+                  。需角色已有身份參考圖；多角度請選 Multiple-Angles。
+                </p>
+                <div className="inline-grid queue-form-grid">
+                  <label className="field">
+                    <span>LoRA</span>
+                    <select value={lora} onChange={(event) => setLora(event.target.value)}>
+                      {(qwenLoras.length
+                        ? qwenLoras
+                        : [{ name: 'Photo-to-Anime', description: '寫實轉動漫' }]
+                      ).map((item) => (
+                        <option key={item.name} value={item.name}>
+                          {item.description ? `${item.name} — ${item.description}` : item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Steps</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={qwenSteps}
+                      onChange={(event) => setQwenSteps(Number(event.target.value) || 4)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Guidance</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      step={0.1}
+                      value={qwenGuidance}
+                      onChange={(event) => setQwenGuidance(Number(event.target.value) || 1)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Seed（0=隨機）</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={qwenSeed}
+                      onChange={(event) => setQwenSeed(Number(event.target.value) || 0)}
+                    />
+                  </label>
+                </div>
+                <label className="field">
+                  <span>編輯指令</span>
+                  <textarea
+                    value={qwenPrompt}
+                    onChange={(event) => setQwenPrompt(event.target.value)}
+                    placeholder="Transform into anime. / Rotate the camera 45 degrees to the right."
+                  />
+                </label>
+                <label className="field inline-check">
+                  <input
+                    type="checkbox"
+                    checked={qwenPersist}
+                    onChange={(event) => setQwenPersist(event.target.checked)}
+                  />
+                  <span>寫回本機護照 assets</span>
+                </label>
+                <div className="button-row compact">
+                  <button
+                    className="primary"
+                    onClick={() => void runQwenEdit()}
+                    disabled={!selectedCharacter || qwenBusy}
+                  >
+                    {qwenBusy ? '編輯中…' : '執行 Qwen Edit'}
+                  </button>
+                  <button className="ghost" onClick={() => void loadQwenLoras()} disabled={qwenBusy}>
+                    重新載入 LoRA
+                  </button>
+                </div>
+                {qwenMessage ? <p className="field-hint">{qwenMessage}</p> : null}
               </details>
 
               <details

@@ -75,6 +75,8 @@ open http://localhost:8001/docs
 | `GET` | `/api/v1/characters/{id}/variants` | 列出角色所有變體 | 200 / 404 |
 | `POST` | `/api/v1/characters/{id}/images` | 依角色風格呼叫第三方生圖 | 200 / 404 / 502 |
 | `GET` | `/api/v1/imaging/providers` | 列出生圖 provider | 200 |
+| `GET` | `/api/v1/imaging/qwen-edit/loras` | 列出 Qwen Edit LoRA | 200 |
+| `POST` | `/api/v1/imaging/qwen-edit` | Qwen-Image-Edit-2511 圖生圖編輯 | 200 / 400 / 502 |
 | `POST` | `/api/v1/imaging/generate` | 依護照組 prompt 並生圖 | 200 / 404 / 502 |
 | `GET` | `/api/v1/admin/queue-stats` | 佇列統計（管理用） | 200 |
 | `GET` | `/api/v1/admin/metrics` | 系統指標（管理用） | 200 |
@@ -167,7 +169,29 @@ curl -X POST http://localhost:8001/api/v1/imaging/generate \
   }'
 ```
 
-環境變數 `CHARACTEROS_IMAGE_GEN_PROVIDER=http|openai|wan` 可改打第三方 API；HTTP 契約見 `characteros/imaging/providers/http_webhook.py`。
+環境變數 `CHARACTEROS_IMAGE_GEN_PROVIDER=http|openai|wan|qwen_edit` 可改打第三方 API；HTTP 契約見 `characteros/imaging/providers/http_webhook.py`。
+
+### 5.0 Qwen Image Edit（2511 + 懶載入 LoRA）
+
+對接上游 [Qwen-Image-Edit-2511-LoRAs-Fast-Lazy-Load](https://github.com/PRITHIVSAKTHIUR/Qwen-Image-Edit-2511-LoRAs-Fast-Lazy-Load)（需本機 CUDA 服務，預設 `http://127.0.0.1:7860`）。
+
+```bash
+# 列出 19+ LoRA（Multiple-Angles / Anime-V2 / Pixar / Upscaler …）
+curl http://localhost:8001/api/v1/imaging/qwen-edit/loras
+
+# 以角色護照參考圖做風格轉譯
+curl -X POST http://localhost:8001/api/v1/imaging/qwen-edit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entity_id":"character-卡爾",
+    "prompt":"Transform into anime while preserving identity.",
+    "lora":"Anime-V2",
+    "steps":4,
+    "base_url":"http://127.0.0.1:7860"
+  }'
+```
+
+亦可把 provider 設為 `qwen_edit`：多視角任務會自動選 `Multiple-Angles`，風格關鍵字（可愛／吉卜力／pixar…）會自動對應 LoRA。**需至少一張參考圖**（圖生圖，非純文生圖）。
 
 ### 5.1 設定 WAN 生圖介面（百煉原生 API）
 

@@ -271,6 +271,7 @@ def build_age_span_evolution_params(
     scene: str | None = None,
     weather: str | None = None,
     injury: float | None = None,
+    lora: str | None = None,
 ) -> dict[str, Any]:
     # api_key 仍接受以相容舊呼叫端，但絕不寫入佇列 JSON。
     _ = api_key
@@ -284,6 +285,7 @@ def build_age_span_evolution_params(
     emotion_text = str(emotion or "").strip() or None
     scene_text = str(scene or "").strip() or None
     weather_text = str(weather or "").strip() or None
+    lora_text = str(lora or "").strip() or None
     injury_value: float | None = None
     if injury is not None:
         try:
@@ -326,6 +328,7 @@ def build_age_span_evolution_params(
         "scene": scene_text,
         "weather": weather_text,
         "injury": injury_value,
+        "lora": lora_text,
     }
     params: dict[str, Any] = {
         "age_override": age,
@@ -717,6 +720,7 @@ def prepare_queued_image_generation(
             "age": image_request.get("age"),
             "pipeline": image_request.get("pipeline"),
             "pipeline_id": image_request.get("pipeline_id"),
+            "lora": image_request.get("lora"),
         }.items()
         if value not in (None, "")
     }
@@ -770,6 +774,7 @@ def evolution_params_from_previous(
         scene=previous_request.get("scene") or previous_request.get("scene_context"),
         weather=previous_request.get("weather"),
         injury=previous_request.get("injury") or previous_request.get("injury_level"),
+        lora=previous_request.get("lora"),
     )
 
 

@@ -469,7 +469,7 @@ class ImageGenerateRequest(BaseModel):
     """第三方生圖請求。不傳 provider 時走環境變數 CHARACTEROS_IMAGE_GEN_PROVIDER（預設 null）。"""
 
     purpose: str = Field("identity", description="identity / face_detail / outfit / expression / thumb / tpose / age_span")
-    provider: Optional[str] = Field(None, description="null | http | openai | wan")
+    provider: Optional[str] = Field(None, description="null | http | openai | wan | qwen_edit")
     model: Optional[str] = Field(None, description="覆蓋本次生圖模型，例如 wan2.7-image-pro")
     base_url: Optional[str] = Field(
         None,
@@ -488,13 +488,17 @@ class ImageGenerateRequest(BaseModel):
     persist: bool = Field(False, description="是否寫回本機 data/charpasses/{entity_id}/")
     entity_id: Optional[str] = Field(None, description="本機護照 entity_id；與 manifest 擇一")
     manifest: Optional[Dict[str, Any]] = Field(None, description="完整 .charpass manifest")
+    lora: Optional[str] = Field(
+        None,
+        description="僅 qwen_edit：指定 LoRA（如 Multiple-Angles / Anime-V2）；空則依視角／風格自動挑選",
+    )
 
 
 class ImageQueueRequest(BaseModel):
     """把生圖請求包成可由佇列處理的任務。"""
 
     purpose: str = Field("identity", description="identity / face_detail / outfit / expression / thumb / tpose / age_span")
-    provider: Optional[str] = Field(None, description="null | http | openai | wan")
+    provider: Optional[str] = Field(None, description="null | http | openai | wan | qwen_edit")
     model: Optional[str] = Field(None, description="覆蓋本次生圖模型")
     base_url: Optional[str] = Field(None, description="覆蓋本次生圖端點")
     api_key: Optional[str] = Field(None, description="覆蓋本次生圖 API key")
@@ -513,6 +517,7 @@ class ImageQueueRequest(BaseModel):
     injury: Optional[float] = Field(None, ge=0.0, le=1.0, description="受傷程度")
     priority: int = Field(0, ge=0, le=10, description="佇列優先級")
     auto_accept: bool = Field(True, description="生圖完成後自動接受入庫（年齡軸建議開啟）")
+    lora: Optional[str] = Field(None, description="僅 qwen_edit：指定 LoRA")
 
 
 class ImageGenerateResponse(BaseModel):
@@ -536,6 +541,44 @@ class ImageGenerateResponse(BaseModel):
     manifest: Dict[str, Any] = Field(default_factory=dict)
 
 
+class QwenEditLoraInfo(BaseModel):
+    name: str
+    adapter_name: str = ""
+    description: str = ""
+    repo: str = ""
+
+
+class QwenEditRequest(BaseModel):
+    """Qwen-Image-Edit-2511 圖生圖編輯（懶載入 LoRA）。"""
+
+    prompt: str = Field(..., min_length=1, description="編輯指令")
+    lora: str = Field("Photo-to-Anime", description="LoRA 名稱，見 GET /imaging/qwen-edit/loras")
+    ref_image_uris: List[str] = Field(
+        default_factory=list,
+        description="參考圖 data URI 或 http(s)；與 entity_id 擇一／並用",
+    )
+    entity_id: Optional[str] = Field(None, description="從本機護照收集 ref_images")
+    seed: int = Field(0, ge=0, description="種子；0 且 randomize_seed=true 時隨機")
+    randomize_seed: bool = Field(True, description="是否隨機種子")
+    guidance_scale: float = Field(1.0, ge=0.0, le=20.0, description="true_cfg_scale")
+    steps: int = Field(4, ge=1, le=50, description="推論步數（上游預設 4）")
+    base_url: Optional[str] = Field(None, description="覆蓋 Qwen Edit 服務根網址（預設 127.0.0.1:7860）")
+    api_key: Optional[str] = Field(None, description="可選 Bearer token")
+    model: Optional[str] = Field(None, description="模型標籤（紀錄用）")
+    persist: bool = Field(False, description="是否寫回本機護照 assets")
+    purpose: str = Field("edit", description="寫回護照時的 purpose 標籤")
+
+
+class QwenEditResponse(BaseModel):
+    provider: str = "qwen_edit"
+    model: str = ""
+    lora: str = ""
+    seed: Optional[int] = None
+    prompt: str = ""
+    images: List[GeneratedImageInfo] = Field(default_factory=list)
+    raw: Dict[str, Any] = Field(default_factory=dict)
+
+
 class ImagingConfigResponse(BaseModel):
     provider: str
     base_url: str
@@ -544,7 +587,7 @@ class ImagingConfigResponse(BaseModel):
 
 
 class ImagingConfigUpdateRequest(BaseModel):
-    provider: Optional[str] = Field(None, description="null | http | openai | wan")
+    provider: Optional[str] = Field(None, description="null | http | openai | wan | qwen_edit")
     base_url: Optional[str] = Field(None, description="生圖 API base URL（wan 可填 compatible-mode/v1）")
     model: Optional[str] = Field(None, description="預設生圖模型")
     api_key: Optional[str] = Field(None, description="生圖 API key")

@@ -77,13 +77,27 @@ def assemble_request(
         for uri in _https_first(seed_uris):
             if uri not in ref_uris:
                 ref_uris.append(uri)
+    style = manifest.get("_style") if isinstance(manifest.get("_style"), dict) else {}
+    character_style = style.get("character_style") if isinstance(style.get("character_style"), dict) else {}
+    visual = character_style.get("visual") if isinstance(character_style.get("visual"), dict) else {}
+    art_prompt = character_style.get("art_prompt") if isinstance(character_style.get("art_prompt"), dict) else {}
+    style_hint_parts = [
+        str(visual.get("medium") or ""),
+        str(visual.get("aesthetic") or ""),
+        " ".join(str(item) for item in (visual.get("keywords") or []) if item),
+        str(art_prompt.get("positive") or ""),
+        str(style.get("preset") or style.get("style_preset") or ""),
+    ]
+    style_hints = " ".join(part for part in style_hint_parts if part).strip()
+
     extra_payload = {
         "asset_dir": str(overrides.get("asset_dir") or slot["asset_dir"]),
         "filename_prefix": filename_prefix,
         "angle": resolved_angle,
         "multi_angle": multi_angle,
+        "style_hints": style_hints,
     }
-    for key in ("age", "pipeline", "pipeline_id"):
+    for key in ("age", "pipeline", "pipeline_id", "lora", "lora_adapter", "seed", "steps", "guidance_scale"):
         if overrides.get(key) not in (None, ""):
             extra_payload[key] = overrides[key]
     return ImageGenRequest(

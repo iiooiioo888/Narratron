@@ -198,7 +198,7 @@ def test_created_by_style_preset_backfills_visual_style_fields() -> None:
 
 def test_null_provider_dry_run(tmp_path: Path) -> None:
     names = {item["name"] for item in list_providers()}
-    assert names == {"null", "http", "openai", "wan"}
+    assert names == {"null", "http", "openai", "wan", "qwen_edit"}
     service = ImagingService(store=CharpassStore(tmp_path))
     payload = service.generate_for_manifest(
         _styled_manifest(),
